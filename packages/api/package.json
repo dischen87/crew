@@ -1,0 +1,18 @@
+{
+  "name": "@crew/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "db:setup": "bun src/db/setup.ts",
+    "db:seed": "bun src/db/seed.ts"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "postgres": "^3.4.4",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
