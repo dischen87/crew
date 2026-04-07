@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { getFlights, getLocations } from "../lib/api";
-import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar, IconUsers } from "../components/Icons";
+import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar, IconUsers, IconCrown } from "../components/Icons";
+import AdminPanel from "../components/AdminPanel";
 import { Spinner } from "../components/Motion";
 import LocationMap from "../components/LocationMap";
 
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export default function More({ auth, onLogout }: Props) {
-  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info">("flights");
+  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info" | "admin">(auth.member.is_admin ? "admin" : "flights");
   const [flightData, setFlightData] = useState<any>(null);
   const [flightsLoading, setFlightsLoading] = useState(true);
   const [handicap, setHandicap] = useState("");
@@ -137,6 +138,7 @@ export default function More({ auth, onLogout }: Props) {
   };
 
   const tabs = [
+    ...(auth.member.is_admin ? [{ id: "admin" as const, Icon: IconCrown, label: "Admin" }] : []),
     { id: "flights" as const, Icon: IconPlane, label: "Flüge" },
     { id: "handicap" as const, Icon: IconGolf, label: "HCP" },
     { id: "location" as const, Icon: IconMapPin, label: "Standort" },
@@ -170,6 +172,13 @@ export default function More({ auth, onLogout }: Props) {
           </button>
         ))}
       </div>
+
+      {/* Admin Tab */}
+      {tab === "admin" && auth.member.is_admin && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+          <AdminPanel auth={auth} />
+        </motion.div>
+      )}
 
       {/* Flights Tab */}
       {tab === "flights" && (
