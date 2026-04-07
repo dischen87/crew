@@ -12,14 +12,23 @@ import Chat from "./pages/Chat";
 import More from "./pages/More";
 import Photos from "./pages/Photos";
 import Profile from "./pages/Profile";
+import InstallPrompt from "./components/InstallPrompt";
 
 type Tab = "home" | "golf" | "ranking" | "chat" | "photos" | "more";
 
 export interface AuthData {
   token: string;
   member: { id: string; display_name: string; is_admin: boolean; avatar_emoji: string };
-  group: { id: string; name: string };
+  group: { id: string; name: string; invite_code?: string };
   event: { id: string; title: string; date_from: string; date_to: string; location: string; status: string };
+}
+
+/**
+ * Parse invite code from URL: /join/BELEK26 → "BELEK26"
+ */
+function getInviteCodeFromUrl(): string | null {
+  const match = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]+)/i);
+  return match ? match[1].toUpperCase() : null;
 }
 
 export default function App() {
@@ -28,11 +37,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
   const [showProfile, setShowProfile] = useState(false);
+  const [inviteCode] = useState<string | null>(getInviteCodeFromUrl);
 
   useEffect(() => {
     const stored = getStoredAuth();
     if (stored?.token && stored?.member) {
       setAuth(stored as AuthData);
+      // Clean URL after restoring auth
+      if (window.location.pathname !== "/") {
+        window.history.replaceState({}, "", "/");
+      }
     }
     setLoading(false);
   }, []);
@@ -43,6 +57,7 @@ export default function App() {
       const data = await login(name, password);
       storeAuth(data);
       setAuth(data);
+      window.history.replaceState({}, "", "/");
     } catch (err: any) {
       setLoginError(err.message || "Login fehlgeschlagen");
     }
@@ -54,6 +69,7 @@ export default function App() {
       const data = await register(name, password, groupName, emoji);
       storeAuth(data);
       setAuth(data);
+      window.history.replaceState({}, "", "/");
     } catch (err: any) {
       setLoginError(err.message || "Registrierung fehlgeschlagen");
     }
@@ -65,6 +81,7 @@ export default function App() {
       const data = await joinGroup(inviteCode, name, password, emoji);
       storeAuth(data);
       setAuth(data);
+      window.history.replaceState({}, "", "/");
     } catch (err: any) {
       setLoginError(err.message || "Beitritt fehlgeschlagen");
     }
@@ -85,7 +102,15 @@ export default function App() {
   }
 
   if (!auth) {
-    return <Login onLogin={handleLogin} onRegister={handleRegister} onJoin={handleJoin} error={loginError} />;
+    return (
+      <Login
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+        onJoin={handleJoin}
+        error={loginError}
+        initialInviteCode={inviteCode}
+      />
+    );
   }
 
   const renderTab = () => {
@@ -196,6 +221,9 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* Install PWA prompt */}
+      <InstallPrompt />
     </div>
   );
 }

@@ -1,0 +1,33 @@
+{
+  "name": "CREW — Dein Trip. Deine Crew.",
+  "short_name": "CREW",
+  "description": "Die App für Gruppenreisen & Events. Golfrunden, Chat, Flights und mehr.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0ddf5",
+  "theme_color": "#f0ddf5",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "social", "travel"],
+  "lang": "de-CH"
+}

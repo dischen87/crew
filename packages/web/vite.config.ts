@@ -11,4 +11,6 @@ export default defineConfig({
       },
     },
   },
+  // SPA fallback — /join/:code etc. all resolve to index.html
+  appType: "spa",
 });

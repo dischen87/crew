@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { getFlights, getLocations } from "../lib/api";
-import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar } from "../components/Icons";
+import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar, IconUsers } from "../components/Icons";
 import { Spinner } from "../components/Motion";
 import LocationMap from "../components/LocationMap";
 
@@ -9,9 +9,9 @@ const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
 interface Props {
   auth: {
-    member: { id: string; display_name: string };
+    member: { id: string; display_name: string; is_admin: boolean };
     event: { id: string; title: string };
-    group: { id: string };
+    group: { id: string; invite_code?: string };
   };
   onLogout: () => void;
 }
@@ -356,6 +356,9 @@ export default function More({ auth, onLogout }: Props) {
             </div>
           </div>
 
+          {/* Invite Link */}
+          <InviteCard auth={auth} />
+
           <motion.button
             onClick={onLogout}
             className="w-full bg-red-500 text-white font-bold py-3 border-2 border-dark rounded-full shadow-brutal-sm text-sm mt-4 flex items-center justify-center gap-2 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#2d2d2d] transition-all"
@@ -422,5 +425,89 @@ function FlightCard({ flight, myId, color = "primary" }: { flight: any; myId: st
         ))}
       </div>
     </motion.div>
+  );
+}
+
+/* Invite Link Card — share invite link with friends */
+function InviteCard({ auth }: { auth: Props["auth"] }) {
+  const [copied, setCopied] = useState(false);
+  const inviteCode = auth.group.invite_code;
+
+  if (!inviteCode) return null;
+
+  const inviteUrl = `https://crew-home.com/join/${inviteCode}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
+      const input = document.createElement("input");
+      input.value = inviteUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "CREW — Tritt unserer Gruppe bei!",
+          text: `Hey! Tritt unserer CREW bei. Nutze diesen Link:`,
+          url: inviteUrl,
+        });
+      } catch {}
+    } else {
+      handleCopy();
+    }
+  };
+
+  return (
+    <div className="card-mint p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-7 h-7 bg-white border-2 border-dark rounded-xl flex items-center justify-center">
+          <IconUsers className="w-3.5 h-3.5 text-dark" />
+        </div>
+        <span className="pill bg-white">Einladen</span>
+      </div>
+      <p className="font-extrabold tracking-tight mb-1">Leute einladen</p>
+      <p className="text-sm text-dark/50 font-medium mb-3">
+        Teile diesen Link, damit andere deiner Crew beitreten können.
+      </p>
+
+      <div className="bg-white border-2 border-dark rounded-xl px-3 py-2.5 flex items-center gap-2 mb-3">
+        <p className="flex-1 text-xs font-bold text-dark/60 truncate select-all">
+          {inviteUrl}
+        </p>
+        <motion.button
+          onClick={handleCopy}
+          className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border-2 border-dark transition-all ${
+            copied ? "bg-accent-mint" : "bg-gold-400"
+          }`}
+          whileTap={{ scale: 0.9 }}
+        >
+          {copied ? "Kopiert!" : "Kopieren"}
+        </motion.button>
+      </div>
+
+      <motion.button
+        onClick={handleShare}
+        className="w-full btn-dark py-3 text-sm flex items-center justify-center gap-2"
+        whileTap={{ scale: 0.98 }}
+      >
+        Invite-Link teilen
+      </motion.button>
+
+      <p className="text-[10px] text-dark/40 font-medium mt-3 text-center">
+        Code: <span className="font-bold">{inviteCode}</span> · Das Passwort separat senden
+      </p>
+    </div>
   );
 }

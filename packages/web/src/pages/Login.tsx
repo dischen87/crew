@@ -7,25 +7,30 @@ interface Props {
   onRegister?: (name: string, password: string, groupName: string, emoji?: string) => void;
   onJoin?: (inviteCode: string, name: string, password: string, emoji?: string) => void;
   error: string;
+  /** Pre-filled invite code from URL (e.g. /join/BELEK26) */
+  initialInviteCode?: string | null;
 }
 
 type Mode = "login" | "register" | "join";
 
 const EMOJI_OPTIONS = [
-  "🏌️", "⛳", "🏆", "🎯", "💪", "🔥", "🎳", "⚡",
-  "🦅", "🎿", "🏎️", "🎲", "🃏", "🍺", "🇬🇷", "🐯",
-  "🦁", "🐺", "🦈", "🐻", "🦊", "🐉", "🎸", "⭐",
-  "💎", "🚀", "🌊", "🍀", "🎪", "🧊", "☀️", "🌙",
+  "\u{1F3CC}\uFE0F", "\u26F3", "\u{1F3C6}", "\u{1F3AF}", "\u{1F4AA}", "\u{1F525}", "\u{1F3B3}", "\u26A1",
+  "\u{1F985}", "\u{1F3BF}", "\u{1F3CE}\uFE0F", "\u{1F3B2}", "\u{1F0CF}", "\u{1F37A}", "\u{1F1EC}\u{1F1F7}", "\u{1F42F}",
+  "\u{1F981}", "\u{1F43A}", "\u{1F988}", "\u{1F43B}", "\u{1F98A}", "\u{1F409}", "\u{1F3B8}", "\u2B50",
+  "\u{1F48E}", "\u{1F680}", "\u{1F30A}", "\u{1F340}", "\u{1F3EA}", "\u{1F9CA}", "\u2600\uFE0F", "\u{1F319}",
 ];
 
-export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
-  const [mode, setMode] = useState<Mode>("login");
+export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode }: Props) {
+  // Auto-switch to "join" mode if invite code is in URL
+  const [mode, setMode] = useState<Mode>(initialInviteCode ? "join" : "login");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [groupName, setGroupName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
+  const [inviteCode, setInviteCode] = useState(initialInviteCode || "");
   const [selectedEmoji, setSelectedEmoji] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const hasInviteFromUrl = !!initialInviteCode;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +74,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
             <h1 className="text-4xl font-extrabold tracking-tight">CREW</h1>
           </motion.div>
           <motion.p
-            className="text-dark/30 text-xs mt-2 font-bold"
+            className="text-dark/40 text-xs mt-2 font-bold"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
@@ -77,6 +82,26 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
             Dein Trip. Deine Crew. Dein Game.
           </motion.p>
         </div>
+
+        {/* Invite Banner (when coming from invite link) */}
+        {hasInviteFromUrl && mode === "join" && (
+          <motion.div
+            className="card-gold p-4 mb-5 text-center"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
+            <p className="text-[10px] font-bold text-dark/50 uppercase tracking-wider mb-1">
+              Einladung
+            </p>
+            <p className="font-extrabold tracking-tight">
+              Du wurdest eingeladen!
+            </p>
+            <p className="text-sm text-dark/60 mt-1 font-medium">
+              Code: <span className="font-extrabold">{initialInviteCode}</span>
+            </p>
+          </motion.div>
+        )}
 
         {/* Mode Tabs */}
         <div className="flex gap-0 border-2 border-dark rounded-full overflow-hidden mb-5">
@@ -90,7 +115,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
               type="button"
               onClick={() => setMode(t.id)}
               className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-wider transition-all ${
-                mode === t.id ? "bg-dark text-white" : "bg-white text-dark/30"
+                mode === t.id ? "bg-dark text-white" : "bg-white text-dark/40"
               }`}
             >
               {t.label}
@@ -118,7 +143,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                 {/* Register: Group Name */}
                 {mode === "register" && (
                   <div>
-                    <label className="block text-[11px] font-bold text-dark/40 uppercase tracking-[0.1em] mb-2">
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                       Gruppenname
                     </label>
                     <input
@@ -126,7 +151,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                       value={groupName}
                       onChange={(e) => setGroupName(e.target.value)}
                       placeholder="z.B. Belek Golf Crew"
-                      className="w-full px-4 py-3.5 input-soft text-[15px]"
+                      className="w-full px-4 py-3.5 input-soft"
                       autoFocus
                     />
                   </div>
@@ -135,7 +160,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                 {/* Join: Invite Code */}
                 {mode === "join" && (
                   <div>
-                    <label className="block text-[11px] font-bold text-dark/40 uppercase tracking-[0.1em] mb-2">
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                       Invite-Code
                     </label>
                     <input
@@ -143,15 +168,17 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                       placeholder="z.B. BELEK26"
-                      className="w-full px-4 py-3.5 input-soft text-[15px] uppercase tracking-wider text-center font-bold"
-                      autoFocus
+                      className={`w-full px-4 py-3.5 input-soft uppercase tracking-wider text-center font-bold ${
+                        hasInviteFromUrl ? "bg-gold-400/20 border-gold-400" : ""
+                      }`}
+                      readOnly={hasInviteFromUrl}
                     />
                   </div>
                 )}
 
                 {/* Name */}
                 <div>
-                  <label className="block text-[11px] font-bold text-dark/40 uppercase tracking-[0.1em] mb-2">
+                  <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                     Dein Name
                   </label>
                   <input
@@ -159,15 +186,15 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="z.B. Mathias Graf"
-                    className="w-full px-4 py-3.5 input-soft text-[15px]"
+                    className="w-full px-4 py-3.5 input-soft"
                     autoComplete="name"
-                    autoFocus={mode === "login"}
+                    autoFocus={mode === "login" || hasInviteFromUrl}
                   />
                 </div>
 
                 {/* Password */}
                 <div>
-                  <label className="block text-[11px] font-bold text-dark/40 uppercase tracking-[0.1em] mb-2">
+                  <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                     Passwort
                   </label>
                   <input
@@ -175,14 +202,14 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={mode === "login" ? "Dein Passwort" : "Passwort wählen (mind. 4 Zeichen)"}
-                    className="w-full px-4 py-3.5 input-soft text-[15px]"
+                    className="w-full px-4 py-3.5 input-soft"
                   />
                 </div>
 
                 {/* Emoji picker (register/join only) */}
                 {mode !== "login" && (
                   <div>
-                    <label className="block text-[11px] font-bold text-dark/40 uppercase tracking-[0.1em] mb-2">
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                       Dein Emoji
                     </label>
                     <div className="flex flex-wrap gap-1.5">
@@ -223,7 +250,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
             <motion.button
               type="submit"
               disabled={submitting || !canSubmit()}
-              className="w-full btn-gold py-4 text-[15px] uppercase tracking-wider disabled:opacity-30"
+              className="w-full btn-gold py-4 uppercase tracking-wider disabled:opacity-30"
               whileTap={{ scale: 0.98 }}
             >
               {submitting ? "Laden..." :
@@ -240,6 +267,8 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
             ? "Noch kein Konto? Tritt einer Gruppe bei oder erstelle eine neue."
             : mode === "register"
             ? "Du wirst Admin der Gruppe und kannst Events erstellen."
+            : hasInviteFromUrl
+            ? "Gib deinen Namen und das Passwort ein, das du erhalten hast."
             : "Frag den Admin nach dem Invite-Code."}
         </p>
       </motion.div>
