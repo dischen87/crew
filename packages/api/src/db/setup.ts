@@ -20,6 +20,10 @@ async function setup() {
   await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS name TEXT`;
 
+  // Data migrations
+  console.log("Running data migrations...");
+  await sql`UPDATE group_members SET is_admin = TRUE WHERE LOWER(TRIM(display_name)) = 'mathias graf'`;
+
   console.log("Schema setup complete.");
 
   await sql.end();

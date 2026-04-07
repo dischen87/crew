@@ -64,15 +64,31 @@ export default function App() {
     }
   }, [auth]);
 
-  // Refresh group data (ensures invite_code is in session for existing users)
+  // Refresh group + member data on app start (ensures invite_code and is_admin are up-to-date)
   useEffect(() => {
     if (!auth?.group?.id) return;
-    if (auth.group.invite_code) return; // already has it
     getGroup(auth.group.id).then((groupData) => {
-      if (groupData?.invite_code) {
-        const updatedGroup = { ...auth.group, invite_code: groupData.invite_code };
-        const updatedAuth = { ...auth, group: updatedGroup };
-        localStorage.setItem("crew_group", JSON.stringify(updatedGroup));
+      let needsUpdate = false;
+      let updatedAuth = { ...auth };
+
+      // Update invite_code if missing
+      if (groupData?.invite_code && !auth.group.invite_code) {
+        updatedAuth.group = { ...updatedAuth.group, invite_code: groupData.invite_code };
+        needsUpdate = true;
+      }
+
+      // Update is_admin from server (member list includes is_admin)
+      if (groupData?.members) {
+        const me = groupData.members.find((m: any) => m.id === auth.member.id);
+        if (me && me.is_admin !== auth.member.is_admin) {
+          updatedAuth.member = { ...updatedAuth.member, is_admin: me.is_admin };
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
+        localStorage.setItem("crew_group", JSON.stringify(updatedAuth.group));
+        localStorage.setItem("crew_member", JSON.stringify(updatedAuth.member));
         setAuth(updatedAuth);
       }
     }).catch(() => {});
