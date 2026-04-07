@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { getMessages, sendMessage } from "../lib/api";
 import { IconSend, IconArrowLeft } from "../components/Icons";
 import { Spinner } from "../components/Motion";
+import Emoji from "../components/Emoji";
 
 interface Props {
   auth: {
@@ -19,6 +20,7 @@ export default function Chat({ auth, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
   const prevCountRef = useRef(0);
 
@@ -61,6 +63,8 @@ export default function Chat({ auth, onClose }: Props) {
       setInput(text);
     }
     setSending(false);
+    // Refocus input after send so keyboard stays open
+    inputRef.current?.focus();
   };
 
   const formatTime = (d: string) =>
@@ -80,49 +84,38 @@ export default function Chat({ auth, onClose }: Props) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[10000] bg-surface-0 bg-grid flex flex-col safe-top safe-bottom"
+      className="fixed inset-0 z-[10000] bg-surface-0 bg-grid flex flex-col"
+      style={{ height: "100dvh" }}
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      {/* Chat Header */}
-      <div className="shrink-0 header-glass border-b-3 border-dark px-5 py-3 flex items-center gap-3">
-        {onClose && (
-          <motion.button
-            onClick={onClose}
-            className="w-9 h-9 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs"
-            whileTap={{ scale: 0.9 }}
-          >
-            <IconArrowLeft className="w-4 h-4 text-dark" />
-          </motion.button>
-        )}
-        <div className="flex-1">
+      {/* Chat Header — always visible */}
+      <div className="shrink-0 header-glass border-b-3 border-dark px-5 py-3 flex items-center gap-3 safe-top">
+        <motion.button
+          onClick={onClose || (() => {})}
+          className="w-10 h-10 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
+          whileTap={{ scale: 0.9 }}
+        >
+          <IconArrowLeft className="w-5 h-5 text-dark" />
+        </motion.button>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-extrabold tracking-tight">Chat</h2>
-          <p className="text-[10px] text-dark/35 font-bold uppercase tracking-wider">
+          <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
             {auth.group.name} · {messages.length} Nachrichten
           </p>
-        </div>
-        <div className="flex -space-x-1.5">
-          {["🔥", "🦅", "⛳"].map((e, i) => (
-            <span key={i} className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center text-xs">
-              {e}
-            </span>
-          ))}
-          <span className="w-7 h-7 bg-gold-400 border-2 border-dark rounded-full flex items-center justify-center text-[9px] font-bold">
-            +7
-          </span>
         </div>
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-1 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-1 min-h-0 overscroll-contain">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
           <>
             {messages.length === 0 && (
-              <p className="text-sm text-dark/25 text-center py-10 font-medium">
+              <p className="text-sm text-dark/40 text-center py-10 font-medium">
                 Noch keine Nachrichten. Schreib die erste!
               </p>
             )}
@@ -141,7 +134,7 @@ export default function Chat({ auth, onClose }: Props) {
                 <div key={msg.id}>
                   {showDateHeader && (
                     <div className="flex justify-center my-5">
-                      <span className="text-[10px] text-dark/25 font-bold uppercase tracking-wider bg-white border-2 border-dark/15 px-4 py-1.5 rounded-full">
+                      <span className="text-[10px] text-dark/40 font-bold uppercase tracking-wider bg-white border-2 border-dark/15 px-4 py-1.5 rounded-full">
                         {formatDateHeader(msg.created_at)}
                       </span>
                     </div>
@@ -156,10 +149,11 @@ export default function Chat({ auth, onClose }: Props) {
                     >
                       <div className="max-w-[90%] px-4 py-2.5 bg-accent-mint/40 border-2 border-dark/10 rounded-2xl text-center">
                         <p className="text-[10px] font-bold text-dark/50 mb-0.5">
-                          {msg.sender_emoji} {msg.sender_name}
+                          <Emoji emoji={msg.sender_emoji || "👤"} size={12} className="mr-1" />
+                          {msg.sender_name}
                         </p>
                         <p className="text-[13px] font-semibold leading-snug">{msg.content}</p>
-                        <p className="text-[10px] text-dark/25 mt-1">{formatTime(msg.created_at)}</p>
+                        <p className="text-[10px] text-dark/40 mt-1">{formatTime(msg.created_at)}</p>
                       </div>
                     </motion.div>
                   ) : (
@@ -170,8 +164,8 @@ export default function Chat({ auth, onClose }: Props) {
                       transition={{ duration: 0.2 }}
                     >
                       {!isMe && (
-                        <span className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center text-xs shrink-0 mr-2 mt-1">
-                          {msg.sender_emoji || "👤"}
+                        <span className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center shrink-0 mr-2 mt-1">
+                          <Emoji emoji={msg.sender_emoji || "👤"} size={16} />
                         </span>
                       )}
                       <div
@@ -187,7 +181,7 @@ export default function Chat({ auth, onClose }: Props) {
                           </p>
                         )}
                         <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
-                        <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/20"}`}>
+                        <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/30"}`}>
                           {formatTime(msg.created_at)}
                         </p>
                       </div>
@@ -201,16 +195,17 @@ export default function Chat({ auth, onClose }: Props) {
       </div>
 
       {/* Input bar */}
-      <form onSubmit={handleSend} className="shrink-0 px-5 py-3 border-t-3 border-dark bg-white">
+      <form onSubmit={handleSend} className="shrink-0 px-5 py-3 border-t-3 border-dark bg-white safe-bottom">
         <div className="flex gap-2.5 max-w-lg mx-auto">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Nachricht..."
-            className="flex-1 px-4 py-3 input-soft text-[14px]"
+            className="flex-1 px-4 py-3 input-soft"
             autoComplete="off"
-            autoFocus
+            enterKeyHint="send"
           />
           <motion.button
             type="submit"

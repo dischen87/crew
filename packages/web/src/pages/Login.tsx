@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Emoji from "../components/Emoji";
 
 interface Props {
   onLogin: (name: string, password: string, emoji?: string) => void;
@@ -197,7 +198,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
                           }`}
                           whileTap={{ scale: 0.9 }}
                         >
-                          {emoji}
+                          <Emoji emoji={emoji} size={20} />
                         </motion.button>
                       ))}
                     </div>
@@ -234,7 +235,7 @@ export default function Login({ onLogin, onRegister, onJoin, error }: Props) {
         </motion.div>
 
         {/* Help text */}
-        <p className="text-center text-[11px] text-dark/20 mt-5 font-medium">
+        <p className="text-center text-[11px] text-dark/40 mt-5 font-medium">
           {mode === "login"
             ? "Noch kein Konto? Tritt einer Gruppe bei oder erstelle eine neue."
             : mode === "register"

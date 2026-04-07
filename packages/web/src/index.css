@@ -178,3 +178,6 @@ html, body { overscroll-behavior: none; }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* Prevent iOS zoom on input focus — minimum 16px */
+input, textarea, select { font-size: 16px; }

@@ -111,7 +111,7 @@ export default function Golf({ auth }: Props) {
           <h2 className="text-5xl font-extrabold tracking-tight leading-[1.05]">
             Golf<span className="text-gold-400">runden.</span>
           </h2>
-          <p className="text-sm text-dark/30 mt-2 font-medium">7 Runden · 5 Plätze · Stableford</p>
+          <p className="text-sm text-dark/50 mt-2 font-medium">7 Runden · 5 Plätze · Stableford</p>
         </div>
       </StaggerItem>
 
@@ -120,11 +120,11 @@ export default function Golf({ auth }: Props) {
         <div className={`card p-5 ${needsHandicap ? "border-gold-400 bg-gold-400/10" : ""}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Dein Handicap</p>
+              <p className="text-[10px] font-bold text-dark/50 uppercase tracking-wider">Dein Handicap</p>
               {handicap != null ? (
                 <p className="text-2xl font-extrabold mt-1">{handicap}</p>
               ) : (
-                <p className="text-sm text-dark/40 mt-1 font-medium">Bitte eintragen, um Scores zu erfassen</p>
+                <p className="text-sm text-dark/50 mt-1 font-medium">Bitte eintragen, um Scores zu erfassen</p>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -157,10 +157,10 @@ export default function Golf({ auth }: Props) {
         <StaggerItem>
           <div className="card p-8 text-center">
             <div className="w-16 h-16 mx-auto bg-accent-mint border-2 border-dark rounded-2xl flex items-center justify-center mb-4">
-              <IconGolf className="w-8 h-8 text-dark/30" />
+              <IconGolf className="w-8 h-8 text-dark/40" />
             </div>
             <p className="font-extrabold text-lg tracking-tight mb-1">Noch keine Runden</p>
-            <p className="text-sm text-dark/30 font-medium">
+            <p className="text-sm text-dark/50 font-medium">
               Die Golfrunden werden hier angezeigt, sobald sie erstellt wurden.
             </p>
           </div>
@@ -178,28 +178,28 @@ export default function Golf({ auth }: Props) {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="pill bg-gold-400">R{index + 1}</span>
-                  <span className="text-xs text-dark/25 font-medium">{formatDate(round.date)}</span>
+                  <span className="text-xs text-dark/40 font-medium">{formatDate(round.date)}</span>
                 </div>
                 <p className="font-extrabold mt-2 tracking-tight text-[15px]">{round.course_name}</p>
-                <div className="flex items-center gap-3 mt-1 text-xs text-dark/30 font-medium">
+                <div className="flex items-center gap-3 mt-1 text-xs text-dark/50 font-medium">
                   <span>Tee {round.tee_time?.slice(0, 5)}</span>
                   <span>Par {round.par_total}</span>
                   <span>{round.format === "stableford" ? "Stableford" : round.format}</span>
                 </div>
                 {round.course_description && (
-                  <p className="text-xs text-dark/30 mt-2 leading-relaxed">{round.course_description}</p>
+                  <p className="text-xs text-dark/50 mt-2 leading-relaxed">{round.course_description}</p>
                 )}
               </div>
               <div className="text-right">
                 {round.players_scored > 0 ? (
                   <span className="pill bg-accent-mint">{round.players_scored} Spieler</span>
                 ) : (
-                  <span className="pill bg-white text-dark/25">Offen</span>
+                  <span className="pill bg-white text-dark/40">Offen</span>
                 )}
               </div>
             </div>
             {round.notes && (
-              <p className="text-xs text-dark/25 mt-3 leading-relaxed border-t-2 border-dark/10 pt-2 font-medium">
+              <p className="text-xs text-dark/40 mt-3 leading-relaxed border-t-2 border-dark/10 pt-2 font-medium">
                 {round.notes}
               </p>
             )}
@@ -209,7 +209,7 @@ export default function Golf({ auth }: Props) {
 
       {needsHandicap && golfData?.rounds?.length > 0 && (
         <StaggerItem>
-          <p className="text-center text-xs text-dark/25 font-medium py-2">
+          <p className="text-center text-xs text-dark/50 font-medium py-2">
             Trage zuerst dein Handicap ein, um Runden zu öffnen.
           </p>
         </StaggerItem>
@@ -305,7 +305,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
           <IconArrowLeft className="w-4 h-4" />
         </motion.button>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-dark/30 font-medium">Golf</span>
+          <span className="text-dark/50 font-medium">Golf</span>
           <span className="text-dark/15">/</span>
           <span className="font-bold">{roundLabel} {round.course_name}</span>
         </div>
@@ -314,11 +314,11 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
       {/* Round Info Card */}
       <div className="card p-5">
         <p className="font-extrabold text-lg tracking-tight">{round.course_name}</p>
-        <p className="text-sm text-dark/30 mt-1 font-medium">
+        <p className="text-sm text-dark/50 mt-1 font-medium">
           {formatDate(round.date)} · Tee {round.tee_time?.slice(0, 5)} · Par {round.par_total}
           {handicap != null && <span> · HCP {handicap}</span>}
         </p>
-        {round.notes && <p className="text-xs text-dark/20 mt-1.5">{round.notes}</p>}
+        {round.notes && <p className="text-xs text-dark/40 mt-1.5">{round.notes}</p>}
       </div>
 
       {/* Stats */}
@@ -329,7 +329,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
           { label: "Stableford", value: myTotalStableford || "–", color: "text-emerald-600" },
         ].map((stat) => (
           <div key={stat.label} className="card p-3 text-center">
-            <p className="text-[10px] text-dark/25 uppercase tracking-wider font-bold">{stat.label}</p>
+            <p className="text-[10px] text-dark/40 uppercase tracking-wider font-bold">{stat.label}</p>
             <p className={`text-xl font-extrabold mt-0.5 ${stat.color}`}>{stat.value}</p>
           </div>
         ))}
@@ -342,7 +342,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
             key={mode}
             onClick={() => setViewMode(mode)}
             className={`flex-1 py-2.5 text-xs font-bold uppercase tracking-wider transition-all ${
-              viewMode === mode ? "bg-dark text-white" : "bg-white text-dark/25"
+              viewMode === mode ? "bg-dark text-white" : "bg-white text-dark/40"
             }`}
           >
             {mode === "my" ? "Meine Scorecard" : "Alle Spieler"}
@@ -359,7 +359,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
             exit={{ opacity: 0 }}
             className="card overflow-hidden"
           >
-            <div className="grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 text-[10px] text-dark/25 font-bold uppercase tracking-wider px-3 py-2.5 border-b-2 border-dark/10">
+            <div className="grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 text-[10px] text-dark/40 font-bold uppercase tracking-wider px-3 py-2.5 border-b-2 border-dark/10">
               <span>Loch</span>
               <span>Info</span>
               <span className="text-center">Par</span>
@@ -392,10 +392,10 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                       {hole.name ? (
                         <span className="text-xs font-semibold text-dark/40 truncate block">{hole.name}</span>
                       ) : (
-                        <span className="text-xs text-dark/20 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
+                        <span className="text-xs text-dark/40 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
                       )}
                     </div>
-                    <span className="text-center text-sm font-bold text-dark/25">{hole.par}</span>
+                    <span className="text-center text-sm font-bold text-dark/40">{hole.par}</span>
 
                     {showInput ? (
                       <>
@@ -443,14 +443,14 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                     ) : (
                       <>
                         <motion.button
-                          className={`text-center text-sm font-bold ${
+                          className={`w-full h-full min-h-[36px] flex items-center justify-center text-sm font-bold rounded-lg active:bg-dark/10 transition-colors ${
                             score.strokes < hole.par ? "text-emerald-600" :
                             score.strokes === hole.par ? "text-dark" :
                             score.strokes === hole.par + 1 ? "text-amber-500" :
                             "text-red-500"
                           }`}
                           onClick={(e) => { e.stopPropagation(); startEdit(hole.hole_number, score.strokes); }}
-                          title="Zum Bearbeiten tippen"
+                          whileTap={{ scale: 0.85 }}
                         >
                           {score.strokes}
                         </motion.button>
@@ -476,7 +476,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                         className="overflow-hidden border-b border-dark/[0.06]"
                       >
                         <div className="px-4 py-3 bg-surface-0">
-                          <div className="flex items-center gap-3 text-xs text-dark/30 font-medium mb-1.5">
+                          <div className="flex items-center gap-3 text-xs text-dark/50 font-medium mb-1.5">
                             <span>{hole.distance_m}m</span>
                             <span>Par {hole.par}</span>
                             <span>HCP {hole.handicap_index}</span>
@@ -500,7 +500,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                 const filtered = myScores.filter(half.filter);
                 return (
                   <div key={half.label} className={`p-3 text-center ${idx === 0 ? "border-r border-dark/[0.06]" : ""}`}>
-                    <p className="text-[10px] text-dark/20 uppercase tracking-wider font-bold">{half.label}</p>
+                    <p className="text-[10px] text-dark/40 uppercase tracking-wider font-bold">{half.label}</p>
                     <p className="text-sm font-bold mt-0.5">
                       {filtered.reduce((sum: number, s: any) => sum + s.strokes, 0) || "–"}{" "}
                       <span className="text-dark/15">·</span>{" "}
@@ -522,7 +522,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
             className="space-y-3"
           >
             {sortedMembers.length === 0 ? (
-              <p className="text-sm text-dark/25 text-center py-8 font-medium">Noch keine Scores eingetragen</p>
+              <p className="text-sm text-dark/40 text-center py-8 font-medium">Noch keine Scores eingetragen</p>
             ) : (
               sortedMembers.map(([id, data], i) => (
                 <motion.div
@@ -545,7 +545,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                       <span className="font-bold text-sm tracking-tight">{data.name}</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="text-dark/20 font-medium">{data.total} Schläge</span>
+                      <span className="text-dark/40 font-medium">{data.total} Schläge</span>
                       <span className="font-bold text-emerald-600">{data.stableford} Pts</span>
                     </div>
                   </div>

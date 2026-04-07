@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { getFlights, getLocations } from "../lib/api";
 import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar } from "../components/Icons";
 import { Spinner } from "../components/Motion";
+import LocationMap from "../components/LocationMap";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
@@ -236,59 +237,54 @@ export default function More({ auth, onLogout }: Props) {
       {/* Location Tab */}
       {tab === "location" && (
         <motion.div className="space-y-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <IconMapPin className="w-4 h-4 text-dark/50" />
-              <h3 className="font-extrabold tracking-tight">Wo sind alle?</h3>
-            </div>
-            <p className="text-sm text-dark/30 mb-4 font-medium">
-              Teile deinen Standort, damit die anderen dich finden.
-            </p>
-            <motion.button
-              onClick={shareLocation}
-              disabled={locationSharing}
-              className="w-full btn-gold disabled:opacity-30 py-3 text-sm flex items-center justify-center gap-2"
-              whileTap={{ scale: 0.98 }}
-            >
-              {locationSharing ? (
-                <><Spinner size={16} className="mr-1" /> Standort wird ermittelt...</>
-              ) : (
-                <>Meinen Standort teilen</>
-              )}
-            </motion.button>
-          </div>
+          {/* Map */}
+          <LocationMap locations={locations} myId={auth.member.id} />
 
-          <div className="space-y-3">
-            {locations.length === 0 ? (
-              <p className="text-sm text-dark/25 text-center py-4 font-medium">Noch keine Standorte geteilt</p>
+          {/* Share Button */}
+          <motion.button
+            onClick={shareLocation}
+            disabled={locationSharing}
+            className="w-full btn-gold disabled:opacity-30 py-3.5 text-sm flex items-center justify-center gap-2"
+            whileTap={{ scale: 0.98 }}
+          >
+            {locationSharing ? (
+              <><Spinner size={16} className="mr-1" /> Standort wird ermittelt...</>
             ) : (
-              locations.map((loc: any, i: number) => (
-                <motion.div
+              <><IconMapPin className="w-4 h-4" /> Meinen Standort teilen</>
+            )}
+          </motion.button>
+
+          {/* Member List */}
+          {locations.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Standorte</p>
+              {locations.map((loc: any, i: number) => (
+                <motion.a
                   key={loc.member_id}
-                  className="card p-4 flex items-center justify-between"
+                  href={`https://maps.google.com/?q=${loc.lat},${loc.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="card p-3.5 flex items-center justify-between block"
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span>{loc.avatar_emoji}</span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 bg-white border-2 border-dark rounded-lg flex items-center justify-center text-sm">
+                      {loc.avatar_emoji || "👤"}
+                    </span>
                     <div>
                       <p className="text-sm font-bold tracking-tight">{loc.display_name}</p>
-                      <p className="text-[10px] text-dark/20 font-medium">{formatLocationTime(loc.updated_at)}</p>
+                      <p className="text-[10px] text-dark/40 font-medium">{formatLocationTime(loc.updated_at)}</p>
                     </div>
                   </div>
-                  <a
-                    href={`https://maps.google.com/?q=${loc.lat},${loc.lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-dark text-xs px-3 py-1.5"
-                  >
-                    Karte →
-                  </a>
-                </motion.div>
-              ))
-            )}
-          </div>
+                  <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">
+                    Maps →
+                  </span>
+                </motion.a>
+              ))}
+            </div>
+          )}
         </motion.div>
       )}
 

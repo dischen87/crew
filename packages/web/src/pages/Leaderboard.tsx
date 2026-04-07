@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { getGolfData } from "../lib/api";
 import { IconCrown, IconTrophy } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
+import Emoji from "../components/Emoji";
 
 interface Props {
   auth: {
@@ -39,7 +40,7 @@ export default function Leaderboard({ auth }: Props) {
           <h2 className="text-5xl font-extrabold tracking-tight leading-[1.05]">
             Leader<span className="text-gold-400">board.</span>
           </h2>
-          <p className="text-sm text-dark/30 mt-2 font-medium">
+          <p className="text-sm text-dark/50 mt-2 font-medium">
             Stableford · {rounds.length} Runden
           </p>
         </div>
@@ -56,13 +57,13 @@ export default function Leaderboard({ auth }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25, duration: 0.6, type: "spring" }}
             >
-              <span className="text-3xl mb-2">{leaderboard[1].avatar_emoji}</span>
+              <Emoji emoji={leaderboard[1].avatar_emoji} size={36} className="mb-2" />
               <div className="bg-gray-200 border-2 border-dark w-24 h-20 rounded-2xl flex flex-col items-center justify-center">
                 <span className="text-2xl font-extrabold text-dark/30">2</span>
               </div>
               <div className="w-24 bg-white border-2 border-t-0 border-dark rounded-b-2xl py-2 text-center">
                 <p className="text-xs font-bold">{leaderboard[1].display_name.split(" ")[0]}</p>
-                <p className="text-[11px] text-dark/30 font-bold tabular-nums mt-0.5">{leaderboard[1].total_points} Pts</p>
+                <p className="text-[11px] text-dark/50 font-bold tabular-nums mt-0.5">{leaderboard[1].total_points} Pts</p>
               </div>
             </motion.div>
 
@@ -79,7 +80,7 @@ export default function Leaderboard({ auth }: Props) {
               >
                 <IconCrown className="w-7 h-7 text-gold-400 mb-1 mx-auto" />
               </motion.div>
-              <span className="text-4xl mb-2">{leaderboard[0].avatar_emoji}</span>
+              <Emoji emoji={leaderboard[0].avatar_emoji} size={44} className="mb-2" />
               <div className="bg-gold-400 border-2 border-dark w-28 h-28 rounded-2xl flex flex-col items-center justify-center shadow-brutal">
                 <span className="text-3xl font-extrabold">1</span>
               </div>
@@ -96,13 +97,13 @@ export default function Leaderboard({ auth }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35, duration: 0.6, type: "spring" }}
             >
-              <span className="text-3xl mb-2">{leaderboard[2].avatar_emoji}</span>
+              <Emoji emoji={leaderboard[2].avatar_emoji} size={36} className="mb-2" />
               <div className="bg-orange-200 border-2 border-dark w-24 h-14 rounded-2xl flex flex-col items-center justify-center">
                 <span className="text-2xl font-extrabold text-orange-700">3</span>
               </div>
               <div className="w-24 bg-white border-2 border-t-0 border-dark rounded-b-2xl py-2 text-center">
                 <p className="text-xs font-bold">{leaderboard[2].display_name.split(" ")[0]}</p>
-                <p className="text-[11px] text-dark/30 font-bold tabular-nums mt-0.5">{leaderboard[2].total_points} Pts</p>
+                <p className="text-[11px] text-dark/50 font-bold tabular-nums mt-0.5">{leaderboard[2].total_points} Pts</p>
               </div>
             </motion.div>
           </div>
@@ -112,7 +113,7 @@ export default function Leaderboard({ auth }: Props) {
       {/* Full list */}
       <StaggerItem>
         <div className="card overflow-hidden">
-          <div className="grid grid-cols-[36px_1fr_60px_60px_50px] gap-1 text-[10px] text-dark/25 font-bold uppercase tracking-[0.1em] px-4 py-3 border-b-2 border-dark/10">
+          <div className="grid grid-cols-[36px_1fr_60px_60px_50px] gap-1 text-[10px] text-dark/40 font-bold uppercase tracking-[0.1em] px-4 py-3 border-b-2 border-dark/10">
             <span>#</span>
             <span>Spieler</span>
             <span className="text-center">Rdn</span>
@@ -126,7 +127,7 @@ export default function Leaderboard({ auth }: Props) {
                 <IconTrophy className="w-7 h-7 text-dark" />
               </div>
               <p className="font-extrabold tracking-tight mb-1">Noch keine Scores</p>
-              <p className="text-sm text-dark/30 font-medium">Sobald Spieler ihre Scores eintragen, erscheint das Ranking hier.</p>
+              <p className="text-sm text-dark/50 font-medium">Sobald Spieler ihre Scores eintragen, erscheint das Ranking hier.</p>
             </div>
           )}
 
@@ -148,11 +149,11 @@ export default function Leaderboard({ auth }: Props) {
                 {i + 1}
               </span>
               <div className="flex items-center gap-2.5 min-w-0">
-                <span className="text-base shrink-0">{player.avatar_emoji}</span>
+                <Emoji emoji={player.avatar_emoji} size={20} className="shrink-0" />
                 <span className="text-sm font-bold truncate text-dark/70 tracking-tight">{player.display_name}</span>
               </div>
-              <span className="text-center text-sm text-dark/20 tabular-nums font-medium">{player.rounds_played}</span>
-              <span className="text-center text-sm text-dark/20 tabular-nums font-medium">{player.total_strokes || "–"}</span>
+              <span className="text-center text-sm text-dark/40 tabular-nums font-medium">{player.rounds_played}</span>
+              <span className="text-center text-sm text-dark/40 tabular-nums font-medium">{player.total_strokes || "–"}</span>
               <span className="text-center text-sm font-bold text-emerald-600 tabular-nums">{player.total_points}</span>
             </motion.div>
           ))}
@@ -176,7 +177,7 @@ export default function Leaderboard({ auth }: Props) {
                     <span className="pill bg-accent-mint">R{i + 1}</span>
                     <span className="text-dark/50 font-bold tracking-tight">{r.course_name}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-dark/20 font-medium">
+                  <div className="flex items-center gap-2 text-xs text-dark/40 font-medium">
                     <span>{new Date(r.date).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}</span>
                     {r.players_scored > 0 && (
                       <span className="text-emerald-600 font-bold">{r.players_scored} Spieler</span>

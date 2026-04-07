@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken } from "./lib/api";
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
+import Emoji from "./components/Emoji";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Golf from "./pages/Golf";
@@ -119,7 +120,7 @@ export default function App() {
             onClick={() => setShowProfile(true)}
             className="flex items-center gap-2 bg-white border-2 border-dark px-3.5 py-1.5 rounded-full shadow-brutal-xs transition-all active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_#2d2d2d]"
           >
-            <span className="text-sm">{auth.member.avatar_emoji}</span>
+            <Emoji emoji={auth.member.avatar_emoji} size={18} />
             <span className="text-[11px] font-bold">
               {auth.member.display_name.split(" ")[0]}
             </span>
