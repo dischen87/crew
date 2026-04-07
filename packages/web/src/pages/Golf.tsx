@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getGolfData, getRoundDetails, submitScore, getHandicap, setHandicap } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 
@@ -52,6 +52,19 @@ export default function Golf({ auth }: Props) {
     setSaving(null);
   }, [selectedRound, auth.event.id]);
 
+  const handleScoreDelete = useCallback(async (hole: number) => {
+    if (!selectedRound) return;
+    setSaving(hole);
+    try {
+      await deleteScore(auth.event.id, { round_id: selectedRound, hole });
+      const data = await getRoundDetails(selectedRound);
+      setRoundDetail(data);
+    } catch (err) {
+      console.error("Score delete error:", err);
+    }
+    setSaving(null);
+  }, [selectedRound, auth.event.id]);
+
   const handleHandicapSave = async () => {
     const val = parseFloat(handicapInput);
     if (isNaN(val) || val < 0 || val > 54) return;
@@ -89,6 +102,7 @@ export default function Golf({ auth }: Props) {
         saving={saving}
         handicap={handicap}
         onSubmitScore={handleScoreSubmit}
+        onDeleteScore={handleScoreDelete}
         onBack={() => { setSelectedRound(null); setRoundDetail(null); getGolfData(auth.event.id).then(setGolfData); }}
       />
     );
@@ -232,10 +246,11 @@ interface ScorecardProps {
   saving: number | null;
   handicap: number | null;
   onSubmitScore: (hole: number, strokes: number) => void;
+  onDeleteScore: (hole: number) => void;
   onBack: () => void;
 }
 
-function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving, handicap, onSubmitScore, onBack }: ScorecardProps) {
+function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving, handicap, onSubmitScore, onDeleteScore, onBack }: ScorecardProps) {
   const [inputValues, setInputValues] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"my" | "all">("my");
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
@@ -429,13 +444,24 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                               OK
                             </motion.button>
                           )}
-                          {isEditing && !inputVal && (
-                            <button
-                              onClick={() => setEditingHole(null)}
-                              className="text-[10px] text-dark/30 font-bold"
-                            >
-                              ✕
-                            </button>
+                          {isEditing && (
+                            <div className="flex items-center gap-1">
+                              {!inputVal && (
+                                <button
+                                  onClick={() => setEditingHole(null)}
+                                  className="text-[10px] text-dark/30 font-bold"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                              <motion.button
+                                onClick={() => { setEditingHole(null); onDeleteScore(hole.hole_number); }}
+                                className="text-[10px] text-red-500 font-bold bg-red-50 border border-red-200 rounded-lg px-2 py-1.5"
+                                whileTap={{ scale: 0.9 }}
+                              >
+                                🗑
+                              </motion.button>
+                            </div>
                           )}
                           {isCurrentlySaving && <Spinner size={18} />}
                         </div>

@@ -146,7 +146,7 @@ auth.post("/join", async (c) => {
         is_admin: member.is_admin,
         avatar_emoji: member.avatar_emoji,
       },
-      group: { id: group.id, name: group.name },
+      group: { id: group.id, name: group.name, invite_code: group.invite_code },
       event: event || null,
     }, 201);
   } catch (err) {
@@ -194,7 +194,7 @@ auth.post("/login", async (c) => {
 
     // Get group
     const [group] = await sql`
-      SELECT id, name FROM groups WHERE id = ${member.group_id}
+      SELECT id, name, invite_code FROM groups WHERE id = ${member.group_id}
     `;
 
     // Get latest event
@@ -212,7 +212,7 @@ auth.post("/login", async (c) => {
         is_admin: member.is_admin,
         avatar_emoji: member.avatar_emoji,
       },
-      group: group || null,
+      group: group ? { id: group.id, name: group.name, invite_code: group.invite_code } : null,
       event: event || null,
     });
   } catch (err) {

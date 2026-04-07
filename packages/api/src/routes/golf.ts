@@ -320,4 +320,38 @@ golf.post("/event/:id/score", async (c) => {
   }
 });
 
+/**
+ * DELETE /event/:id/score — Delete a score for a hole.
+ * Body: { round_id, hole }
+ */
+golf.delete("/event/:id/score", async (c) => {
+  try {
+    const eventId = c.req.param("id");
+    const member = getMember(c);
+    const body = await c.req.json<{ round_id: string; hole: number }>();
+
+    if (!body.round_id || !body.hole) {
+      return c.json({ error: "round_id and hole are required" }, 400);
+    }
+
+    // Verify round belongs to this event
+    const [round] = await sql`
+      SELECT id FROM golf_rounds WHERE id = ${body.round_id} AND event_id = ${eventId}
+    `;
+    if (!round) {
+      return c.json({ error: "Round not found" }, 404);
+    }
+
+    await sql`
+      DELETE FROM golf_scores
+      WHERE round_id = ${body.round_id} AND member_id = ${member.id} AND hole = ${body.hole}
+    `;
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("DELETE /golf/event/:id/score error:", err);
+    return c.json({ error: "Failed to delete score" }, 500);
+  }
+});
+
 export default golf;

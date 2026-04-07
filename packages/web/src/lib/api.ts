@@ -154,6 +154,16 @@ export async function submitScore(eventId: string, data: {
   });
 }
 
+export async function deleteScore(eventId: string, data: {
+  round_id: string;
+  hole: number;
+}) {
+  return apiFetch(`/golf/event/${eventId}/score`, {
+    method: "DELETE",
+    body: JSON.stringify(data),
+  });
+}
+
 // Flights
 export async function getFlights(eventId: string) {
   try {

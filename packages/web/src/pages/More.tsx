@@ -32,7 +32,27 @@ export default function More({ auth, onLogout }: Props) {
       .then((d) => { setFlightData(d); setFlightsLoading(false); })
       .catch(() => setFlightsLoading(false));
     loadHandicap();
-    getLocations(auth.event.id).then(setLocations);
+    getLocations(auth.event.id).then((locs) => {
+      setLocations(locs);
+      // Auto-update location if user has shared before
+      const hasShared = locs.some((l: any) => l.member_id === auth.member.id);
+      if (hasShared && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              await fetch(`${API_BASE}/locations/${auth.event.id}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+              });
+              loadLocations();
+            } catch {}
+          },
+          () => {}, // silently fail
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    });
   }, [auth.event.id]);
 
   const loadHandicap = async () => {
@@ -91,6 +111,7 @@ export default function More({ auth, onLogout }: Props) {
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify(loc),
           });
+          localStorage.setItem("crew_location_shared", "1");
           await loadLocations();
         } catch (err) {
           console.error("Share location failed:", err);

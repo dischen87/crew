@@ -59,7 +59,7 @@ async function seed() {
     { name: "Mathias Inäbnit", emoji: "🎲" },
     { name: "Martin Steffen", emoji: "🃏" },
     { name: "Christof Schaub", emoji: "🍺" },
-    { name: "Mathias Graf", emoji: "🦅" },
+    { name: "Mathias Graf", emoji: "🦅", admin: true },
   ];
 
   // Default password for all seeded members (they can change it later)

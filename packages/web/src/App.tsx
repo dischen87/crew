@@ -13,6 +13,7 @@ import More from "./pages/More";
 import Photos from "./pages/Photos";
 import Profile from "./pages/Profile";
 import InstallPrompt from "./components/InstallPrompt";
+import OnboardingGuide from "./components/OnboardingGuide";
 
 type Tab = "home" | "golf" | "ranking" | "chat" | "photos" | "more";
 
@@ -41,6 +42,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
   const [showProfile, setShowProfile] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [inviteParams] = useState(() => getInviteFromUrl());
 
   useEffect(() => {
@@ -54,6 +56,36 @@ export default function App() {
     }
     setLoading(false);
   }, []);
+
+  // Show onboarding after auth is set (for new users)
+  useEffect(() => {
+    if (auth && !localStorage.getItem("crew_onboarding_done")) {
+      setShowOnboarding(true);
+    }
+  }, [auth]);
+
+  // Auto-update location on app start if user has shared before
+  useEffect(() => {
+    if (!auth || !navigator.geolocation) return;
+    const hasSharedBefore = localStorage.getItem("crew_location_shared");
+    if (!hasSharedBefore) return;
+
+    const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+    const token = localStorage.getItem("crew_token");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await fetch(`${API_BASE}/locations/${auth.event.id}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          });
+        } catch {}
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [auth]);
 
   const handleLogin = useCallback(async (name: string, password: string) => {
     setLoginError("");
@@ -229,6 +261,16 @@ export default function App() {
 
       {/* Install PWA prompt */}
       <InstallPrompt />
+
+      {/* Onboarding Guide (first-time users) */}
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingGuide
+            memberName={auth.member.display_name}
+            onDone={() => setShowOnboarding(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
