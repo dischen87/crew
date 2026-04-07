@@ -532,6 +532,17 @@ CREATE TABLE IF NOT EXISTS agency_events (
 );
 
 -- ============================================
+-- LIVE: Member Locations
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS member_locations (
+  member_id  UUID PRIMARY KEY REFERENCES group_members(id) ON DELETE CASCADE,
+  lat        DOUBLE PRECISION NOT NULL,
+  lng        DOUBLE PRECISION NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 

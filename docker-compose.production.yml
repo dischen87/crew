@@ -1,0 +1,62 @@
+services:
+  app:
+    build: .
+    container_name: crew-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://crew:${DB_PASSWORD}@postgres:5432/crew_production
+      REDIS_URL: redis://redis:6379
+      API_PORT: "3000"
+      EVENT_PASSWORD: ${EVENT_PASSWORD:-BelekGolf4ever}
+    ports:
+      - "127.0.0.1:3100:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crew-internal
+      - caddy-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: crew-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crew
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: crew_production
+    volumes:
+      - crew_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crew -d crew_production"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - crew-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: crew-redis
+    restart: unless-stopped
+    volumes:
+      - crew_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - crew-internal
+
+volumes:
+  crew_pgdata:
+  crew_redis:
+
+networks:
+  crew-internal:
+    driver: bridge
+  caddy-net:
+    external: true

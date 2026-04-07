@@ -8,6 +8,7 @@
     "dev:web": "cd packages/web && bun run dev",
     "db:setup": "cd packages/api && bun run db:setup",
     "db:seed": "cd packages/api && bun run db:seed",
+    "db:seed-belek": "cd packages/api && bun run db:seed-belek",
     "staging:up": "docker compose up -d && sleep 2 && bun run db:setup && bun run db:seed && bun run dev"
   },
   "devDependencies": {

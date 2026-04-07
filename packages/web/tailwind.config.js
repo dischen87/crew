@@ -4,24 +4,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy: {
-          900: "#0f172a",
-          800: "#1e293b",
-          700: "#334155",
+        surface: {
+          0: "#f0ddf5",
+          1: "#e8d3f0",
+          2: "#dfc9ea",
         },
-        electric: {
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
+        primary: {
+          50: "#eef2ff",
+          100: "#e0e7ff",
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
         },
         accent: {
-          400: "#fb923c",
-          500: "#f97316",
-          600: "#ea580c",
+          mint: "#c2e8d5",
+          "mint-dark": "#a3d4be",
+        },
+        dark: "#2d2d2d",
+        gold: {
+          300: "#fde68a",
+          400: "#f5d565",
+          500: "#ebc94e",
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["DM Sans", "system-ui", "sans-serif"],
+      },
+      borderRadius: {
+        "2xl": "16px",
+        "3xl": "20px",
+        "4xl": "24px",
+      },
+      boxShadow: {
+        brutal: "4px 4px 0px 0px #2d2d2d",
+        "brutal-sm": "3px 3px 0px 0px #2d2d2d",
+        "brutal-xs": "2px 2px 0px 0px #2d2d2d",
       },
     },
   },

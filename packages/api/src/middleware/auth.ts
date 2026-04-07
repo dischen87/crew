@@ -12,12 +12,20 @@ export interface Member {
 }
 
 /**
- * Staging auth middleware: reads X-Member-ID header and attaches member to context.
+ * Auth middleware: accepts Authorization: Bearer <member_id> or X-Member-ID header.
  */
 export async function authMiddleware(c: Context, next: Next) {
-  const memberId = c.req.header("X-Member-ID");
+  let memberId = c.req.header("X-Member-ID");
+
   if (!memberId) {
-    return c.json({ error: "Missing X-Member-ID header" }, 401);
+    const authHeader = c.req.header("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      memberId = authHeader.slice(7);
+    }
+  }
+
+  if (!memberId) {
+    return c.json({ error: "Authentication required" }, 401);
   }
 
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
