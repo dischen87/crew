@@ -74,10 +74,24 @@ async function apiFetch<T = any>(path: string, options?: RequestInit): Promise<T
 }
 
 // Auth
-export async function login(name: string, password: string, emoji?: string) {
+export async function login(name: string, password: string) {
   return apiFetch("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ name, password, emoji }),
+    body: JSON.stringify({ name, password }),
+  });
+}
+
+export async function register(name: string, password: string, groupName: string, emoji?: string) {
+  return apiFetch("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ name, password, group_name: groupName, emoji }),
+  });
+}
+
+export async function joinGroup(inviteCode: string, name: string, password: string, emoji?: string) {
+  return apiFetch("/auth/join", {
+    method: "POST",
+    body: JSON.stringify({ invite_code: inviteCode, name, password, emoji }),
   });
 }
 

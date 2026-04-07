@@ -16,13 +16,14 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 
 CREATE TABLE IF NOT EXISTS group_members (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  group_id     UUID REFERENCES groups(id) ON DELETE CASCADE,
-  display_name TEXT NOT NULL,
-  avatar_url   TEXT,
-  avatar_emoji TEXT,
-  is_admin     BOOLEAN DEFAULT FALSE,
-  joined_at    TIMESTAMPTZ DEFAULT NOW()
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id      UUID REFERENCES groups(id) ON DELETE CASCADE,
+  display_name  TEXT NOT NULL,
+  password_hash TEXT,
+  avatar_url    TEXT,
+  avatar_emoji  TEXT,
+  is_admin      BOOLEAN DEFAULT FALSE,
+  joined_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================

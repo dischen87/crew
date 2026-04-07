@@ -21,7 +21,7 @@ jobs:
             git pull origin main
             docker compose -f docker-compose.production.yml --env-file .env.production build --no-cache
             docker compose -f docker-compose.production.yml --env-file .env.production up -d
-            # Run schema + seed on first deploy (safe with IF NOT EXISTS)
+            # Run schema migrations (safe with IF NOT EXISTS / ADD COLUMN IF NOT EXISTS)
             sleep 3
             docker exec crew-app bun run src/db/setup.ts
-            echo "Crew deployed successfully"
+            echo "Crew deployed successfully to crew.diisi.dev"

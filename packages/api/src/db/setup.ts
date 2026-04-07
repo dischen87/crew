@@ -9,6 +9,12 @@ async function setup() {
 
   console.log("Running schema setup...");
   await sql.unsafe(schemaSql);
+
+  // Migrations: add columns that may not exist yet
+  console.log("Running migrations...");
+  await sql`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS password_hash TEXT`;
+  await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS notes TEXT`;
+
   console.log("Schema setup complete.");
 
   await sql.end();

@@ -12,6 +12,7 @@ import media from "./routes/media";
 import master from "./routes/master";
 import flights from "./routes/flights";
 import locations from "./routes/locations";
+import admin from "./routes/admin";
 
 const app = new Hono();
 
@@ -36,6 +37,7 @@ v2.route("/media", media);
 v2.route("/master", master);
 v2.route("/flights", flights);
 v2.route("/locations", locations);
+v2.route("/admin", admin);
 
 app.route("/v2", v2);
 

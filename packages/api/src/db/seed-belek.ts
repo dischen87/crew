@@ -62,11 +62,15 @@ async function seed() {
     { name: "Mathias Graf", emoji: "🦅" },
   ];
 
+  // Default password for all seeded members (they can change it later)
+  const defaultPassword = process.env.EVENT_PASSWORD || "BelekGolf4ever";
+  const passwordHash = await Bun.password.hash(defaultPassword, { algorithm: "bcrypt", cost: 10 });
+
   const members: Record<string, string> = {};
   for (const m of memberData) {
     const [row] = await sql`
-      INSERT INTO group_members (group_id, display_name, avatar_emoji, is_admin)
-      VALUES (${group.id}, ${m.name}, ${m.emoji}, ${m.admin ?? false})
+      INSERT INTO group_members (group_id, display_name, password_hash, avatar_emoji, is_admin)
+      VALUES (${group.id}, ${m.name}, ${passwordHash}, ${m.emoji}, ${m.admin ?? false})
       RETURNING id
     `;
     members[m.name] = row.id;

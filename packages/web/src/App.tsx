@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { login, storeAuth, getStoredAuth, clearToken } from "./lib/api";
+import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken } from "./lib/api";
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
 import Login from "./pages/Login";
@@ -30,20 +30,42 @@ export default function App() {
 
   useEffect(() => {
     const stored = getStoredAuth();
-    if (stored?.token && stored?.member && stored?.event) {
+    if (stored?.token && stored?.member) {
       setAuth(stored as AuthData);
     }
     setLoading(false);
   }, []);
 
-  const handleLogin = useCallback(async (name: string, password: string, emoji?: string) => {
+  const handleLogin = useCallback(async (name: string, password: string) => {
     setLoginError("");
     try {
-      const data = await login(name, password, emoji);
+      const data = await login(name, password);
       storeAuth(data);
       setAuth(data);
     } catch (err: any) {
       setLoginError(err.message || "Login fehlgeschlagen");
+    }
+  }, []);
+
+  const handleRegister = useCallback(async (name: string, password: string, groupName: string, emoji?: string) => {
+    setLoginError("");
+    try {
+      const data = await register(name, password, groupName, emoji);
+      storeAuth(data);
+      setAuth(data);
+    } catch (err: any) {
+      setLoginError(err.message || "Registrierung fehlgeschlagen");
+    }
+  }, []);
+
+  const handleJoin = useCallback(async (inviteCode: string, name: string, password: string, emoji?: string) => {
+    setLoginError("");
+    try {
+      const data = await joinGroup(inviteCode, name, password, emoji);
+      storeAuth(data);
+      setAuth(data);
+    } catch (err: any) {
+      setLoginError(err.message || "Beitritt fehlgeschlagen");
     }
   }, []);
 
@@ -62,7 +84,7 @@ export default function App() {
   }
 
   if (!auth) {
-    return <Login onLogin={handleLogin} error={loginError} />;
+    return <Login onLogin={handleLogin} onRegister={handleRegister} onJoin={handleJoin} error={loginError} />;
   }
 
   const renderTab = () => {
