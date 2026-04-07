@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken } from "./lib/api";
+import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken, getGroup } from "./lib/api";
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
 import Emoji from "./components/Emoji";
@@ -63,6 +63,20 @@ export default function App() {
       setShowOnboarding(true);
     }
   }, [auth]);
+
+  // Refresh group data (ensures invite_code is in session for existing users)
+  useEffect(() => {
+    if (!auth?.group?.id) return;
+    if (auth.group.invite_code) return; // already has it
+    getGroup(auth.group.id).then((groupData) => {
+      if (groupData?.invite_code) {
+        const updatedGroup = { ...auth.group, invite_code: groupData.invite_code };
+        const updatedAuth = { ...auth, group: updatedGroup };
+        localStorage.setItem("crew_group", JSON.stringify(updatedGroup));
+        setAuth(updatedAuth);
+      }
+    }).catch(() => {});
+  }, [auth?.group?.id]);
 
   // Auto-update location on app start if user has shared before
   useEffect(() => {

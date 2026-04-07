@@ -251,10 +251,8 @@ interface ScorecardProps {
 }
 
 function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving, handicap, onSubmitScore, onDeleteScore, onBack }: ScorecardProps) {
-  const [inputValues, setInputValues] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"my" | "all">("my");
-  const [expandedHole, setExpandedHole] = useState<number | null>(null);
-  const [editingHole, setEditingHole] = useState<number | null>(null);
+  const [activeHole, setActiveHole] = useState<number | null>(null);
 
   const myScores = scores.filter((s: any) => s.member_id === memberId);
   const myScoreMap: Record<number, any> = {};
@@ -264,21 +262,18 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
   const myTotalStableford = myScores.reduce((sum: number, s: any) => sum + s.stableford, 0);
   const holesPlayed = myScores.length;
 
-  const handleStrokeInput = (hole: number, value: string) => {
-    setInputValues((prev) => ({ ...prev, [hole]: value }));
+  const handleQuickScore = (hole: number, strokes: number) => {
+    onSubmitScore(hole, strokes);
+    setActiveHole(null);
   };
 
-  const handleStrokeSubmit = (hole: number) => {
-    const val = parseInt(inputValues[hole] || "");
-    if (isNaN(val) || val < 1 || val > 15) return;
-    onSubmitScore(hole, val);
-    setInputValues((prev) => ({ ...prev, [hole]: "" }));
-    setEditingHole(null);
+  const handleDelete = (hole: number) => {
+    onDeleteScore(hole);
+    setActiveHole(null);
   };
 
-  const startEdit = (hole: number, currentStrokes: number) => {
-    setEditingHole(hole);
-    setInputValues((prev) => ({ ...prev, [hole]: String(currentStrokes) }));
+  const toggleHole = (holeNumber: number) => {
+    setActiveHole(activeHole === holeNumber ? null : holeNumber);
   };
 
   const formatDate = (d: string) => {
@@ -385,101 +380,45 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
             {holes.map((hole: any, i: number) => {
               const score = myScoreMap[hole.hole_number];
               const isCurrentlySaving = saving === hole.hole_number;
-              const isEditing = editingHole === hole.hole_number;
-              const inputVal = inputValues[hole.hole_number] || "";
-              const isExpanded = expandedHole === hole.hole_number;
-              const hasDetail = hole.description || hole.name;
-              const showInput = !score || isEditing;
+              const isActive = activeHole === hole.hole_number;
+
+              // Score range centered on par (par-2 to par+4)
+              const par = hole.par;
+              const quickScores = Array.from({ length: 8 }, (_, j) => Math.max(1, par - 2) + j);
 
               return (
                 <div key={hole.hole_number}>
+                  {/* Hole row */}
                   <motion.div
-                    className={`grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06] ${
-                      score && !isEditing ? "" : "bg-gold-400/10"
-                    } ${hasDetail ? "cursor-pointer" : ""}`}
+                    className={`grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06] cursor-pointer ${
+                      isActive ? "bg-gold-400/15" : score ? "" : "bg-gold-400/5"
+                    }`}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.02, duration: 0.2 }}
-                    onClick={() => hasDetail && setExpandedHole(isExpanded ? null : hole.hole_number)}
+                    onClick={() => toggleHole(hole.hole_number)}
                   >
-                    <span className="text-sm font-bold text-dark/40">{hole.hole_number}</span>
+                    <span className={`text-sm font-bold ${isActive ? "text-dark" : "text-dark/40"}`}>{hole.hole_number}</span>
                     <div className="min-w-0">
-                      {hole.name ? (
-                        <span className="text-xs font-semibold text-dark/40 truncate block">{hole.name}</span>
-                      ) : (
-                        <span className="text-xs text-dark/40 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
-                      )}
+                      <span className="text-xs text-dark/40 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
                     </div>
-                    <span className="text-center text-sm font-bold text-dark/40">{hole.par}</span>
+                    <span className="text-center text-sm font-bold text-dark/40">{par}</span>
 
-                    {showInput ? (
+                    {isCurrentlySaving ? (
                       <>
-                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min="1"
-                            max="15"
-                            value={inputVal}
-                            onChange={(e) => handleStrokeInput(hole.hole_number, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleStrokeSubmit(hole.hole_number);
-                              if (e.key === "Escape") setEditingHole(null);
-                            }}
-                            placeholder="–"
-                            className="w-12 text-center input-soft py-1.5 text-sm"
-                            disabled={isCurrentlySaving}
-                            autoFocus={isEditing}
-                          />
-                        </div>
-                        <div className="flex justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          {inputVal && !isCurrentlySaving && (
-                            <motion.button
-                              onClick={() => handleStrokeSubmit(hole.hole_number)}
-                              className="btn-dark text-xs px-3 py-1.5"
-                              initial={{ scale: 0.9, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              whileTap={{ scale: 0.9 }}
-                            >
-                              OK
-                            </motion.button>
-                          )}
-                          {isEditing && (
-                            <div className="flex items-center gap-1">
-                              {!inputVal && (
-                                <button
-                                  onClick={() => setEditingHole(null)}
-                                  className="text-[10px] text-dark/30 font-bold"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                              <motion.button
-                                onClick={() => { setEditingHole(null); onDeleteScore(hole.hole_number); }}
-                                className="text-[10px] text-red-500 font-bold bg-red-50 border border-red-200 rounded-lg px-2 py-1.5"
-                                whileTap={{ scale: 0.9 }}
-                              >
-                                🗑
-                              </motion.button>
-                            </div>
-                          )}
-                          {isCurrentlySaving && <Spinner size={18} />}
-                        </div>
+                        <div className="flex justify-center"><Spinner size={18} /></div>
+                        <span className="text-center text-xs text-dark/20">...</span>
                       </>
-                    ) : (
+                    ) : score ? (
                       <>
-                        <motion.button
-                          className={`w-full h-full min-h-[36px] flex items-center justify-center text-sm font-bold rounded-lg active:bg-dark/10 transition-colors ${
-                            score.strokes < hole.par ? "text-emerald-600" :
-                            score.strokes === hole.par ? "text-dark" :
-                            score.strokes === hole.par + 1 ? "text-amber-500" :
-                            "text-red-500"
-                          }`}
-                          onClick={(e) => { e.stopPropagation(); startEdit(hole.hole_number, score.strokes); }}
-                          whileTap={{ scale: 0.85 }}
-                        >
+                        <span className={`text-center text-sm font-bold ${
+                          score.strokes < par ? "text-emerald-600" :
+                          score.strokes === par ? "text-dark" :
+                          score.strokes === par + 1 ? "text-amber-500" :
+                          "text-red-500"
+                        }`}>
                           {score.strokes}
-                        </motion.button>
+                        </span>
                         <span className={`text-center text-sm font-bold ${
                           score.stableford >= 3 ? "text-emerald-600" :
                           score.stableford === 2 ? "text-dark" :
@@ -489,26 +428,76 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                           {score.stableford}
                         </span>
                       </>
+                    ) : (
+                      <>
+                        <span className="text-center text-sm text-dark/15 font-bold">–</span>
+                        <span className="text-center text-sm text-dark/15 font-bold">–</span>
+                      </>
                     )}
                   </motion.div>
 
+                  {/* Score picker panel */}
                   <AnimatePresence>
-                    {isExpanded && (
+                    {isActive && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2 }}
-                        className="overflow-hidden border-b border-dark/[0.06]"
+                        className="overflow-hidden border-b-2 border-gold-400/30"
                       >
-                        <div className="px-4 py-3 bg-surface-0">
-                          <div className="flex items-center gap-3 text-xs text-dark/50 font-medium mb-1.5">
+                        <div className="px-3 py-3 bg-gold-400/10">
+                          {/* Hole info */}
+                          <div className="flex items-center gap-2 mb-3 text-xs text-dark/50 font-medium">
+                            {hole.name && <span className="font-bold text-dark/70">{hole.name}</span>}
                             <span>{hole.distance_m}m</span>
-                            <span>Par {hole.par}</span>
+                            <span>Par {par}</span>
                             <span>HCP {hole.handicap_index}</span>
                           </div>
                           {hole.description && (
-                            <p className="text-[13px] text-dark/60 leading-relaxed">{hole.description}</p>
+                            <p className="text-[12px] text-dark/50 leading-relaxed mb-3">{hole.description}</p>
+                          )}
+
+                          {/* Quick score buttons */}
+                          <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider mb-2">Schläge wählen</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {quickScores.map((strokes) => {
+                              const diff = strokes - par;
+                              const isSelected = score?.strokes === strokes;
+                              const label = diff === -2 ? "Eagle" : diff === -1 ? "Birdie" : diff === 0 ? "Par" : diff === 1 ? "Bogey" : diff === 2 ? "D.Bogey" : `+${diff}`;
+                              return (
+                                <motion.button
+                                  key={strokes}
+                                  onClick={() => handleQuickScore(hole.hole_number, strokes)}
+                                  className={`flex flex-col items-center justify-center min-w-[44px] h-[52px] rounded-xl border-2 font-bold transition-all ${
+                                    isSelected
+                                      ? "border-dark bg-dark text-white shadow-brutal-xs"
+                                      : diff < 0
+                                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                      : diff === 0
+                                      ? "border-dark/20 bg-white text-dark"
+                                      : diff === 1
+                                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                                      : "border-red-300 bg-red-50 text-red-600"
+                                  }`}
+                                  whileTap={{ scale: 0.9 }}
+                                >
+                                  <span className="text-base leading-none">{strokes}</span>
+                                  <span className="text-[8px] leading-none mt-0.5 opacity-60">{label}</span>
+                                </motion.button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Delete button (only if score exists) */}
+                          {score && (
+                            <motion.button
+                              onClick={() => handleDelete(hole.hole_number)}
+                              className="mt-3 text-[11px] text-red-500 font-bold flex items-center gap-1"
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              🗑 Score löschen
+                            </motion.button>
                           )}
                         </div>
                       </motion.div>
