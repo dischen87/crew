@@ -14,6 +14,11 @@ async function setup() {
   console.log("Running migrations...");
   await sql`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS notes TEXT`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS description TEXT`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS image_url TEXT`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS website TEXT`;
+  await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS description TEXT`;
+  await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS name TEXT`;
 
   console.log("Schema setup complete.");
 

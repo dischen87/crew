@@ -127,6 +127,10 @@ export async function getRoundDetails(roundId: string) {
   }
 }
 
+export async function getCourseDetail(courseId: string) {
+  return apiFetch(`/golf/course/${courseId}`);
+}
+
 export async function submitScore(eventId: string, data: {
   round_id: string;
   hole: number;

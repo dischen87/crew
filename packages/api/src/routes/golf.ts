@@ -39,7 +39,8 @@ golf.get("/event/:id", async (c) => {
 
     const rounds = await sql`
       SELECT r.id, r.course_id, r.format, r.date, r.tee_time, r.notes,
-             c.name AS course_name, c.par_total, c.location AS course_location
+             c.name AS course_name, c.par_total, c.location AS course_location,
+             c.description AS course_description, c.website AS course_website
       FROM golf_rounds r
       LEFT JOIN golf_courses c ON c.id = r.course_id
       WHERE r.event_id = ${eventId}
@@ -106,7 +107,7 @@ golf.get("/round/:id", async (c) => {
 
     // Get hole data for the course
     const holes = await sql`
-      SELECT hole_number, par, distance_m, handicap_index
+      SELECT hole_number, par, distance_m, handicap_index, name, description
       FROM golf_course_holes
       WHERE course_id = ${round.course_id}
       ORDER BY hole_number ASC
@@ -142,6 +143,32 @@ golf.get("/round/:id", async (c) => {
   } catch (err) {
     console.error("GET /golf/round/:id error:", err);
     return c.json({ error: "Failed to fetch round details" }, 500);
+  }
+});
+
+/**
+ * GET /course/:id — Course detail with description and all holes.
+ */
+golf.get("/course/:id", async (c) => {
+  try {
+    const courseId = c.req.param("id");
+    const [course] = await sql`
+      SELECT id, name, location, country, total_holes, par_total, course_rating,
+             slope_rating, length_meters, description, website
+      FROM golf_courses WHERE id = ${courseId}
+    `;
+    if (!course) return c.json({ error: "Course not found" }, 404);
+
+    const holes = await sql`
+      SELECT hole_number, par, distance_m, handicap_index, name, description
+      FROM golf_course_holes WHERE course_id = ${courseId}
+      ORDER BY hole_number ASC
+    `;
+
+    return c.json({ course, holes });
+  } catch (err) {
+    console.error("GET /golf/course/:id error:", err);
+    return c.json({ error: "Failed to fetch course" }, 500);
   }
 });
 

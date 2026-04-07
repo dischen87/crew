@@ -118,6 +118,9 @@ export default function Golf({ auth }: Props) {
                   <span>Par {round.par_total}</span>
                   <span>{round.format === "stableford" ? "Stableford" : round.format}</span>
                 </div>
+                {round.course_description && (
+                  <p className="text-xs text-dark/30 mt-2 leading-relaxed">{round.course_description}</p>
+                )}
               </div>
               <div className="text-right">
                 {round.players_scored > 0 ? (
@@ -157,6 +160,7 @@ interface ScorecardProps {
 function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitScore, onBack }: ScorecardProps) {
   const [inputValues, setInputValues] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"my" | "all">("my");
+  const [expandedHole, setExpandedHole] = useState<number | null>(null);
 
   const myScores = scores.filter((s: any) => s.member_id === memberId);
   const myScoreMap: Record<number, any> = {};
@@ -269,77 +273,110 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
               const score = myScoreMap[hole.hole_number];
               const isCurrentlySaving = saving === hole.hole_number;
               const inputVal = inputValues[hole.hole_number] || "";
+              const isExpanded = expandedHole === hole.hole_number;
+              const hasDetail = hole.description || hole.name;
 
               return (
-                <motion.div
-                  key={hole.hole_number}
-                  className={`grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06] ${
-                    score ? "" : "bg-gold-400/10"
-                  }`}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.02, duration: 0.2 }}
-                >
-                  <span className="text-sm font-bold text-dark/40">{hole.hole_number}</span>
-                  <span className="text-xs text-dark/20 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
-                  <span className="text-center text-sm font-bold text-dark/25">{hole.par}</span>
+                <div key={hole.hole_number}>
+                  <motion.div
+                    className={`grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06] ${
+                      score ? "" : "bg-gold-400/10"
+                    } ${hasDetail ? "cursor-pointer" : ""}`}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.02, duration: 0.2 }}
+                    onClick={() => hasDetail && setExpandedHole(isExpanded ? null : hole.hole_number)}
+                  >
+                    <span className="text-sm font-bold text-dark/40">{hole.hole_number}</span>
+                    <div className="min-w-0">
+                      {hole.name ? (
+                        <span className="text-xs font-semibold text-dark/40 truncate block">{hole.name}</span>
+                      ) : (
+                        <span className="text-xs text-dark/20 font-medium">{hole.distance_m}m · HCP {hole.handicap_index}</span>
+                      )}
+                    </div>
+                    <span className="text-center text-sm font-bold text-dark/25">{hole.par}</span>
 
-                  {score ? (
-                    <>
-                      <motion.span
-                        className={`text-center text-sm font-bold ${
-                          score.strokes < hole.par ? "text-emerald-600" :
-                          score.strokes === hole.par ? "text-dark" :
-                          score.strokes === hole.par + 1 ? "text-amber-500" :
+                    {score ? (
+                      <>
+                        <motion.span
+                          className={`text-center text-sm font-bold ${
+                            score.strokes < hole.par ? "text-emerald-600" :
+                            score.strokes === hole.par ? "text-dark" :
+                            score.strokes === hole.par + 1 ? "text-amber-500" :
+                            "text-red-500"
+                          }`}
+                          initial={{ scale: 1.3 }}
+                          animate={{ scale: 1 }}
+                        >
+                          {score.strokes}
+                        </motion.span>
+                        <span className={`text-center text-sm font-bold ${
+                          score.stableford >= 3 ? "text-emerald-600" :
+                          score.stableford === 2 ? "text-dark" :
+                          score.stableford === 1 ? "text-amber-500" :
                           "text-red-500"
-                        }`}
-                        initial={{ scale: 1.3 }}
-                        animate={{ scale: 1 }}
+                        }`}>
+                          {score.stableford}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            max="15"
+                            value={inputVal}
+                            onChange={(e) => handleStrokeInput(hole.hole_number, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleStrokeSubmit(hole.hole_number); }}
+                            placeholder="–"
+                            className="w-12 text-center input-soft py-1.5 text-sm"
+                            disabled={isCurrentlySaving}
+                          />
+                        </div>
+                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                          {inputVal && !isCurrentlySaving && (
+                            <motion.button
+                              onClick={() => handleStrokeSubmit(hole.hole_number)}
+                              className="btn-dark text-xs px-3 py-1.5"
+                              initial={{ scale: 0.9, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              OK
+                            </motion.button>
+                          )}
+                          {isCurrentlySaving && <Spinner size={18} />}
+                        </div>
+                      </>
+                    )}
+                  </motion.div>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden border-b border-dark/[0.06]"
                       >
-                        {score.strokes}
-                      </motion.span>
-                      <span className={`text-center text-sm font-bold ${
-                        score.stableford >= 3 ? "text-emerald-600" :
-                        score.stableford === 2 ? "text-dark" :
-                        score.stableford === 1 ? "text-amber-500" :
-                        "text-red-500"
-                      }`}>
-                        {score.stableford}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-center">
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
-                          max="15"
-                          value={inputVal}
-                          onChange={(e) => handleStrokeInput(hole.hole_number, e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleStrokeSubmit(hole.hole_number); }}
-                          placeholder="–"
-                          className="w-12 text-center input-soft py-1.5 text-sm"
-                          disabled={isCurrentlySaving}
-                        />
-                      </div>
-                      <div className="flex justify-center">
-                        {inputVal && !isCurrentlySaving && (
-                          <motion.button
-                            onClick={() => handleStrokeSubmit(hole.hole_number)}
-                            className="btn-dark text-xs px-3 py-1.5"
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            whileTap={{ scale: 0.9 }}
-                          >
-                            OK
-                          </motion.button>
-                        )}
-                        {isCurrentlySaving && <Spinner size={18} />}
-                      </div>
-                    </>
-                  )}
-                </motion.div>
+                        <div className="px-4 py-3 bg-surface-0">
+                          <div className="flex items-center gap-3 text-xs text-dark/30 font-medium mb-1.5">
+                            <span>{hole.distance_m}m</span>
+                            <span>Par {hole.par}</span>
+                            <span>HCP {hole.handicap_index}</span>
+                          </div>
+                          {hole.description && (
+                            <p className="text-[13px] text-dark/60 leading-relaxed">{hole.description}</p>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               );
             })}
 
