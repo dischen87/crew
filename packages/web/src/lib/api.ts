@@ -131,6 +131,17 @@ export async function getCourseDetail(courseId: string) {
   return apiFetch(`/golf/course/${courseId}`);
 }
 
+export async function getHandicap(eventId: string) {
+  return apiFetch(`/golf/handicap/${eventId}`);
+}
+
+export async function setHandicap(eventId: string, handicap: number) {
+  return apiFetch(`/golf/handicap/${eventId}`, {
+    method: "POST",
+    body: JSON.stringify({ handicap }),
+  });
+}
+
 export async function submitScore(eventId: string, data: {
   round_id: string;
   hole: number;

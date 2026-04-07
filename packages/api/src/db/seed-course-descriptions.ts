@@ -13,7 +13,7 @@ const courseDescriptions: Record<string, { description: string; website: string 
     description: "Links-Platz direkt am Mittelmeer, designed von European Golf Design. Buggy-inklusive Service. Bekannt für Küstenwinde und spektakuläre Meerblicke. Der einzige Platz in der Türkei mit Flutlichtanlage.",
     website: "https://www.cullinanlinksgolfclub.com",
   },
-  "Cornelia Faldo Course": {
+  "Cornelia Faldo Golf Course": {
     description: "Von Sir Nick Faldo entworfener Platz im Cornelia Diamond Resort. Drei 9-Loch-Schleifen (King, Queen, Prince) ermöglichen verschiedene 18-Loch-Kombinationen. Breite Fairways mit subtilen Geländebewegungen.",
     website: "https://www.corneliaresort.com/EN/Cornelia-Golf-Club/faldo-course",
   },
@@ -21,7 +21,7 @@ const courseDescriptions: Record<string, { description: string; website: string 
     description: "Exklusiver Platz eingebettet in duftende Pinienwälder. Technisch anspruchsvolle Fairways mit starken Höhenunterschieden. Das Signature Hole bietet einen eindrucksvollen Blick über das Taurus-Gebirge.",
     website: "https://www.kayapalazzohotels.com/en/kaya-palazzo-golf-club-2/",
   },
-  "Carya Golf Club": {
+  "Carya Golf Course": {
     description: "Im Regnum Resort gelegen, bekannt für seine einzigartigen Heide-Landschaften und natürlichen Pinienwälder. Jedes Loch hat einen eigenen Namen und Charakter. Strategisches Design mit mehreren Risk-Reward-Situationen.",
     website: "https://www.caryagolf.com",
   },
@@ -48,7 +48,7 @@ const holeDescriptions: Record<string, Record<number, { name?: string; descripti
     17: { description: "Gefälle, Bunker und Pinien erzeugen mehrere Hindernisse. Präzision vor Länge." },
     18: { description: "Das Clubhaus ist in Sicht, aber ein langes Fairway liegt dazwischen. Tiefe Bunker links vermeiden für ein Birdie-Finish!" },
   },
-  "Carya Golf Club": {
+  "Carya Golf Course": {
     1: { name: "Out", description: "Breites Fairway zum Auftakt. Mitte anvisieren für die ideale Approach-Linie zum bunkerlosen Green. Birdie-Chance!" },
     2: { name: "The Old Nursery", description: "Trügerisches Par 3 — das Green fällt vorne ab. Auf keinen Fall zu kurz! Gute Schlägerwahl ist entscheidend." },
     3: { name: "Dire Straits", description: "Strategische Wahl zwischen zwei Fairway-Routen: Rechts ist sicherer, links belohnt Mut mit besserem Winkel." },
@@ -68,7 +68,7 @@ const holeDescriptions: Record<string, Record<number, { name?: string; descripti
     17: { name: "Javelin", description: "Gerader Schlag, aber das Green hat Gefälle in alle Richtungen. Wasser links und hohe Bäume beachten." },
     18: { name: "Home", description: "Finalloch: Rechte Fairway-Seite bevorzugen, um das Wasser zu vermeiden. Approach zum erhöhten Green zwischen alten Pinien." },
   },
-  "Cornelia Faldo Course": {
+  "Cornelia Faldo Golf Course": {
     1: { description: "Solider Auftakt mit breitem Fairway. Links halten für den besten Winkel ins gut geschützte Green." },
     2: { description: "Leicht doglegartig nach rechts. Der zweite Schlag muss präzise sein — Bunker links und rechts." },
     3: { description: "Langes Par 3 über eine Senke. Lieber einen Schläger mehr nehmen als zu kurz zu sein." },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getGolfData, getRoundDetails, submitScore } from "../lib/api";
-import { IconArrowLeft } from "../components/Icons";
+import { getGolfData, getRoundDetails, submitScore, getHandicap, setHandicap } from "../lib/api";
+import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 
 interface Props {
@@ -17,9 +17,19 @@ export default function Golf({ auth }: Props) {
   const [roundDetail, setRoundDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
+  const [handicap, setHandicapVal] = useState<number | null>(null);
+  const [handicapInput, setHandicapInput] = useState("");
+  const [handicapLoading, setHandicapLoading] = useState(true);
+  const [savingHandicap, setSavingHandicap] = useState(false);
 
   useEffect(() => {
-    getGolfData(auth.event.id).then((d) => { setGolfData(d); }).catch(console.error).finally(() => setLoading(false));
+    Promise.all([
+      getGolfData(auth.event.id).then(setGolfData),
+      getHandicap(auth.event.id).then((d) => {
+        setHandicapVal(d.handicap);
+        if (d.handicap != null) setHandicapInput(String(d.handicap));
+      }).catch(() => {}),
+    ]).finally(() => { setLoading(false); setHandicapLoading(false); });
   }, [auth.event.id]);
 
   const loadRound = useCallback(async (roundId: string) => {
@@ -42,25 +52,42 @@ export default function Golf({ auth }: Props) {
     setSaving(null);
   }, [selectedRound, auth.event.id]);
 
+  const handleHandicapSave = async () => {
+    const val = parseFloat(handicapInput);
+    if (isNaN(val) || val < 0 || val > 54) return;
+    setSavingHandicap(true);
+    try {
+      await setHandicap(auth.event.id, val);
+      setHandicapVal(val);
+    } catch (err) {
+      console.error("Handicap save error:", err);
+    }
+    setSavingHandicap(false);
+  };
+
   const formatDate = (d: string) => {
     const date = new Date(d);
     const days = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
     return `${days[date.getDay()]}, ${date.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}`;
   };
 
-  if (loading) {
+  if (loading || handicapLoading) {
     return <div className="flex justify-center py-20"><Spinner /></div>;
   }
 
+  // Scorecard view
   if (selectedRound && roundDetail) {
+    const roundInfo = golfData?.rounds?.find((r: any) => r.id === selectedRound);
     return (
       <Scorecard
         round={roundDetail.round}
+        roundLabel={roundInfo ? `R${golfData.rounds.indexOf(roundInfo) + 1}` : ""}
         holes={roundDetail.holes}
         scores={roundDetail.scores}
         members={roundDetail.members}
         memberId={auth.member.id}
         saving={saving}
+        handicap={handicap}
         onSubmitScore={handleScoreSubmit}
         onBack={() => { setSelectedRound(null); setRoundDetail(null); getGolfData(auth.event.id).then(setGolfData); }}
       />
@@ -70,6 +97,9 @@ export default function Golf({ auth }: Props) {
   if (selectedRound && !roundDetail) {
     return <div className="flex justify-center py-20"><Spinner /></div>;
   }
+
+  // Handicap gate
+  const needsHandicap = handicap == null;
 
   return (
     <Stagger className="space-y-4">
@@ -85,11 +115,49 @@ export default function Golf({ auth }: Props) {
         </div>
       </StaggerItem>
 
+      {/* Handicap Card */}
+      <StaggerItem>
+        <div className={`card p-5 ${needsHandicap ? "border-gold-400 bg-gold-400/10" : ""}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Dein Handicap</p>
+              {handicap != null ? (
+                <p className="text-2xl font-extrabold mt-1">{handicap}</p>
+              ) : (
+                <p className="text-sm text-dark/40 mt-1 font-medium">Bitte eintragen, um Scores zu erfassen</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min="0"
+                max="54"
+                value={handicapInput}
+                onChange={(e) => setHandicapInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleHandicapSave(); }}
+                placeholder="z.B. 18.4"
+                className="w-20 text-center input-soft py-2 text-sm font-bold"
+              />
+              <motion.button
+                onClick={handleHandicapSave}
+                disabled={savingHandicap || !handicapInput}
+                className="btn-dark text-xs px-4 py-2 disabled:opacity-20"
+                whileTap={{ scale: 0.95 }}
+              >
+                {savingHandicap ? "..." : "OK"}
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      </StaggerItem>
+
       {(!golfData?.rounds || golfData.rounds.length === 0) && (
         <StaggerItem>
           <div className="card p-8 text-center">
             <div className="w-16 h-16 mx-auto bg-accent-mint border-2 border-dark rounded-2xl flex items-center justify-center mb-4">
-              <IconArrowLeft className="w-8 h-8 text-dark/30 rotate-180" />
+              <IconGolf className="w-8 h-8 text-dark/30" />
             </div>
             <p className="font-extrabold text-lg tracking-tight mb-1">Noch keine Runden</p>
             <p className="text-sm text-dark/30 font-medium">
@@ -102,9 +170,9 @@ export default function Golf({ auth }: Props) {
       {golfData?.rounds?.map((round: any, index: number) => (
         <StaggerItem key={round.id}>
           <motion.button
-            onClick={() => loadRound(round.id)}
-            className="w-full card p-5 text-left"
-            whileTap={{ scale: 0.98 }}
+            onClick={() => needsHandicap ? null : loadRound(round.id)}
+            className={`w-full card p-5 text-left ${needsHandicap ? "opacity-50 cursor-not-allowed" : ""}`}
+            whileTap={needsHandicap ? undefined : { scale: 0.98 }}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -138,6 +206,14 @@ export default function Golf({ auth }: Props) {
           </motion.button>
         </StaggerItem>
       ))}
+
+      {needsHandicap && golfData?.rounds?.length > 0 && (
+        <StaggerItem>
+          <p className="text-center text-xs text-dark/25 font-medium py-2">
+            Trage zuerst dein Handicap ein, um Runden zu öffnen.
+          </p>
+        </StaggerItem>
+      )}
     </Stagger>
   );
 }
@@ -148,19 +224,22 @@ export default function Golf({ auth }: Props) {
 
 interface ScorecardProps {
   round: any;
+  roundLabel: string;
   holes: any[];
   scores: any[];
   members: any[];
   memberId: string;
   saving: number | null;
+  handicap: number | null;
   onSubmitScore: (hole: number, strokes: number) => void;
   onBack: () => void;
 }
 
-function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitScore, onBack }: ScorecardProps) {
+function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving, handicap, onSubmitScore, onBack }: ScorecardProps) {
   const [inputValues, setInputValues] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"my" | "all">("my");
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
+  const [editingHole, setEditingHole] = useState<number | null>(null);
 
   const myScores = scores.filter((s: any) => s.member_id === memberId);
   const myScoreMap: Record<number, any> = {};
@@ -179,6 +258,12 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
     if (isNaN(val) || val < 1 || val > 15) return;
     onSubmitScore(hole, val);
     setInputValues((prev) => ({ ...prev, [hole]: "" }));
+    setEditingHole(null);
+  };
+
+  const startEdit = (hole: number, currentStrokes: number) => {
+    setEditingHole(hole);
+    setInputValues((prev) => ({ ...prev, [hole]: String(currentStrokes) }));
   };
 
   const formatDate = (d: string) => {
@@ -186,11 +271,12 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
     return date.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
   };
 
-  const memberScores: Record<string, { name: string; scores: Record<number, any>; total: number; stableford: number }> = {};
+  const memberScores: Record<string, { name: string; emoji: string; scores: Record<number, any>; total: number; stableford: number }> = {};
   members.forEach((m: any) => {
     const ms = scores.filter((s: any) => s.member_id === m.id);
     memberScores[m.id] = {
       name: m.display_name,
+      emoji: m.avatar_emoji || "👤",
       scores: {},
       total: ms.reduce((sum: number, s: any) => sum + s.strokes, 0),
       stableford: ms.reduce((sum: number, s: any) => sum + s.stableford, 0),
@@ -209,21 +295,33 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      <motion.button
-        onClick={onBack}
-        className="text-[11px] font-bold text-dark/30 hover:text-dark/60 transition-colors flex items-center gap-1.5 uppercase tracking-wider"
-        whileTap={{ scale: 0.95 }}
-      >
-        <IconArrowLeft className="w-4 h-4" />
-        Zurück
-      </motion.button>
-
-      <div className="card p-5">
-        <p className="font-extrabold text-lg tracking-tight">{round.course_name}</p>
-        <p className="text-sm text-dark/30 mt-1 font-medium">{formatDate(round.date)} · Tee {round.tee_time?.slice(0, 5)} · Par {round.par_total}</p>
-        {round.notes && <p className="text-xs text-dark/20 mt-1">{round.notes}</p>}
+      {/* Navigation */}
+      <div className="flex items-center gap-3">
+        <motion.button
+          onClick={onBack}
+          className="w-9 h-9 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
+          whileTap={{ scale: 0.9 }}
+        >
+          <IconArrowLeft className="w-4 h-4" />
+        </motion.button>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-dark/30 font-medium">Golf</span>
+          <span className="text-dark/15">/</span>
+          <span className="font-bold">{roundLabel} {round.course_name}</span>
+        </div>
       </div>
 
+      {/* Round Info Card */}
+      <div className="card p-5">
+        <p className="font-extrabold text-lg tracking-tight">{round.course_name}</p>
+        <p className="text-sm text-dark/30 mt-1 font-medium">
+          {formatDate(round.date)} · Tee {round.tee_time?.slice(0, 5)} · Par {round.par_total}
+          {handicap != null && <span> · HCP {handicap}</span>}
+        </p>
+        {round.notes && <p className="text-xs text-dark/20 mt-1.5">{round.notes}</p>}
+      </div>
+
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Löcher", value: `${holesPlayed}/18`, color: "" },
@@ -263,7 +361,7 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
           >
             <div className="grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 text-[10px] text-dark/25 font-bold uppercase tracking-wider px-3 py-2.5 border-b-2 border-dark/10">
               <span>Loch</span>
-              <span>Dist</span>
+              <span>Info</span>
               <span className="text-center">Par</span>
               <span className="text-center">Score</span>
               <span className="text-center">Pts</span>
@@ -272,15 +370,17 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
             {holes.map((hole: any, i: number) => {
               const score = myScoreMap[hole.hole_number];
               const isCurrentlySaving = saving === hole.hole_number;
+              const isEditing = editingHole === hole.hole_number;
               const inputVal = inputValues[hole.hole_number] || "";
               const isExpanded = expandedHole === hole.hole_number;
               const hasDetail = hole.description || hole.name;
+              const showInput = !score || isEditing;
 
               return (
                 <div key={hole.hole_number}>
                   <motion.div
                     className={`grid grid-cols-[40px_1fr_50px_60px_60px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06] ${
-                      score ? "" : "bg-gold-400/10"
+                      score && !isEditing ? "" : "bg-gold-400/10"
                     } ${hasDetail ? "cursor-pointer" : ""}`}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -297,30 +397,7 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
                     </div>
                     <span className="text-center text-sm font-bold text-dark/25">{hole.par}</span>
 
-                    {score ? (
-                      <>
-                        <motion.span
-                          className={`text-center text-sm font-bold ${
-                            score.strokes < hole.par ? "text-emerald-600" :
-                            score.strokes === hole.par ? "text-dark" :
-                            score.strokes === hole.par + 1 ? "text-amber-500" :
-                            "text-red-500"
-                          }`}
-                          initial={{ scale: 1.3 }}
-                          animate={{ scale: 1 }}
-                        >
-                          {score.strokes}
-                        </motion.span>
-                        <span className={`text-center text-sm font-bold ${
-                          score.stableford >= 3 ? "text-emerald-600" :
-                          score.stableford === 2 ? "text-dark" :
-                          score.stableford === 1 ? "text-amber-500" :
-                          "text-red-500"
-                        }`}>
-                          {score.stableford}
-                        </span>
-                      </>
-                    ) : (
+                    {showInput ? (
                       <>
                         <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
                           <input
@@ -330,13 +407,17 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
                             max="15"
                             value={inputVal}
                             onChange={(e) => handleStrokeInput(hole.hole_number, e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") handleStrokeSubmit(hole.hole_number); }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleStrokeSubmit(hole.hole_number);
+                              if (e.key === "Escape") setEditingHole(null);
+                            }}
                             placeholder="–"
                             className="w-12 text-center input-soft py-1.5 text-sm"
                             disabled={isCurrentlySaving}
+                            autoFocus={isEditing}
                           />
                         </div>
-                        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-center gap-1" onClick={(e) => e.stopPropagation()}>
                           {inputVal && !isCurrentlySaving && (
                             <motion.button
                               onClick={() => handleStrokeSubmit(hole.hole_number)}
@@ -348,8 +429,39 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
                               OK
                             </motion.button>
                           )}
+                          {isEditing && !inputVal && (
+                            <button
+                              onClick={() => setEditingHole(null)}
+                              className="text-[10px] text-dark/30 font-bold"
+                            >
+                              ✕
+                            </button>
+                          )}
                           {isCurrentlySaving && <Spinner size={18} />}
                         </div>
+                      </>
+                    ) : (
+                      <>
+                        <motion.button
+                          className={`text-center text-sm font-bold ${
+                            score.strokes < hole.par ? "text-emerald-600" :
+                            score.strokes === hole.par ? "text-dark" :
+                            score.strokes === hole.par + 1 ? "text-amber-500" :
+                            "text-red-500"
+                          }`}
+                          onClick={(e) => { e.stopPropagation(); startEdit(hole.hole_number, score.strokes); }}
+                          title="Zum Bearbeiten tippen"
+                        >
+                          {score.strokes}
+                        </motion.button>
+                        <span className={`text-center text-sm font-bold ${
+                          score.stableford >= 3 ? "text-emerald-600" :
+                          score.stableford === 2 ? "text-dark" :
+                          score.stableford === 1 ? "text-amber-500" :
+                          "text-red-500"
+                        }`}>
+                          {score.stableford}
+                        </span>
                       </>
                     )}
                   </motion.div>
@@ -422,13 +534,13 @@ function Scorecard({ round, holes, scores, members, memberId, saving, onSubmitSc
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className={`w-7 h-7 flex items-center justify-center text-xs font-bold rounded-lg border-2 border-dark ${
+                      <span className={`w-7 h-7 flex items-center justify-center text-xs rounded-lg border-2 border-dark ${
                         i === 0 ? "bg-gold-400" :
                         i === 1 ? "bg-gray-200" :
                         i === 2 ? "bg-orange-200" :
                         "bg-white"
                       }`}>
-                        {i + 1}
+                        {data.emoji}
                       </span>
                       <span className="font-bold text-sm tracking-tight">{data.name}</span>
                     </div>
