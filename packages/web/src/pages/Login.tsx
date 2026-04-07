@@ -9,6 +9,8 @@ interface Props {
   error: string;
   /** Pre-filled invite code from URL (e.g. /join/BELEK26) */
   initialInviteCode?: string | null;
+  /** Pre-filled name from URL (e.g. ?name=Mathias+Graf) */
+  initialName?: string | null;
 }
 
 type Mode = "login" | "register" | "join";
@@ -20,10 +22,10 @@ const EMOJI_OPTIONS = [
   "\u{1F48E}", "\u{1F680}", "\u{1F30A}", "\u{1F340}", "\u{1F3EA}", "\u{1F9CA}", "\u2600\uFE0F", "\u{1F319}",
 ];
 
-export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode }: Props) {
+export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode, initialName }: Props) {
   // Auto-switch to "join" mode if invite code is in URL
   const [mode, setMode] = useState<Mode>(initialInviteCode ? "join" : "login");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName || "");
   const [password, setPassword] = useState("");
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState(initialInviteCode || "");
@@ -31,6 +33,7 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   const [submitting, setSubmitting] = useState(false);
 
   const hasInviteFromUrl = !!initialInviteCode;
+  const hasNameFromUrl = !!initialName;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,10 +98,13 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
               Einladung
             </p>
             <p className="font-extrabold tracking-tight">
-              Du wurdest eingeladen!
+              {hasNameFromUrl
+                ? `Hey ${initialName?.split(" ")[0]}! Du wurdest eingeladen.`
+                : "Du wurdest eingeladen!"}
             </p>
             <p className="text-sm text-dark/60 mt-1 font-medium">
               Code: <span className="font-extrabold">{initialInviteCode}</span>
+              {hasNameFromUrl && <> · Gib nur noch dein Passwort ein</>}
             </p>
           </motion.div>
         )}
@@ -186,9 +192,12 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="z.B. Mathias Graf"
-                    className="w-full px-4 py-3.5 input-soft"
+                    className={`w-full px-4 py-3.5 input-soft ${
+                      hasNameFromUrl && mode === "join" ? "bg-gold-400/20 border-gold-400 font-bold" : ""
+                    }`}
                     autoComplete="name"
-                    autoFocus={mode === "login" || hasInviteFromUrl}
+                    readOnly={hasNameFromUrl && mode === "join"}
+                    autoFocus={mode === "login" || (hasInviteFromUrl && !hasNameFromUrl)}
                   />
                 </div>
 
@@ -201,8 +210,9 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={mode === "login" ? "Dein Passwort" : "Passwort wählen (mind. 4 Zeichen)"}
+                    placeholder={mode === "login" ? "Dein Passwort" : hasNameFromUrl ? "Passwort eingeben" : "Passwort wählen (mind. 4 Zeichen)"}
                     className="w-full px-4 py-3.5 input-soft"
+                    autoFocus={hasNameFromUrl && mode === "join"}
                   />
                 </div>
 

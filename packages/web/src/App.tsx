@@ -24,11 +24,15 @@ export interface AuthData {
 }
 
 /**
- * Parse invite code from URL: /join/BELEK26 → "BELEK26"
+ * Parse invite params from URL: /join/BELEK26?name=Mathias+Graf
  */
-function getInviteCodeFromUrl(): string | null {
+function getInviteFromUrl(): { code: string | null; name: string | null } {
   const match = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]+)/i);
-  return match ? match[1].toUpperCase() : null;
+  const params = new URLSearchParams(window.location.search);
+  return {
+    code: match ? match[1].toUpperCase() : null,
+    name: params.get("name"),
+  };
 }
 
 export default function App() {
@@ -37,7 +41,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState("");
   const [showProfile, setShowProfile] = useState(false);
-  const [inviteCode] = useState<string | null>(getInviteCodeFromUrl);
+  const [inviteParams] = useState(() => getInviteFromUrl());
 
   useEffect(() => {
     const stored = getStoredAuth();
@@ -108,7 +112,8 @@ export default function App() {
         onRegister={handleRegister}
         onJoin={handleJoin}
         error={loginError}
-        initialInviteCode={inviteCode}
+        initialInviteCode={inviteParams.code}
+        initialName={inviteParams.name}
       />
     );
   }

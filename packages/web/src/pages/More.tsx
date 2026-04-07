@@ -431,42 +431,46 @@ function FlightCard({ flight, myId, color = "primary" }: { flight: any; myId: st
 /* Invite Link Card — share invite link with friends */
 function InviteCard({ auth }: { auth: Props["auth"] }) {
   const [copied, setCopied] = useState(false);
+  const [guestName, setGuestName] = useState("");
   const inviteCode = auth.group.invite_code;
 
   if (!inviteCode) return null;
 
-  const inviteUrl = `https://crew-home.com/join/${inviteCode}`;
+  const baseUrl = `https://crew-home.com/join/${inviteCode}`;
+  const personalUrl = guestName.trim()
+    ? `${baseUrl}?name=${encodeURIComponent(guestName.trim())}`
+    : baseUrl;
 
-  const handleCopy = async () => {
+  const copyToClipboard = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
     } catch {
-      // Fallback
       const input = document.createElement("input");
-      input.value = inviteUrl;
+      input.value = text;
       document.body.appendChild(input);
       input.select();
       document.execCommand("copy");
       document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleShare = async () => {
+    const name = guestName.trim();
     if (navigator.share) {
       try {
         await navigator.share({
           title: "CREW — Tritt unserer Gruppe bei!",
-          text: `Hey! Tritt unserer CREW bei. Nutze diesen Link:`,
-          url: inviteUrl,
+          text: name
+            ? `Hey ${name.split(" ")[0]}! Tritt unserer CREW bei:`
+            : "Hey! Tritt unserer CREW bei:",
+          url: personalUrl,
         });
+        return;
       } catch {}
-    } else {
-      handleCopy();
     }
+    copyToClipboard(personalUrl);
   };
 
   return (
@@ -479,15 +483,27 @@ function InviteCard({ auth }: { auth: Props["auth"] }) {
       </div>
       <p className="font-extrabold tracking-tight mb-1">Leute einladen</p>
       <p className="text-sm text-dark/50 font-medium mb-3">
-        Teile diesen Link, damit andere deiner Crew beitreten können.
+        Gib den Namen ein, damit der Gast nur noch sein Passwort eingeben muss.
       </p>
 
+      {/* Guest name input for personalized link */}
+      <div className="mb-3">
+        <input
+          type="text"
+          value={guestName}
+          onChange={(e) => { setGuestName(e.target.value); setCopied(false); }}
+          placeholder="Name des Gastes (optional)"
+          className="w-full px-4 py-3 input-soft"
+        />
+      </div>
+
+      {/* Generated link display */}
       <div className="bg-white border-2 border-dark rounded-xl px-3 py-2.5 flex items-center gap-2 mb-3">
-        <p className="flex-1 text-xs font-bold text-dark/60 truncate select-all">
-          {inviteUrl}
+        <p className="flex-1 text-[11px] font-bold text-dark/50 truncate select-all">
+          {personalUrl}
         </p>
         <motion.button
-          onClick={handleCopy}
+          onClick={() => copyToClipboard(personalUrl)}
           className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border-2 border-dark transition-all ${
             copied ? "bg-accent-mint" : "bg-gold-400"
           }`}
@@ -502,7 +518,9 @@ function InviteCard({ auth }: { auth: Props["auth"] }) {
         className="w-full btn-dark py-3 text-sm flex items-center justify-center gap-2"
         whileTap={{ scale: 0.98 }}
       >
-        Invite-Link teilen
+        {guestName.trim()
+          ? `Link an ${guestName.trim().split(" ")[0]} senden`
+          : "Invite-Link teilen"}
       </motion.button>
 
       <p className="text-[10px] text-dark/40 font-medium mt-3 text-center">
