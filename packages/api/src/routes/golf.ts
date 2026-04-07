@@ -262,6 +262,30 @@ golf.post("/event/:id/score", async (c) => {
       RETURNING round_id, member_id, hole, strokes, putts, net_score, stableford
     `;
 
+    // Post activity message to group chat
+    try {
+      const [roundInfo] = await sql`
+        SELECT c.name AS course_name FROM golf_rounds r
+        LEFT JOIN golf_courses c ON c.id = r.course_id
+        WHERE r.id = ${body.round_id}
+      `;
+      const courseName = roundInfo?.course_name || "Unbekannt";
+      const diff = body.strokes - holeData.par;
+      const label = diff <= -2 ? "Eagle 🦅" : diff === -1 ? "Birdie 🐦" : diff === 0 ? "Par" : diff === 1 ? "Bogey" : `+${diff}`;
+      const emoji = stableford >= 3 ? "🔥" : stableford === 2 ? "✅" : "";
+      const chatContent = `⛳ Loch ${body.hole} (${courseName}): ${body.strokes} Schläge (${label}) → ${stableford} Pkt ${emoji}`;
+
+      const [groupId] = await sql`SELECT group_id FROM events WHERE id = ${eventId}`;
+      if (groupId) {
+        await sql`
+          INSERT INTO messages (group_id, sender_id, content, type, event_id)
+          VALUES (${groupId.group_id}, ${member.id}, ${chatContent}, 'activity', ${eventId})
+        `;
+      }
+    } catch (chatErr) {
+      console.error("Failed to post score activity to chat:", chatErr);
+    }
+
     return c.json({ score });
   } catch (err) {
     console.error("POST /golf/event/:id/score error:", err);

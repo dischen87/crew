@@ -135,6 +135,7 @@ export default function Chat({ auth, onClose }: Props) {
                 lastDate = dateStr;
               }
               const isMe = msg.sender_id === auth.member.id;
+              const isActivity = msg.type === "activity";
 
               return (
                 <div key={msg.id}>
@@ -145,30 +146,53 @@ export default function Chat({ auth, onClose }: Props) {
                       </span>
                     </div>
                   )}
-                  <motion.div
-                    className={`flex ${isMe ? "justify-end" : "justify-start"} mb-2`}
-                    initial={msgIndex === messages.length - 1 ? { opacity: 0, y: 6, scale: 0.97 } : false}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <div
-                      className={`max-w-[80%] px-4 py-3 border-2 border-dark rounded-2xl ${
-                        isMe
-                          ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
-                          : "bg-white rounded-bl-md shadow-brutal-xs"
-                      }`}
+
+                  {isActivity ? (
+                    <motion.div
+                      className="flex justify-center mb-2"
+                      initial={msgIndex === messages.length - 1 ? { opacity: 0, y: 6 } : false}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
                     >
-                      {!isMe && (
-                        <p className="text-[10px] font-bold text-dark/50 mb-1">
+                      <div className="max-w-[90%] px-4 py-2.5 bg-accent-mint/40 border-2 border-dark/10 rounded-2xl text-center">
+                        <p className="text-[10px] font-bold text-dark/50 mb-0.5">
                           {msg.sender_emoji} {msg.sender_name}
                         </p>
+                        <p className="text-[13px] font-semibold leading-snug">{msg.content}</p>
+                        <p className="text-[10px] text-dark/25 mt-1">{formatTime(msg.created_at)}</p>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      className={`flex ${isMe ? "justify-end" : "justify-start"} mb-2`}
+                      initial={msgIndex === messages.length - 1 ? { opacity: 0, y: 6, scale: 0.97 } : false}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {!isMe && (
+                        <span className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center text-xs shrink-0 mr-2 mt-1">
+                          {msg.sender_emoji || "👤"}
+                        </span>
                       )}
-                      <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
-                      <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/20"}`}>
-                        {formatTime(msg.created_at)}
-                      </p>
-                    </div>
-                  </motion.div>
+                      <div
+                        className={`max-w-[75%] px-4 py-3 border-2 border-dark rounded-2xl ${
+                          isMe
+                            ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
+                            : "bg-white rounded-bl-md shadow-brutal-xs"
+                        }`}
+                      >
+                        {!isMe && (
+                          <p className="text-[10px] font-bold text-dark/50 mb-1">
+                            {msg.sender_name}
+                          </p>
+                        )}
+                        <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                        <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/20"}`}>
+                          {formatTime(msg.created_at)}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               );
             })}
