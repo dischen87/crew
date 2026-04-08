@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken, getGroup } from "./lib/api";
+import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken, getGroup, updateLocation } from "./lib/api";
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
 import Emoji from "./components/Emoji";
@@ -100,16 +100,10 @@ export default function App() {
     const hasSharedBefore = localStorage.getItem("crew_location_shared");
     if (!hasSharedBefore) return;
 
-    const API_BASE = import.meta.env.VITE_API_URL || "/v2";
-    const token = localStorage.getItem("crew_token");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          await fetch(`${API_BASE}/locations/${auth.event.id}`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          });
+          await updateLocation(auth.event.id, pos.coords.latitude, pos.coords.longitude);
         } catch {}
       },
       () => {},

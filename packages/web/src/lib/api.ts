@@ -7,8 +7,17 @@ import {
   MOCK_LOCATIONS,
   MOCK_ROUNDS,
 } from "./mock-data";
+import { isNativeApp } from "./native";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+// In the native app, relative URLs don't work — we need the full server URL.
+// VITE_API_URL should be set to e.g. "https://crew-haus.com/v2" for production builds.
+function getApiBase(): string {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (isNativeApp()) return "https://crew-haus.com/v2";
+  return "/v2";
+}
+
+const API_BASE = getApiBase();
 
 function getToken(): string | null {
   return localStorage.getItem("crew_token");
@@ -204,4 +213,11 @@ export async function getLocations(eventId: string) {
   } catch {
     return MOCK_LOCATIONS;
   }
+}
+
+export async function updateLocation(eventId: string, lat: number, lng: number) {
+  return apiFetch(`/locations/${eventId}`, {
+    method: "POST",
+    body: JSON.stringify({ lat, lng }),
+  });
 }

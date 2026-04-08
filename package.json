@@ -9,7 +9,10 @@
     "db:setup": "cd packages/api && bun run db:setup",
     "db:seed": "cd packages/api && bun run db:seed",
     "db:seed-belek": "cd packages/api && bun run db:seed-belek",
-    "staging:up": "docker compose up -d && sleep 2 && bun run db:setup && bun run db:seed && bun run dev"
+    "staging:up": "docker compose up -d && sleep 2 && bun run db:setup && bun run db:seed && bun run dev",
+    "native:init": "cd packages/web && bun run native:init",
+    "native:build": "cd packages/web && bun run native:build",
+    "native:open": "cd packages/web && bun run native:open"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

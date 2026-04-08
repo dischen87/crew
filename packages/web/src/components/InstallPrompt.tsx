@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { isNativeApp } from "../lib/native";
 
 /**
  * Shows a subtle "Add to Home Screen" prompt for users who haven't installed the PWA.
  * - Android: Uses native beforeinstallprompt event
  * - iOS: Shows manual instructions (iOS doesn't support beforeinstallprompt)
+ * - Native app (Capacitor): Never shown — already installed via App Store.
  */
 export default function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -12,6 +14,8 @@ export default function InstallPrompt() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // Never show in native app — already installed via App Store
+    if (isNativeApp()) return;
     // Don't show if already dismissed or already installed
     if (localStorage.getItem("crew_pwa_dismissed")) return;
     if (window.matchMedia("(display-mode: standalone)").matches) return;

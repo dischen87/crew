@@ -6,3 +6,7 @@ dist/
 uploads/
 *.log
 .DS_Store
+
+# Capacitor native projects (generated, machine-specific)
+packages/web/ios/
+packages/web/android/
