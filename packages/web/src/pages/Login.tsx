@@ -302,9 +302,8 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder={mode === "login" ? "Dein Passwort" : hasNameFromUrl ? "Passwort eingeben" : "Passwort wählen (mind. 4 Zeichen)"}
+                      placeholder="Passwort waehlen (mind. 4 Zeichen)"
                       className="w-full px-4 py-3.5 input-soft"
-                      autoFocus={hasNameFromUrl && mode === "join"}
                     />
                   </div>
                 )}

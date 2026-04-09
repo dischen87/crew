@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { getMessages, sendMessage } from "../lib/api";
 import { IconSend, IconArrowLeft } from "../components/Icons";
 import { Spinner } from "../components/Motion";

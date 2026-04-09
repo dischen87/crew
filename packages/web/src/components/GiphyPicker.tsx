@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 const GIPHY_API_KEY = "GlVGYi8kxJBVFkGIGOAtMzfig2i3j2Cb"; // Public beta key
 const GIPHY_URL = "https://api.giphy.com/v1/gifs";
