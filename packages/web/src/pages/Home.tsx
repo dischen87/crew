@@ -28,7 +28,10 @@ export default function Home({ auth, onNavigate }: Props) {
   };
 
   const now = new Date();
-  const nextRound = golfData?.rounds?.find((r: any) => new Date(r.date) >= now) || golfData?.rounds?.[0];
+  const todayStr = now.toISOString().split("T")[0];
+  // Find the next upcoming round (today or future), fallback to most recent
+  const sortedRounds = [...(golfData?.rounds || [])].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const nextRound = sortedRounds.find((r: any) => r.date >= todayStr) || sortedRounds[sortedRounds.length - 1];
   const firstName = auth.member.display_name.split(" ")[0];
 
   return (
@@ -45,84 +48,46 @@ export default function Home({ auth, onNavigate }: Props) {
         </div>
       </StaggerItem>
 
-      {/* Event Card */}
-      <StaggerItem>
-        <div className="card p-6">
-          <div className="flex items-center gap-2.5 mb-4">
-            <div className="w-10 h-10 bg-accent-mint border-2 border-dark rounded-2xl flex items-center justify-center shadow-brutal-xs">
-              <IconGolf className="w-5 h-5 text-dark" />
-            </div>
-            <span className="pill bg-accent-mint">Golfreise</span>
-          </div>
-          <h3 className="text-xl font-extrabold tracking-tight leading-tight">{auth.event.title}</h3>
-          <p className="text-dark/40 mt-1.5 text-[14px] font-medium">
-            {formatDate(auth.event.date_from)} – {formatDate(auth.event.date_to)}
-          </p>
-          <p className="text-dark/25 text-[13px] mt-0.5">{auth.event.location}</p>
-          <div className="mt-4 flex gap-2 flex-wrap">
-            <span className="pill bg-gold-400">7 Golfrunden</span>
-            <span className="pill bg-accent-mint">{members.length} Spieler</span>
-            <span className="pill bg-white">Stableford</span>
-          </div>
-        </div>
-      </StaggerItem>
-
-      {/* Quick Actions */}
-      <StaggerItem>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { id: "golf", Icon: IconGolf, label: "Golf", sub: "Scores eintragen", cls: "card-lavender" },
-            { id: "ranking", Icon: IconTrophy, label: "Ranking", sub: "Wer führt?", cls: "card-gold" },
-            { id: "chat", Icon: IconChat, label: "Chat", sub: "Nachrichten", cls: "card-mint" },
-            { id: "more", Icon: IconPlane, label: "Flüge", sub: "Alle Flugdaten", cls: "card-pink" },
-          ].map((action, i) => (
-            <motion.button
-              key={action.id}
-              onClick={() => onNavigate(action.id)}
-              className={`${action.cls} p-5 text-left`}
-              whileTap={{ scale: 0.96 }}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.12 + i * 0.06, duration: 0.5, ease: [0.16, 0.84, 0.44, 1] }}
-            >
-              <action.Icon className="w-9 h-9 mb-3 text-dark" />
-              <p className="font-extrabold text-[16px] tracking-tight">{action.label}</p>
-              <p className="text-[11px] text-dark/50 mt-0.5 font-medium">{action.sub}</p>
-            </motion.button>
-          ))}
-        </div>
-      </StaggerItem>
-
-      {/* Next Round */}
+      {/* Next Round — TOP PRIORITY */}
       {nextRound && (
         <StaggerItem>
-          <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-9 h-9 bg-gold-400 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs">
-                <IconFlag className="w-4.5 h-4.5 text-dark" />
+          <motion.button
+            onClick={() => onNavigate("golf")}
+            className="w-full card-gold p-6 text-left"
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-9 h-9 bg-dark border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs">
+                <IconFlag className="w-4.5 h-4.5 text-gold-400" />
               </div>
-              <span className="pill bg-gold-400">Nächste Runde</span>
+              <span className="pill bg-dark text-white">
+                {nextRound.date === todayStr ? "Heute" : nextRound.date === new Date(now.getTime() + 86400000).toISOString().split("T")[0] ? "Morgen" : formatDate(nextRound.date)}
+              </span>
+              {nextRound.game_mode && nextRound.game_mode !== "individual" && (
+                <span className="pill bg-white/80">{
+                  nextRound.game_mode === "4v4" ? "4 vs 4" :
+                  nextRound.game_mode === "2v2" ? "2 vs 2" :
+                  nextRound.game_mode === "scramble" ? "Scramble" :
+                  nextRound.game_mode === "best_ball" ? "Best Ball" : nextRound.game_mode
+                }</span>
+              )}
             </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-extrabold text-lg tracking-tight">{nextRound.course_name}</p>
-                <p className="text-sm text-dark/30 mt-1 font-medium">
-                  {formatDate(nextRound.date)} · Tee {nextRound.tee_time?.slice(0, 5)}
-                </p>
-              </div>
-              <motion.button
-                onClick={() => onNavigate("golf")}
-                className="btn-gold px-5 py-2.5 text-xs uppercase tracking-wider"
-                whileTap={{ scale: 0.95 }}
-              >
-                Spielen
-              </motion.button>
+            <p className="font-extrabold text-xl tracking-tight">{nextRound.course_name}</p>
+            <p className="text-dark/50 mt-1 font-medium">
+              Tee-Time {nextRound.tee_time?.slice(0, 5)} · Par {nextRound.par_total} · {nextRound.format === "stableford" ? "Stableford" : nextRound.format}
+            </p>
+            {nextRound.course_location && (
+              <p className="text-dark/30 text-xs mt-1">{nextRound.course_location}</p>
+            )}
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Spieler haben Scores` : "Noch keine Scores"}</span>
+              <span className="text-xs font-extrabold uppercase tracking-wider">Scorecard →</span>
             </div>
-          </div>
+          </motion.button>
         </StaggerItem>
       )}
 
-      {/* Leaderboard Preview */}
+      {/* Leaderboard Snapshot — SECOND */}
       {golfData?.leaderboard && golfData.leaderboard.length > 0 && (
         <StaggerItem>
           <div className="card p-6">
@@ -169,6 +134,49 @@ export default function Home({ auth, onNavigate }: Props) {
           </div>
         </StaggerItem>
       )}
+
+      {/* Quick Actions */}
+      <StaggerItem>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { id: "golf", Icon: IconGolf, label: "Golf", sub: "Scores eintragen", cls: "card-lavender" },
+            { id: "ranking", Icon: IconTrophy, label: "Ranking", sub: "Wer fuehrt?", cls: "card-gold" },
+            { id: "chat", Icon: IconChat, label: "Chat", sub: "Nachrichten", cls: "card-mint" },
+            { id: "more", Icon: IconPlane, label: "Fluege", sub: "Alle Flugdaten", cls: "card-pink" },
+          ].map((action, i) => (
+            <motion.button
+              key={action.id}
+              onClick={() => onNavigate(action.id)}
+              className={`${action.cls} p-5 text-left`}
+              whileTap={{ scale: 0.96 }}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12 + i * 0.06, duration: 0.5, ease: [0.16, 0.84, 0.44, 1] }}
+            >
+              <action.Icon className="w-9 h-9 mb-3 text-dark" />
+              <p className="font-extrabold text-[16px] tracking-tight">{action.label}</p>
+              <p className="text-[11px] text-dark/50 mt-0.5 font-medium">{action.sub}</p>
+            </motion.button>
+          ))}
+        </div>
+      </StaggerItem>
+
+      {/* Event Info */}
+      <StaggerItem>
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <IconGolf className="w-4 h-4 text-dark/25" />
+            <span className="text-[10px] font-bold text-dark/30 uppercase tracking-wider">{auth.event.title}</span>
+          </div>
+          <p className="text-sm text-dark/40 font-medium">
+            {formatDate(auth.event.date_from)} – {formatDate(auth.event.date_to)} · {auth.event.location}
+          </p>
+          <div className="mt-2 flex gap-2 flex-wrap">
+            <span className="pill bg-gold-400">{sortedRounds.length} Runden</span>
+            <span className="pill bg-accent-mint">{members.length} Spieler</span>
+          </div>
+        </div>
+      </StaggerItem>
 
       {/* Masters Pool */}
       <StaggerItem>
