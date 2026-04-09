@@ -290,6 +290,7 @@ export default function App() {
           <Profile
             auth={auth}
             onClose={() => setShowProfile(false)}
+            onLogout={handleLogout}
             onUpdate={(member) => {
               setAuth({ ...auth, member: { ...auth.member, ...member } });
               localStorage.setItem("crew_member", JSON.stringify({ ...auth.member, ...member }));

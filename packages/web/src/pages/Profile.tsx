@@ -17,10 +17,11 @@ interface Props {
     event: { id: string };
   };
   onClose: () => void;
+  onLogout: () => void;
   onUpdate: (member: { display_name: string; avatar_emoji: string }) => void;
 }
 
-export default function Profile({ auth, onClose, onUpdate }: Props) {
+export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
   const [emoji, setEmoji] = useState(auth.member.avatar_emoji);
   const [displayName, setDisplayName] = useState(auth.member.display_name);
   const [editingName, setEditingName] = useState(false);
@@ -292,7 +293,173 @@ export default function Profile({ auth, onClose, onUpdate }: Props) {
             </div>
           </div>
         </div>
+
+        {/* Add Flight */}
+        <FlightCard auth={auth} token={token} existingFlight={flightInfo} onUpdate={setFlightInfo} />
+
+        {/* Logout Button */}
+        <motion.button
+          onClick={() => { if (confirm("Wirklich ausloggen?")) onLogout(); }}
+          className="w-full mt-4 py-4 rounded-xl border-2 border-red-300 bg-red-50 text-red-600 font-bold text-sm"
+          whileTap={{ scale: 0.98 }}
+        >
+          Ausloggen
+        </motion.button>
       </div>
     </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Flight Card                                                         */
+/* ------------------------------------------------------------------ */
+
+function FlightCard({ auth, token, existingFlight, onUpdate }: {
+  auth: Props["auth"];
+  token: string | null;
+  existingFlight: any;
+  onUpdate: (flight: any) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [flight, setFlight] = useState({
+    flight_number: existingFlight?.flight_number || "",
+    departure_airport: existingFlight?.departure_airport || "",
+    arrival_airport: existingFlight?.arrival_airport || "",
+    departure_time: existingFlight?.departure_time?.slice(0, 16) || "",
+    arrival_time: existingFlight?.arrival_time?.slice(0, 16) || "",
+  });
+
+  const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+
+  const handleSave = async () => {
+    if (!flight.flight_number.trim()) return;
+    setSaving(true);
+    try {
+      // Get or create outbound flight
+      const res = await fetch(`${API_BASE}/flights/event/${auth.event.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      const flights = data.flights || [];
+
+      // Check if outbound flight exists
+      let flightId = flights.find((f: any) => f.direction === "outbound")?.id;
+
+      if (!flightId) {
+        // Create outbound flight
+        const createRes = await fetch(`${API_BASE}/flights/event/${auth.event.id}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            direction: "outbound",
+            flight_number: flight.flight_number.trim(),
+            departure_airport: flight.departure_airport.trim(),
+            arrival_airport: flight.arrival_airport.trim(),
+            departure_time: flight.departure_time || undefined,
+            arrival_time: flight.arrival_time || undefined,
+          }),
+        });
+        const created = await createRes.json();
+        flightId = created.flight?.id;
+      }
+
+      onUpdate(flight);
+      setEditing(false);
+    } catch (err) {
+      console.error("Save flight error:", err);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card p-5 mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <IconPlane className="w-4 h-4 text-dark/40" />
+          <p className="text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em]">Flug</p>
+        </div>
+        <motion.button
+          onClick={() => setEditing(!editing)}
+          className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border-2 border-dark bg-gold-400"
+          whileTap={{ scale: 0.9 }}
+        >
+          {editing ? "Abbrechen" : existingFlight ? "Bearbeiten" : "+ Flug"}
+        </motion.button>
+      </div>
+
+      {!editing && existingFlight && (
+        <div className="text-sm">
+          <p className="font-extrabold">{existingFlight.flight_number}</p>
+          <p className="text-dark/40 font-medium mt-0.5">
+            {existingFlight.departure_airport} → {existingFlight.arrival_airport}
+          </p>
+        </div>
+      )}
+
+      {!editing && !existingFlight && (
+        <p className="text-xs text-dark/30 font-medium">Noch kein Flug hinterlegt.</p>
+      )}
+
+      {editing && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          className="space-y-2.5"
+        >
+          <input
+            type="text"
+            value={flight.flight_number}
+            onChange={(e) => setFlight({ ...flight, flight_number: e.target.value.toUpperCase() })}
+            placeholder="Flugnr. (z.B. LX1810)"
+            className="w-full px-3 py-2.5 input-soft text-sm font-bold"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={flight.departure_airport}
+              onChange={(e) => setFlight({ ...flight, departure_airport: e.target.value.toUpperCase() })}
+              placeholder="Von (ZRH)"
+              className="px-3 py-2.5 input-soft text-sm font-bold text-center"
+            />
+            <input
+              type="text"
+              value={flight.arrival_airport}
+              onChange={(e) => setFlight({ ...flight, arrival_airport: e.target.value.toUpperCase() })}
+              placeholder="Nach (AYT)"
+              className="px-3 py-2.5 input-soft text-sm font-bold text-center"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[9px] font-bold text-dark/30 uppercase">Abflug</label>
+              <input
+                type="datetime-local"
+                value={flight.departure_time}
+                onChange={(e) => setFlight({ ...flight, departure_time: e.target.value })}
+                className="w-full px-3 py-2 input-soft text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-bold text-dark/30 uppercase">Ankunft</label>
+              <input
+                type="datetime-local"
+                value={flight.arrival_time}
+                onChange={(e) => setFlight({ ...flight, arrival_time: e.target.value })}
+                className="w-full px-3 py-2 input-soft text-xs"
+              />
+            </div>
+          </div>
+          <motion.button
+            onClick={handleSave}
+            disabled={!flight.flight_number.trim() || saving}
+            className="w-full py-3 rounded-xl border-2 border-dark bg-gold-400 text-sm font-extrabold shadow-brutal-xs disabled:opacity-30"
+            whileTap={{ scale: 0.98 }}
+          >
+            {saving ? "Speichern..." : "Flug speichern"}
+          </motion.button>
+        </motion.div>
+      )}
+    </div>
   );
 }
