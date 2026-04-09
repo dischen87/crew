@@ -466,9 +466,10 @@ function InviteCard({ auth }: { auth: Props["auth"] }) {
 
   if (!inviteCode) return null;
 
-  const baseUrl = `https://crew-haus.com/join/${inviteCode}`;
+  const defaultPassword = "BelekGolf4ever";
+  const baseUrl = `https://crew-haus.com/join/${inviteCode}?pw=${encodeURIComponent(defaultPassword)}`;
   const personalUrl = guestName.trim()
-    ? `${baseUrl}?name=${encodeURIComponent(guestName.trim())}`
+    ? `${baseUrl}&name=${encodeURIComponent(guestName.trim())}`
     : baseUrl;
 
   const copyToClipboard = async (text: string) => {

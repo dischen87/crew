@@ -26,14 +26,15 @@ export interface AuthData {
 }
 
 /**
- * Parse invite params from URL: /join/BELEK26?name=Mathias+Graf
+ * Parse invite params from URL: /join/BELEK26?name=Mathias+Graf&pw=BelekGolf4ever
  */
-function getInviteFromUrl(): { code: string | null; name: string | null } {
+function getInviteFromUrl(): { code: string | null; name: string | null; password: string | null } {
   const match = window.location.pathname.match(/^\/join\/([A-Za-z0-9_-]+)/i);
   const params = new URLSearchParams(window.location.search);
   return {
     code: match ? match[1].toUpperCase() : null,
     name: params.get("name"),
+    password: params.get("pw"),
   };
 }
 
@@ -183,6 +184,7 @@ export default function App() {
         error={loginError}
         initialInviteCode={inviteParams.code}
         initialName={inviteParams.name}
+        initialPassword={inviteParams.password}
       />
     );
   }

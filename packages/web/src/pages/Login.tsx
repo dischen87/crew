@@ -11,6 +11,8 @@ interface Props {
   initialInviteCode?: string | null;
   /** Pre-filled name from URL (e.g. ?name=Mathias+Graf) */
   initialName?: string | null;
+  /** Pre-filled password from URL (e.g. ?pw=BelekGolf4ever) */
+  initialPassword?: string | null;
 }
 
 type Mode = "login" | "register" | "join";
@@ -22,11 +24,12 @@ const EMOJI_OPTIONS = [
   "\u{1F48E}", "\u{1F680}", "\u{1F30A}", "\u{1F340}", "\u{1F3EA}", "\u{1F9CA}", "\u2600\uFE0F", "\u{1F319}",
 ];
 
-export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode, initialName }: Props) {
+export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode, initialName, initialPassword }: Props) {
   // Auto-switch to "join" mode if invite code is in URL
   const [mode, setMode] = useState<Mode>(initialInviteCode ? "join" : "login");
   const [name, setName] = useState(initialName || "");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(initialPassword || "");
+  const hasPasswordFromUrl = !!initialPassword;
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState(initialInviteCode || "");
   const [selectedEmoji, setSelectedEmoji] = useState("");
@@ -52,7 +55,8 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   };
 
   const canSubmit = () => {
-    if (!name.trim() || !password) return false;
+    if (!name.trim()) return false;
+    if (!password && !hasPasswordFromUrl) return false;
     if (mode === "register" && !groupName.trim()) return false;
     if (mode === "join" && !inviteCode.trim()) return false;
     return true;
@@ -104,7 +108,11 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
             </p>
             <p className="text-sm text-dark/60 mt-1 font-medium">
               Code: <span className="font-extrabold">{initialInviteCode}</span>
-              {hasNameFromUrl && <> · Gib nur noch dein Passwort ein</>}
+              {hasPasswordFromUrl
+                ? <> · Gib nur noch deinen Namen ein!</>
+                : hasNameFromUrl
+                ? <> · Gib nur noch dein Passwort ein</>
+                : null}
             </p>
           </motion.div>
         )}
@@ -201,20 +209,22 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                   />
                 </div>
 
-                {/* Password */}
-                <div>
-                  <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
-                    Passwort
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={mode === "login" ? "Dein Passwort" : hasNameFromUrl ? "Passwort eingeben" : "Passwort wählen (mind. 4 Zeichen)"}
-                    className="w-full px-4 py-3.5 input-soft"
-                    autoFocus={hasNameFromUrl && mode === "join"}
-                  />
-                </div>
+                {/* Password — hidden when pre-filled from invite URL */}
+                {!(hasPasswordFromUrl && mode === "join") && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
+                      Passwort
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={mode === "login" ? "Dein Passwort" : hasNameFromUrl ? "Passwort eingeben" : "Passwort wählen (mind. 4 Zeichen)"}
+                      className="w-full px-4 py-3.5 input-soft"
+                      autoFocus={hasNameFromUrl && mode === "join"}
+                    />
+                  </div>
+                )}
 
                 {/* Emoji picker (register/join only) */}
                 {mode !== "login" && (
