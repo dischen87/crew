@@ -57,6 +57,9 @@ async function setup() {
     PRIMARY KEY (team_id, member_id)
   )`;
 
+  // === Phase: Personal PIN for re-login ===
+  await sql`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS pin_hash TEXT`;
+
   // === Phase: Chat Link Previews ===
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS link_preview JSONB`;
 

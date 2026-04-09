@@ -5,9 +5,9 @@ import Emoji from "../components/Emoji";
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
 interface Props {
-  onLogin: (name: string, password: string, emoji?: string) => void;
+  onLogin: (name: string, pin: string) => void;
   onRegister?: (name: string, password: string, groupName: string, emoji?: string) => void;
-  onJoin?: (inviteCode: string, name: string, password: string, emoji?: string) => void;
+  onJoin?: (inviteCode: string, name: string, password: string, emoji?: string, pin?: string) => void;
   error: string;
   /** Pre-filled invite code from URL (e.g. /join/BELEK26) */
   initialInviteCode?: string | null;
@@ -31,6 +31,7 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   const [mode, setMode] = useState<Mode>(initialInviteCode ? "join" : "login");
   const [name, setName] = useState(initialName || "");
   const [password, setPassword] = useState(initialPassword || "");
+  const [pin, setPin] = useState("");
   const hasPasswordFromUrl = !!initialPassword;
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState(initialInviteCode || "");
@@ -71,11 +72,11 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
     setSubmitting(true);
 
     if (mode === "login") {
-      await onLogin(name.trim(), password);
+      await onLogin(name.trim(), pin || password);
     } else if (mode === "register" && onRegister) {
       await onRegister(name.trim(), password, groupName.trim(), selectedEmoji || undefined);
     } else if (mode === "join" && onJoin) {
-      await onJoin(inviteCode.trim(), name.trim(), password, selectedEmoji || undefined);
+      await onJoin(inviteCode.trim(), name.trim(), password, selectedEmoji || undefined, pin || undefined);
     }
 
     setSubmitting(false);
@@ -83,10 +84,12 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
 
   const canSubmit = () => {
     if (!name.trim()) return false;
-    if (!password && !hasPasswordFromUrl) return false;
-    if (mode === "register" && !groupName.trim()) return false;
+    if (mode === "login") {
+      return !!(loginCode.trim() && (pin || password));
+    }
+    if (mode === "register" && (!groupName.trim() || !password)) return false;
     if (mode === "join" && !inviteCode.trim()) return false;
-    if (mode === "login" && !loginCode.trim()) return false;
+    if (mode === "join" && !password && !hasPasswordFromUrl) return false;
     return true;
   };
 
@@ -303,6 +306,32 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                       className="w-full px-4 py-3.5 input-soft"
                       autoFocus={hasNameFromUrl && mode === "join"}
                     />
+                  </div>
+                )}
+
+                {/* PIN — for join (personal PIN) and login (re-auth) */}
+                {(mode === "join" || mode === "login") && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
+                      {mode === "login" ? "Deine PIN" : "Persoenliche PIN waehlen"}
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={4}
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      placeholder="4 Ziffern"
+                      className="w-full px-4 py-3.5 input-soft text-center text-2xl font-extrabold tracking-[0.5em]"
+                      autoFocus={mode === "login" && !!name}
+                      autoComplete="off"
+                    />
+                    <p className="text-[10px] text-dark/30 mt-1.5 font-medium">
+                      {mode === "join"
+                        ? "Diese PIN brauchst du zum Einloggen auf anderen Geraeten."
+                        : "Die 4-stellige PIN, die du beim Beitreten gewaehlt hast."}
+                    </p>
                   </div>
                 )}
 

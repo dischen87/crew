@@ -78,7 +78,8 @@ auth.post("/register", async (c) => {
 
 /**
  * POST /join — Join a group by invite code.
- * Body: { invite_code: string, name: string, password: string, emoji?: string }
+ * Body: { invite_code: string, name: string, password: string, pin: string, emoji?: string }
+ * password = group password (gates entry), pin = personal 4-digit PIN (for re-login)
  */
 auth.post("/join", async (c) => {
   try {
@@ -86,6 +87,7 @@ auth.post("/join", async (c) => {
       invite_code: string;
       name: string;
       password: string;
+      pin?: string;
       emoji?: string;
     }>();
 
@@ -93,8 +95,8 @@ auth.post("/join", async (c) => {
       return c.json({ error: "Invite-Code, Name und Passwort erforderlich" }, 400);
     }
 
-    if (body.password.length < 4) {
-      return c.json({ error: "Passwort muss mindestens 4 Zeichen haben" }, 400);
+    if (body.pin && (body.pin.length !== 4 || !/^\d{4}$/.test(body.pin))) {
+      return c.json({ error: "PIN muss genau 4 Ziffern haben" }, 400);
     }
 
     // Find group by invite code
@@ -105,6 +107,12 @@ auth.post("/join", async (c) => {
 
     if (!group) {
       return c.json({ error: "Ungültiger Invite-Code" }, 404);
+    }
+
+    // Verify group password
+    const eventPassword = process.env.EVENT_PASSWORD || "BelekGolf4ever";
+    if (body.password !== eventPassword) {
+      return c.json({ error: "Falsches Gruppenpasswort" }, 401);
     }
 
     // Check if name already taken in this group
@@ -118,16 +126,16 @@ auth.post("/join", async (c) => {
       return c.json({ error: "Dieser Name ist in der Gruppe bereits vergeben" }, 409);
     }
 
-    // Hash password
-    const passwordHash = await Bun.password.hash(body.password, {
-      algorithm: "bcrypt",
-      cost: 10,
-    });
+    // Hash password (group pw) and PIN separately
+    const passwordHash = await Bun.password.hash(body.password, { algorithm: "bcrypt", cost: 10 });
+    const pinHash = body.pin
+      ? await Bun.password.hash(body.pin, { algorithm: "bcrypt", cost: 10 })
+      : null;
 
     // Create member
     const [member] = await sql`
-      INSERT INTO group_members (group_id, display_name, password_hash, avatar_emoji, is_admin)
-      VALUES (${group.id}, ${body.name.trim()}, ${passwordHash}, ${body.emoji || "🏌️"}, FALSE)
+      INSERT INTO group_members (group_id, display_name, password_hash, pin_hash, avatar_emoji, is_admin)
+      VALUES (${group.id}, ${body.name.trim()}, ${passwordHash}, ${pinHash}, ${body.emoji || "🏌️"}, FALSE)
       RETURNING id, group_id, display_name, is_admin, avatar_emoji
     `;
 
@@ -145,6 +153,7 @@ auth.post("/join", async (c) => {
         display_name: member.display_name,
         is_admin: member.is_admin,
         avatar_emoji: member.avatar_emoji,
+        has_pin: !!pinHash,
       },
       group: { id: group.id, name: group.name, invite_code: group.invite_code },
       event: event || null,
@@ -156,20 +165,24 @@ auth.post("/join", async (c) => {
 });
 
 /**
- * POST /login — Login with name + password.
- * Body: { name: string, password: string }
+ * POST /login — Login with name + PIN (personal) or password (legacy fallback).
+ * Body: { name: string, pin?: string, password?: string }
  */
 auth.post("/login", async (c) => {
   try {
-    const body = await c.req.json<{ name: string; password: string }>();
+    const body = await c.req.json<{ name: string; pin?: string; password?: string }>();
 
-    if (!body.name?.trim() || !body.password) {
-      return c.json({ error: "Name und Passwort erforderlich" }, 400);
+    if (!body.name?.trim()) {
+      return c.json({ error: "Name erforderlich" }, 400);
+    }
+    if (!body.pin && !body.password) {
+      return c.json({ error: "PIN oder Passwort erforderlich" }, 400);
     }
 
     // Find member by display_name (case-insensitive)
     const [member] = await sql`
-      SELECT gm.id, gm.group_id, gm.display_name, gm.is_admin, gm.avatar_emoji, gm.password_hash
+      SELECT gm.id, gm.group_id, gm.display_name, gm.is_admin, gm.avatar_emoji,
+             gm.password_hash, gm.pin_hash
       FROM group_members gm
       WHERE LOWER(TRIM(gm.display_name)) = LOWER(TRIM(${body.name}))
     `;
@@ -178,18 +191,33 @@ auth.post("/login", async (c) => {
       return c.json({ error: "Name nicht gefunden" }, 404);
     }
 
-    // Verify password
-    if (member.password_hash) {
-      const valid = await Bun.password.verify(body.password, member.password_hash);
-      if (!valid) {
-        return c.json({ error: "Falsches Passwort" }, 401);
+    // Verify: try PIN first, then password fallback
+    let authenticated = false;
+
+    if (body.pin && member.pin_hash) {
+      authenticated = await Bun.password.verify(body.pin, member.pin_hash);
+    }
+
+    if (!authenticated && body.password) {
+      if (member.password_hash) {
+        authenticated = await Bun.password.verify(body.password, member.password_hash);
       }
-    } else {
       // Legacy: accept event password for members without password_hash
-      const eventPassword = process.env.EVENT_PASSWORD || "BelekGolf4ever";
-      if (body.password !== eventPassword) {
-        return c.json({ error: "Falsches Passwort" }, 401);
+      if (!authenticated) {
+        const eventPassword = process.env.EVENT_PASSWORD || "BelekGolf4ever";
+        if (body.password === eventPassword) {
+          authenticated = true;
+        }
       }
+    }
+
+    // Also allow PIN as password field (for backward compat with old login form)
+    if (!authenticated && body.password && member.pin_hash) {
+      authenticated = await Bun.password.verify(body.password, member.pin_hash);
+    }
+
+    if (!authenticated) {
+      return c.json({ error: member.pin_hash ? "Falsche PIN" : "Falsches Passwort" }, 401);
     }
 
     // Get group

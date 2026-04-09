@@ -144,10 +144,10 @@ export default function App() {
     }
   }, []);
 
-  const handleJoin = useCallback(async (inviteCode: string, name: string, password: string, emoji?: string) => {
+  const handleJoin = useCallback(async (inviteCode: string, name: string, password: string, emoji?: string, pin?: string) => {
     setLoginError("");
     try {
-      const data = await joinGroup(inviteCode, name, password, emoji);
+      const data = await joinGroup(inviteCode, name, password, emoji, pin);
       storeAuth(data);
       setAuth(data);
       window.history.replaceState({}, "", "/");
