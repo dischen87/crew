@@ -222,6 +222,43 @@ auth.post("/login", async (c) => {
 });
 
 /**
+ * GET /members/:inviteCode — Get member list for a group (for login dropdown).
+ * Returns names + emojis only, no sensitive data.
+ */
+auth.get("/members/:inviteCode", async (c) => {
+  try {
+    const code = c.req.param("inviteCode").toUpperCase().trim();
+
+    const [group] = await sql`
+      SELECT id, name FROM groups
+      WHERE UPPER(TRIM(invite_code)) = ${code}
+    `;
+
+    if (!group) {
+      return c.json({ error: "Gruppe nicht gefunden" }, 404);
+    }
+
+    const members = await sql`
+      SELECT display_name, avatar_emoji
+      FROM group_members
+      WHERE group_id = ${group.id}
+      ORDER BY display_name ASC
+    `;
+
+    return c.json({
+      group_name: group.name,
+      members: members.map((m: any) => ({
+        name: m.display_name,
+        emoji: m.avatar_emoji,
+      })),
+    });
+  } catch (err) {
+    console.error("GET /members/:inviteCode error:", err);
+    return c.json({ error: "Fehler" }, 500);
+  }
+});
+
+/**
  * PUT /profile — Update profile (emoji, name).
  */
 auth.put("/profile", authMiddleware, async (c) => {

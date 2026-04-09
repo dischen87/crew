@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Emoji from "../components/Emoji";
+
+const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
 interface Props {
   onLogin: (name: string, password: string, emoji?: string) => void;
@@ -35,8 +37,33 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   const [selectedEmoji, setSelectedEmoji] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [loginCode, setLoginCode] = useState(initialInviteCode || "");
+  const [loginMembers, setLoginMembers] = useState<{ name: string; emoji: string }[]>([]);
+  const [loginGroupName, setLoginGroupName] = useState("");
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
   const hasInviteFromUrl = !!initialInviteCode;
   const hasNameFromUrl = !!initialName;
+
+  // Load member list when login code changes
+  useEffect(() => {
+    if (mode !== "login" || !loginCode || loginCode.length < 3) { setLoginMembers([]); return; }
+    const timer = setTimeout(async () => {
+      setLoadingMembers(true);
+      try {
+        const res = await fetch(`${API_BASE}/auth/members/${loginCode.toUpperCase()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setLoginMembers(data.members || []);
+          setLoginGroupName(data.group_name || "");
+        } else {
+          setLoginMembers([]);
+        }
+      } catch { setLoginMembers([]); }
+      setLoadingMembers(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [loginCode, mode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +86,7 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
     if (!password && !hasPasswordFromUrl) return false;
     if (mode === "register" && !groupName.trim()) return false;
     if (mode === "join" && !inviteCode.trim()) return false;
+    if (mode === "login" && !loginCode.trim()) return false;
     return true;
   };
 
@@ -154,6 +182,56 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                 transition={{ duration: 0.2 }}
                 className="space-y-4"
               >
+                {/* Login: Group Code + Member Selection */}
+                {mode === "login" && (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
+                        Gruppencode
+                      </label>
+                      <input
+                        type="text"
+                        value={loginCode}
+                        onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
+                        placeholder="z.B. BELEK26"
+                        className="w-full px-4 py-3.5 input-soft uppercase tracking-wider text-center font-bold"
+                        autoFocus
+                      />
+                    </div>
+                    {loginGroupName && (
+                      <p className="text-xs text-dark/40 font-bold text-center -mt-2">{loginGroupName}</p>
+                    )}
+                    {loginMembers.length > 0 && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
+                          Wer bist du?
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto">
+                          {loginMembers.map((m) => (
+                            <motion.button
+                              key={m.name}
+                              type="button"
+                              onClick={() => setName(m.name)}
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-left text-sm font-bold transition-all ${
+                                name === m.name
+                                  ? "border-dark bg-dark text-white shadow-brutal-xs"
+                                  : "border-dark/15 bg-white text-dark/70 hover:border-dark/30"
+                              }`}
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              <span className="text-base">{m.emoji || "👤"}</span>
+                              <span className="truncate">{m.name.split(" ")[0]}</span>
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {loadingMembers && (
+                      <p className="text-xs text-dark/30 text-center font-medium">Lade Mitglieder...</p>
+                    )}
+                  </>
+                )}
+
                 {/* Register: Group Name */}
                 {mode === "register" && (
                   <div>
@@ -190,24 +268,26 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                   </div>
                 )}
 
-                {/* Name */}
-                <div>
-                  <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
-                    Dein Name
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="z.B. Mathias Graf"
-                    className={`w-full px-4 py-3.5 input-soft ${
-                      hasNameFromUrl && mode === "join" ? "bg-gold-400/20 border-gold-400 font-bold" : ""
-                    }`}
-                    autoComplete="name"
-                    readOnly={hasNameFromUrl && mode === "join"}
-                    autoFocus={mode === "login" || (hasInviteFromUrl && !hasNameFromUrl)}
-                  />
-                </div>
+                {/* Name — hidden in login mode (selected from list) */}
+                {mode !== "login" && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
+                      Dein Name
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="z.B. Mathias Graf"
+                      className={`w-full px-4 py-3.5 input-soft ${
+                        hasNameFromUrl && mode === "join" ? "bg-gold-400/20 border-gold-400 font-bold" : ""
+                      }`}
+                      autoComplete="name"
+                      readOnly={hasNameFromUrl && mode === "join"}
+                      autoFocus={hasInviteFromUrl && !hasNameFromUrl}
+                    />
+                  </div>
+                )}
 
                 {/* Password — hidden when pre-filled from invite URL */}
                 {!(hasPasswordFromUrl && mode === "join") && (
