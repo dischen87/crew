@@ -125,6 +125,7 @@ export default function OnboardingGuide({ memberName, onDone }: Props) {
   return (
     <motion.div
       className="fixed inset-0 z-[10000] bg-surface-0 bg-grid flex flex-col safe-top safe-bottom"
+      style={{ height: '100dvh' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

@@ -164,7 +164,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface-0 bg-grid flex items-center justify-center">
+      <div className="fixed inset-0 bg-surface-0 bg-grid flex items-center justify-center" style={{ height: '100dvh' }}>
         <Spinner size={40} />
       </div>
     );
@@ -210,9 +210,9 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-surface-0 bg-grid text-dark font-sans flex flex-col">
+    <div className="fixed inset-0 bg-surface-0 bg-grid text-dark font-sans flex flex-col" style={{ height: '100dvh' }}>
       {/* Header */}
-      <header className="sticky top-0 z-40 header-glass safe-top">
+      <header className="shrink-0 z-40 header-glass safe-top">
         <div className="flex items-center justify-between max-w-lg mx-auto px-5 py-3">
           <h1 className="text-xl font-extrabold tracking-tight">
             CREW<span className="text-gold-400">.</span>
@@ -230,7 +230,7 @@ export default function App() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto overscroll-contain max-w-lg mx-auto w-full px-5 py-6 pb-28">
+      <main className="flex-1 overflow-y-auto overscroll-contain max-w-lg mx-auto w-full px-5 py-6 pb-28 min-h-0">
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}
