@@ -93,11 +93,14 @@ golf.get("/round/:id", async (c) => {
     const roundId = c.req.param("id");
 
     const [round] = await sql`
-      SELECT r.id, r.event_id, r.course_id, r.format, r.date, r.tee_time, r.notes,
+      SELECT r.id, r.event_id, r.course_id, r.format, r.game_mode, r.tee_id, r.date, r.tee_time, r.notes,
              c.name AS course_name, c.par_total, c.location AS course_location,
-             c.course_rating, c.slope_rating
+             c.course_rating, c.slope_rating, c.description AS course_description, c.image_url,
+             t.name AS tee_name, t.color AS tee_color, t.length_meters AS tee_length,
+             t.course_rating AS tee_cr, t.slope_rating AS tee_slope
       FROM golf_rounds r
       LEFT JOIN golf_courses c ON c.id = r.course_id
+      LEFT JOIN golf_course_tees t ON t.id = r.tee_id
       WHERE r.id = ${roundId}
     `;
 
@@ -106,11 +109,33 @@ golf.get("/round/:id", async (c) => {
     }
 
     // Get hole data for the course
-    const holes = await sql`
+    let holes = await sql`
       SELECT hole_number, par, distance_m, handicap_index, name, description
       FROM golf_course_holes
       WHERE course_id = ${round.course_id}
       ORDER BY hole_number ASC
+    `;
+
+    // If round has a specific tee, merge tee distances
+    if (round.tee_id) {
+      const teeDistances = await sql`
+        SELECT hole_number, distance_m
+        FROM golf_tee_hole_distances
+        WHERE tee_id = ${round.tee_id}
+      `;
+      if (teeDistances.length > 0) {
+        holes = holes.map((h: any) => {
+          const td = teeDistances.find((t: any) => t.hole_number === h.hole_number);
+          return { ...h, distance_m: td?.distance_m || h.distance_m };
+        });
+      }
+    }
+
+    // Get available tees for this course
+    const tees = await sql`
+      SELECT id, name, color, course_rating, slope_rating, length_meters
+      FROM golf_course_tees WHERE course_id = ${round.course_id}
+      ORDER BY length_meters DESC NULLS LAST
     `;
 
     // Get all scores for this round
@@ -139,7 +164,7 @@ golf.get("/round/:id", async (c) => {
       ORDER BY gm.display_name ASC
     `;
 
-    return c.json({ round, holes, scores, handicaps, members });
+    return c.json({ round, holes, scores, handicaps, members, tees });
   } catch (err) {
     console.error("GET /golf/round/:id error:", err);
     return c.json({ error: "Failed to fetch round details" }, 500);

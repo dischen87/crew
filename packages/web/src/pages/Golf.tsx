@@ -351,12 +351,37 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
 
       {/* Round Info Card */}
       <div className="card p-5">
+        {round.image_url && (
+          <img src={round.image_url} alt={round.course_name} className="w-full h-32 object-cover rounded-xl border-2 border-dark/10 mb-3" />
+        )}
         <p className="font-extrabold text-lg tracking-tight">{round.course_name}</p>
-        <p className="text-sm text-dark/50 mt-1 font-medium">
-          {formatDate(round.date)} · Tee {round.tee_time?.slice(0, 5)} · Par {round.par_total}
-          {handicap != null && <span> · HCP {handicap}</span>}
-        </p>
-        {round.notes && <p className="text-xs text-dark/40 mt-1.5">{round.notes}</p>}
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <span className="text-sm text-dark/50 font-medium">
+            {formatDate(round.date)} · Tee {round.tee_time?.slice(0, 5)} · Par {round.par_total}
+            {handicap != null && <> · HCP {handicap}</>}
+          </span>
+          {round.game_mode && round.game_mode !== "individual" && (
+            <span className="pill bg-gold-400 text-[10px]">{
+              round.game_mode === "4v4" ? "4 vs 4" : round.game_mode === "2v2" ? "2 vs 2" :
+              round.game_mode === "scramble" ? "Scramble" : round.game_mode === "best_ball" ? "Best Ball" : round.game_mode
+            }</span>
+          )}
+        </div>
+        {round.tee_name && (
+          <div className="flex items-center gap-2 mt-2 bg-surface-0 border-2 border-dark/10 rounded-xl px-3 py-2">
+            <span className={`w-4 h-4 rounded-full shrink-0 ${
+              round.tee_color === "black" ? "bg-gray-900" : round.tee_color === "blue" ? "bg-blue-600" :
+              round.tee_color === "white" ? "bg-white border-2 border-dark/20" : round.tee_color === "yellow" ? "bg-yellow-400" :
+              round.tee_color === "red" ? "bg-red-500" : "bg-gray-300"
+            }`} />
+            <span className="text-xs font-bold">{round.tee_name}</span>
+            {round.tee_length && <span className="text-xs text-dark/40">{round.tee_length}m</span>}
+            {round.tee_cr && <span className="text-xs text-dark/40">CR {round.tee_cr}</span>}
+            {round.tee_slope && <span className="text-xs text-dark/40">Slope {round.tee_slope}</span>}
+          </div>
+        )}
+        {round.course_description && <p className="text-xs text-dark/40 mt-2 leading-relaxed">{round.course_description}</p>}
+        {round.notes && <p className="text-xs text-dark/40 mt-1.5 italic">{round.notes}</p>}
       </div>
 
       {/* Stats */}
