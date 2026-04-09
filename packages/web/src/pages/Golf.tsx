@@ -219,16 +219,13 @@ export default function Golf({ auth }: Props) {
                     }</span>
                   )}
                 </div>
-                {round.course_description && (
-                  <p className="text-xs text-dark/50 mt-2 leading-relaxed">{round.course_description}</p>
-                )}
                 {round.course_id && (
                   <motion.button
-                    onClick={(e) => { e.stopPropagation(); setSelectedCourse(round.course_id); }}
-                    className="mt-2 text-[11px] font-bold text-dark/50 underline underline-offset-2"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedCourse(round.course_id); }}
+                    className="mt-2 pill bg-accent-mint text-[10px] font-bold"
                     whileTap={{ scale: 0.95 }}
                   >
-                    Platz-Details & Abschlaege →
+                    ⛳ Platz-Details & Loecher →
                   </motion.button>
                 )}
               </div>
