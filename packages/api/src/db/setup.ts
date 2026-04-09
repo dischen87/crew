@@ -60,6 +60,9 @@ async function setup() {
   // === Phase: Personal PIN for re-login ===
   await sql`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS pin_hash TEXT`;
 
+  // === Phase: Tee preference on profile ===
+  await sql`ALTER TABLE group_members ADD COLUMN IF NOT EXISTS preferred_tee TEXT DEFAULT 'white'`;
+
   // === Phase: Chat Link Previews ===
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS link_preview JSONB`;
 

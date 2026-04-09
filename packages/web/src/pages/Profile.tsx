@@ -28,8 +28,17 @@ export default function Profile({ auth, onClose, onUpdate }: Props) {
   const [saved, setSaved] = useState(false);
   const [handicap, setHandicap] = useState<number | null>(null);
   const [flightInfo, setFlightInfo] = useState<any>(null);
+  const [preferredTee, setPreferredTee] = useState("white");
+  const [savingTee, setSavingTee] = useState(false);
   const token = localStorage.getItem("crew_token");
   const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+
+  const TEE_OPTIONS = [
+    { value: "black", label: "Championship", color: "bg-gray-900 text-white" },
+    { value: "white", label: "Herren", color: "bg-white border-2 border-dark/20" },
+    { value: "yellow", label: "Herren Gelb", color: "bg-yellow-400" },
+    { value: "red", label: "Damen", color: "bg-red-500 text-white" },
+  ];
 
   useEffect(() => {
     getHandicap(auth.event.id)
@@ -212,6 +221,45 @@ export default function Profile({ auth, onClose, onUpdate }: Props) {
               </motion.button>
             ))}
           </div>
+        </div>
+
+        {/* Tee Preference */}
+        <div className="card p-5 mb-4">
+          <p className="text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-3">
+            Bevorzugter Abschlag
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {TEE_OPTIONS.map((tee) => (
+              <motion.button
+                key={tee.value}
+                onClick={async () => {
+                  setPreferredTee(tee.value);
+                  setSavingTee(true);
+                  try {
+                    await fetch(`${API_BASE}/auth/profile`, {
+                      method: "PUT",
+                      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                      body: JSON.stringify({ preferred_tee: tee.value }),
+                    });
+                  } catch {}
+                  setSavingTee(false);
+                }}
+                disabled={savingTee}
+                className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                  preferredTee === tee.value
+                    ? "border-dark bg-dark text-white shadow-brutal-xs"
+                    : "border-dark/15 bg-white text-dark/60"
+                }`}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className={`w-4 h-4 rounded-full shrink-0 ${tee.color}`} />
+                {tee.label}
+              </motion.button>
+            ))}
+          </div>
+          <p className="text-[10px] text-dark/30 mt-2 font-medium">
+            Loch-Distanzen in der Scorecard werden fuer diesen Abschlag angezeigt.
+          </p>
         </div>
 
         {/* Details Card */}

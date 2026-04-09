@@ -287,18 +287,21 @@ auth.get("/members/:inviteCode", async (c) => {
 });
 
 /**
- * PUT /profile — Update profile (emoji, name).
+ * PUT /profile — Update profile (emoji, name, preferred_tee).
  */
 auth.put("/profile", authMiddleware, async (c) => {
   try {
     const member = getMember(c);
-    const body = await c.req.json<{ avatar_emoji?: string; display_name?: string }>();
+    const body = await c.req.json<{ avatar_emoji?: string; display_name?: string; preferred_tee?: string }>();
 
     if (body.avatar_emoji) {
       await sql`UPDATE group_members SET avatar_emoji = ${body.avatar_emoji} WHERE id = ${member.id}`;
     }
     if (body.display_name?.trim()) {
       await sql`UPDATE group_members SET display_name = ${body.display_name.trim()} WHERE id = ${member.id}`;
+    }
+    if (body.preferred_tee) {
+      await sql`UPDATE group_members SET preferred_tee = ${body.preferred_tee} WHERE id = ${member.id}`;
     }
 
     return c.json({ ok: true });

@@ -4,6 +4,7 @@ import { getMessages, sendMessage } from "../lib/api";
 import { IconSend, IconArrowLeft } from "../components/Icons";
 import { Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
+import GiphyPicker from "../components/GiphyPicker";
 
 interface Props {
   auth: {
@@ -82,34 +83,48 @@ export default function Chat({ auth, onClose }: Props) {
 
   let lastDate = "";
 
+  const [showGiphy, setShowGiphy] = useState(false);
+
+  const handleGifSelect = async (gifUrl: string) => {
+    setShowGiphy(false);
+    try {
+      await sendMessage(auth.group.id, gifUrl, auth.event.id);
+      await loadMessages();
+    } catch (err) {
+      console.error("Failed to send GIF:", err);
+    }
+  };
+
   return (
     <motion.div
-      className="fixed inset-0 z-[10000] bg-surface-0 bg-grid flex flex-col"
+      className="fixed inset-0 z-[10000] bg-surface-0 flex flex-col"
       style={{ height: "100dvh" }}
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      {/* Chat Header — always visible */}
-      <div className="shrink-0 header-glass border-b-3 border-dark px-5 py-3 flex items-center gap-3 safe-top">
-        <motion.button
-          onClick={onClose || (() => {})}
-          className="w-10 h-10 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
-          whileTap={{ scale: 0.9 }}
-        >
-          <IconArrowLeft className="w-5 h-5 text-dark" />
-        </motion.button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-extrabold tracking-tight">Chat</h2>
-          <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
-            {auth.group.name} · {messages.length} Nachrichten
-          </p>
+      {/* Chat Header — fixed, always visible */}
+      <div className="shrink-0 bg-white border-b-3 border-dark" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+        <div className="px-4 py-3 flex items-center gap-3">
+          <motion.button
+            onClick={onClose || (() => {})}
+            className="w-10 h-10 bg-surface-0 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
+            whileTap={{ scale: 0.9 }}
+          >
+            <IconArrowLeft className="w-5 h-5 text-dark" />
+          </motion.button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-extrabold tracking-tight">Chat</h2>
+            <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
+              {auth.group.name} · {messages.length} Nachrichten
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-1 min-h-0 overscroll-contain">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1 min-h-0 overscroll-contain bg-surface-0 bg-grid">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : (
@@ -180,7 +195,17 @@ export default function Chat({ auth, onClose }: Props) {
                             {msg.sender_name}
                           </p>
                         )}
-                        <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                        {/* GIF / Image detection */}
+                        {msg.content?.match(/https?:\/\/[^\s]+\.(gif|giphy\.com)[^\s]*/i) ? (
+                          <img
+                            src={msg.content.match(/https?:\/\/[^\s]+/)?.[0]}
+                            alt="GIF"
+                            className="rounded-xl max-w-full max-h-48 object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                        )}
                         {msg.link_preview && (
                           <a href={msg.link_preview.url} target="_blank" rel="noopener noreferrer" className="block mt-2 bg-surface-0 border-2 border-dark/10 rounded-xl overflow-hidden no-underline hover:bg-dark/5 transition-colors">
                             {msg.link_preview.image_url && (
@@ -207,26 +232,43 @@ export default function Chat({ auth, onClose }: Props) {
       </div>
 
       {/* Input bar */}
-      <form onSubmit={handleSend} className="shrink-0 px-5 py-3 border-t-3 border-dark bg-white safe-bottom">
-        <div className="flex gap-2.5 max-w-lg mx-auto">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Nachricht..."
-            className="flex-1 px-4 py-3 input-soft"
-            autoComplete="off"
-            enterKeyHint="send"
-          />
-          <motion.button
-            type="submit"
-            disabled={!input.trim() || sending}
-            className="btn-gold disabled:opacity-20 w-12 h-12 flex items-center justify-center shrink-0"
-            whileTap={{ scale: 0.9 }}
-          >
-            <IconSend className="w-5 h-5" />
-          </motion.button>
+      <form onSubmit={handleSend} className="shrink-0 border-t-3 border-dark bg-white" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div className="relative px-4 py-3">
+          <AnimatePresence>
+            {showGiphy && (
+              <GiphyPicker onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />
+            )}
+          </AnimatePresence>
+          <div className="flex gap-2 max-w-lg mx-auto">
+            <motion.button
+              type="button"
+              onClick={() => setShowGiphy(!showGiphy)}
+              className={`w-12 h-12 flex items-center justify-center shrink-0 rounded-xl border-2 transition-all ${
+                showGiphy ? "border-dark bg-dark text-white" : "border-dark/15 bg-surface-0 text-dark/40"
+              }`}
+              whileTap={{ scale: 0.9 }}
+            >
+              <span className="text-lg">GIF</span>
+            </motion.button>
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Nachricht..."
+              className="flex-1 px-4 py-3 input-soft"
+              autoComplete="off"
+              enterKeyHint="send"
+            />
+            <motion.button
+              type="submit"
+              disabled={!input.trim() || sending}
+              className="btn-gold disabled:opacity-20 w-12 h-12 flex items-center justify-center shrink-0"
+              whileTap={{ scale: 0.9 }}
+            >
+              <IconSend className="w-5 h-5" />
+            </motion.button>
+          </div>
         </div>
       </form>
     </motion.div>
