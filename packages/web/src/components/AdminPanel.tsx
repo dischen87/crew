@@ -174,11 +174,11 @@ export default function AdminPanel({ auth }: Props) {
               <div className="min-w-0 flex-1 mr-3">
                 <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Einladungslink</p>
                 <p className="text-xs font-bold text-dark/50 truncate mt-0.5">
-                  crew-home.com/join/{inviteCode}
+                  crew-haus.com/join/{inviteCode}
                 </p>
               </div>
               <motion.button
-                onClick={() => copyText(`https://crew-home.com/join/${inviteCode}`, "link")}
+                onClick={() => copyText(`https://crew-haus.com/join/${inviteCode}`, "link")}
                 className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border-2 border-dark ${
                   copied === "link" ? "bg-accent-mint" : "bg-gold-400"
                 }`}
@@ -263,7 +263,7 @@ export default function AdminPanel({ auth }: Props) {
           </p>
           <div className="space-y-1.5">
             {pendingMembers.map((name, i) => {
-              const personalUrl = `https://crew-home.com/join/${inviteCode}?name=${encodeURIComponent(name)}`;
+              const personalUrl = `https://crew-haus.com/join/${inviteCode}?name=${encodeURIComponent(name)}`;
               return (
                 <motion.div
                   key={name}

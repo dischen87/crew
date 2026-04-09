@@ -181,6 +181,18 @@ export default function Chat({ auth, onClose }: Props) {
                           </p>
                         )}
                         <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                        {msg.link_preview && (
+                          <a href={msg.link_preview.url} target="_blank" rel="noopener noreferrer" className="block mt-2 bg-surface-0 border-2 border-dark/10 rounded-xl overflow-hidden no-underline hover:bg-dark/5 transition-colors">
+                            {msg.link_preview.image_url && (
+                              <img src={msg.link_preview.image_url} alt="" className="w-full h-28 object-cover" loading="lazy" />
+                            )}
+                            <div className="p-2.5">
+                              {msg.link_preview.title && <p className="text-xs font-bold text-dark truncate">{msg.link_preview.title}</p>}
+                              {msg.link_preview.description && <p className="text-[10px] text-dark/50 line-clamp-2 mt-0.5">{msg.link_preview.description}</p>}
+                              <p className="text-[9px] text-dark/30 mt-1">{new URL(msg.link_preview.url).hostname}</p>
+                            </div>
+                          </a>
+                        )}
                         <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/30"}`}>
                           {formatTime(msg.created_at)}
                         </p>

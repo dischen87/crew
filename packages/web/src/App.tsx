@@ -4,6 +4,7 @@ import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken, getGr
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
 import Emoji from "./components/Emoji";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Golf from "./pages/Golf";
@@ -43,6 +44,7 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [showProfile, setShowProfile] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showLanding, setShowLanding] = useState(true);
   const [inviteParams] = useState(() => getInviteFromUrl());
 
   useEffect(() => {
@@ -168,6 +170,11 @@ export default function App() {
   }
 
   if (!auth) {
+    // Show landing page if no invite code and user hasn't clicked "get started"
+    if (showLanding && !inviteParams.code) {
+      return <Landing onGetStarted={() => setShowLanding(false)} />;
+    }
+
     return (
       <Login
         onLogin={handleLogin}

@@ -20,6 +20,49 @@ async function setup() {
   await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE golf_course_holes ADD COLUMN IF NOT EXISTS name TEXT`;
 
+  // === Phase: Golf Game Modes + Tees + Course Enrichment ===
+  await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS game_mode TEXT DEFAULT 'individual'`;
+  await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS tee_id UUID`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS latitude FLOAT`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS longitude FLOAT`;
+  await sql`ALTER TABLE golf_courses ADD COLUMN IF NOT EXISTS external_id TEXT`;
+
+  await sql`CREATE TABLE IF NOT EXISTS golf_course_tees (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id      UUID REFERENCES golf_courses(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    color          TEXT,
+    course_rating  FLOAT,
+    slope_rating   INT,
+    length_meters  INT
+  )`;
+
+  await sql`CREATE TABLE IF NOT EXISTS golf_tee_hole_distances (
+    tee_id      UUID REFERENCES golf_course_tees(id) ON DELETE CASCADE,
+    hole_number INT,
+    distance_m  INT,
+    PRIMARY KEY (tee_id, hole_number)
+  )`;
+
+  await sql`CREATE TABLE IF NOT EXISTS golf_teams (
+    id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    round_id UUID REFERENCES golf_rounds(id) ON DELETE CASCADE,
+    name     TEXT NOT NULL,
+    color    TEXT
+  )`;
+
+  await sql`CREATE TABLE IF NOT EXISTS golf_team_members (
+    team_id   UUID REFERENCES golf_teams(id) ON DELETE CASCADE,
+    member_id UUID REFERENCES group_members(id) ON DELETE CASCADE,
+    PRIMARY KEY (team_id, member_id)
+  )`;
+
+  // === Phase: Chat Link Previews ===
+  await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS link_preview JSONB`;
+
+  // === Phase: Image Thumbnails ===
+  await sql`ALTER TABLE media ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
+
   // Data migrations
   console.log("Running data migrations...");
   await sql`UPDATE group_members SET is_admin = TRUE WHERE LOWER(TRIM(display_name)) = 'mathias graf'`;

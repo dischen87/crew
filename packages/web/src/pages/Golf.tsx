@@ -199,6 +199,14 @@ export default function Golf({ auth }: Props) {
                   <span>Tee {round.tee_time?.slice(0, 5)}</span>
                   <span>Par {round.par_total}</span>
                   <span>{round.format === "stableford" ? "Stableford" : round.format}</span>
+                  {round.game_mode && round.game_mode !== "individual" && (
+                    <span className="pill bg-accent-gold text-dark text-[10px] font-bold px-2 py-0.5 rounded-full">{
+                      round.game_mode === "4v4" ? "4 vs 4" :
+                      round.game_mode === "2v2" ? "2 vs 2" :
+                      round.game_mode === "scramble" ? "Scramble" :
+                      round.game_mode === "best_ball" ? "Best Ball" : round.game_mode
+                    }</span>
+                  )}
                 </div>
                 {round.course_description && (
                   <p className="text-xs text-dark/50 mt-2 leading-relaxed">{round.course_description}</p>

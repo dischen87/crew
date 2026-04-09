@@ -466,7 +466,7 @@ function InviteCard({ auth }: { auth: Props["auth"] }) {
 
   if (!inviteCode) return null;
 
-  const baseUrl = `https://crew-home.com/join/${inviteCode}`;
+  const baseUrl = `https://crew-haus.com/join/${inviteCode}`;
   const personalUrl = guestName.trim()
     ? `${baseUrl}?name=${encodeURIComponent(guestName.trim())}`
     : baseUrl;

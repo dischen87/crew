@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { sql } from "../db/client";
 import { authMiddleware, getMember } from "../middleware/auth";
+import { extractUrl, fetchLinkPreview } from "../lib/linkPreview";
 
 const chat = new Hono();
 chat.use("*", authMiddleware);
@@ -17,7 +18,7 @@ chat.get("/:groupId/messages", async (c) => {
 
     const messages = await sql`
       SELECT
-        m.id, m.group_id, m.event_id, m.sender_id, m.content, m.type, m.media_url, m.created_at,
+        m.id, m.group_id, m.event_id, m.sender_id, m.content, m.type, m.media_url, m.link_preview, m.created_at,
         gm.display_name AS sender_name,
         gm.avatar_emoji AS sender_emoji
       FROM messages m
@@ -69,6 +70,18 @@ chat.post("/:groupId/messages", async (c) => {
       )
       RETURNING id, group_id, event_id, sender_id, content, type, media_url, created_at
     `;
+
+    // Fire-and-forget: extract link preview asynchronously
+    if (body.content && body.type !== "image") {
+      const url = extractUrl(body.content);
+      if (url) {
+        fetchLinkPreview(url).then(async (preview) => {
+          if (preview) {
+            await sql`UPDATE messages SET link_preview = ${JSON.stringify(preview)}::jsonb WHERE id = ${message.id}`;
+          }
+        }).catch(() => {});
+      }
+    }
 
     return c.json({ message }, 201);
   } catch (err) {

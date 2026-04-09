@@ -38,7 +38,7 @@ golf.get("/event/:id", async (c) => {
     const eventId = c.req.param("id");
 
     const rounds = await sql`
-      SELECT r.id, r.course_id, r.format, r.date, r.tee_time, r.notes,
+      SELECT r.id, r.course_id, r.format, r.game_mode, r.date, r.tee_time, r.notes, r.tee_id,
              c.name AS course_name, c.par_total, c.location AS course_location,
              c.description AS course_description, c.website AS course_website
       FROM golf_rounds r
@@ -351,6 +351,143 @@ golf.delete("/event/:id/score", async (c) => {
   } catch (err) {
     console.error("DELETE /golf/event/:id/score error:", err);
     return c.json({ error: "Failed to delete score" }, 500);
+  }
+});
+
+/**
+ * POST /event/:id/round — Create a new round (admin).
+ * Body: { course_id, format?, game_mode?, date?, tee_time?, tee_id?, teams? }
+ */
+golf.post("/event/:id/round", async (c) => {
+  try {
+    const eventId = c.req.param("id");
+    const member = getMember(c);
+    if (!member.is_admin) return c.json({ error: "Admin required" }, 403);
+
+    const body = await c.req.json<{
+      course_id: string;
+      format?: string;
+      game_mode?: string;
+      date?: string;
+      tee_time?: string;
+      tee_id?: string;
+      notes?: string;
+      teams?: { name: string; color?: string; member_ids: string[] }[];
+    }>();
+
+    if (!body.course_id) return c.json({ error: "course_id required" }, 400);
+
+    const [round] = await sql`
+      INSERT INTO golf_rounds (event_id, course_id, format, game_mode, date, tee_time, tee_id, notes)
+      VALUES (
+        ${eventId},
+        ${body.course_id},
+        ${body.format || "stableford"},
+        ${body.game_mode || "individual"},
+        ${body.date || null},
+        ${body.tee_time || null},
+        ${body.tee_id || null},
+        ${body.notes || null}
+      )
+      RETURNING *
+    `;
+
+    // Create teams if provided
+    if (body.teams && body.teams.length > 0) {
+      for (const team of body.teams) {
+        const [t] = await sql`
+          INSERT INTO golf_teams (round_id, name, color)
+          VALUES (${round.id}, ${team.name}, ${team.color || null})
+          RETURNING id
+        `;
+        for (const mid of team.member_ids) {
+          await sql`INSERT INTO golf_team_members (team_id, member_id) VALUES (${t.id}, ${mid})`;
+        }
+      }
+    }
+
+    return c.json({ round }, 201);
+  } catch (err) {
+    console.error("POST /golf/event/:id/round error:", err);
+    return c.json({ error: "Failed to create round" }, 500);
+  }
+});
+
+/**
+ * GET /round/:id/teams — Get teams for a round.
+ */
+golf.get("/round/:id/teams", async (c) => {
+  try {
+    const roundId = c.req.param("id");
+    const teams = await sql`
+      SELECT t.id, t.name, t.color,
+        COALESCE(json_agg(json_build_object(
+          'member_id', gtm.member_id,
+          'display_name', gm.display_name,
+          'avatar_emoji', gm.avatar_emoji
+        )) FILTER (WHERE gtm.member_id IS NOT NULL), '[]') AS members
+      FROM golf_teams t
+      LEFT JOIN golf_team_members gtm ON gtm.team_id = t.id
+      LEFT JOIN group_members gm ON gm.id = gtm.member_id
+      WHERE t.round_id = ${roundId}
+      GROUP BY t.id, t.name, t.color
+    `;
+    return c.json({ teams });
+  } catch (err) {
+    console.error("GET /golf/round/:id/teams error:", err);
+    return c.json({ error: "Failed to fetch teams" }, 500);
+  }
+});
+
+/**
+ * GET /course/:id/tees — Get available tees for a course.
+ */
+golf.get("/course/:id/tees", async (c) => {
+  try {
+    const courseId = c.req.param("id");
+    const tees = await sql`
+      SELECT id, name, color, course_rating, slope_rating, length_meters
+      FROM golf_course_tees WHERE course_id = ${courseId}
+      ORDER BY length_meters DESC NULLS LAST
+    `;
+    return c.json({ tees });
+  } catch (err) {
+    console.error("GET /golf/course/:id/tees error:", err);
+    return c.json({ error: "Failed to fetch tees" }, 500);
+  }
+});
+
+/**
+ * GET /course/:id/holes — Get hole data, optionally for a specific tee.
+ * Query: ?tee_id=uuid
+ */
+golf.get("/course/:id/holes", async (c) => {
+  try {
+    const courseId = c.req.param("id");
+    const teeId = c.req.query("tee_id");
+
+    const holes = await sql`
+      SELECT hole_number, par, distance_m, handicap_index, name, description
+      FROM golf_course_holes WHERE course_id = ${courseId}
+      ORDER BY hole_number ASC
+    `;
+
+    if (teeId) {
+      const teeDistances = await sql`
+        SELECT hole_number, distance_m FROM golf_tee_hole_distances
+        WHERE tee_id = ${teeId} ORDER BY hole_number ASC
+      `;
+      const merged = holes.map((h: any) => ({
+        ...h,
+        tee_distance_m: teeDistances.find((td: any) => td.hole_number === h.hole_number)?.distance_m || h.distance_m,
+      }));
+      return c.json({ holes: merged });
+    }
+
+    return c.json({ holes });
+  } catch (err) {
+    console.error("GET /golf/course/:id/holes error:", err);
+    return c.json({ error: "Failed to fetch holes" }, 500);
   }
 });
 
