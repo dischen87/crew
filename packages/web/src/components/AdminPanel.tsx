@@ -1,9 +1,28 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { IconUsers, IconCrown } from "./Icons";
 import { Spinner } from "./Motion";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+
+const GAME_MODES = [
+  { value: "individual", label: "Einzel", desc: "Jeder spielt fuer sich" },
+  { value: "2v2", label: "2 vs 2", desc: "Zweier-Teams gegeneinander" },
+  { value: "4v4", label: "4 vs 4", desc: "Vierer-Teams gegeneinander" },
+  { value: "scramble", label: "Scramble", desc: "Team waehlt besten Ball" },
+  { value: "best_ball", label: "Best Ball", desc: "Bester Score pro Team zaehlt" },
+];
+
+const FORMATS = [
+  { value: "stableford", label: "Stableford" },
+  { value: "strokeplay", label: "Strokeplay" },
+  { value: "matchplay", label: "Matchplay" },
+];
+
+const TEE_COLORS: Record<string, string> = {
+  black: "bg-gray-900", blue: "bg-blue-600", white: "bg-white border-2 border-dark/20",
+  yellow: "bg-yellow-400", red: "bg-red-500", orange: "bg-orange-400", green: "bg-green-500",
+};
 
 interface Props {
   auth: {
@@ -249,6 +268,9 @@ export default function AdminPanel({ auth }: Props) {
         </div>
       </div>
 
+      {/* Create Round */}
+      <CreateRoundCard auth={auth} members={members} token={token} />
+
       {/* Pending Members */}
       {pendingMembers.length > 0 && (
         <div className="card p-5">
@@ -301,6 +323,257 @@ export default function AdminPanel({ auth }: Props) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Create Round Component                                              */
+/* ------------------------------------------------------------------ */
+
+function CreateRoundCard({ auth, members, token }: { auth: Props["auth"]; members: Member[]; token: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [tees, setTees] = useState<any[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const [form, setForm] = useState({
+    course_id: "",
+    tee_id: "",
+    format: "stableford",
+    game_mode: "individual",
+    date: "",
+    tee_time: "",
+    notes: "",
+  });
+
+  // Load courses when opened
+  useEffect(() => {
+    if (!open || courses.length > 0) return;
+    setLoadingCourses(true);
+    fetch(`${API_BASE}/golf/event/${auth.event.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        // Extract unique courses from rounds
+        const seen = new Set<string>();
+        const uniqueCourses: any[] = [];
+        for (const r of data.rounds || []) {
+          if (r.course_id && !seen.has(r.course_id)) {
+            seen.add(r.course_id);
+            uniqueCourses.push({ id: r.course_id, name: r.course_name, par_total: r.par_total });
+          }
+        }
+        setCourses(uniqueCourses);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingCourses(false));
+  }, [open]);
+
+  // Load tees when course changes
+  useEffect(() => {
+    if (!form.course_id) { setTees([]); return; }
+    fetch(`${API_BASE}/golf/course/${form.course_id}/tees`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => setTees(data.tees || []))
+      .catch(() => setTees([]));
+  }, [form.course_id]);
+
+  const handleCreate = async () => {
+    if (!form.course_id || !form.date) return;
+    setCreating(true);
+    try {
+      await fetch(`${API_BASE}/golf/event/${auth.event.id}/round`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: form.course_id,
+          tee_id: form.tee_id || undefined,
+          format: form.format,
+          game_mode: form.game_mode,
+          date: form.date,
+          tee_time: form.tee_time || undefined,
+          notes: form.notes || undefined,
+        }),
+      });
+      setSuccess(true);
+      setTimeout(() => { setSuccess(false); setOpen(false); setForm({ course_id: "", tee_id: "", format: "stableford", game_mode: "individual", date: "", tee_time: "", notes: "" }); }, 1500);
+    } catch (err) {
+      alert("Fehler beim Erstellen der Runde");
+    }
+    setCreating(false);
+  };
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-accent-mint border-2 border-dark rounded-xl flex items-center justify-center text-sm">
+            ⛳
+          </div>
+          <span className="pill bg-accent-mint">Golf</span>
+        </div>
+        <motion.button
+          onClick={() => setOpen(!open)}
+          className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border-2 border-dark bg-gold-400"
+          whileTap={{ scale: 0.9 }}
+        >
+          {open ? "Schliessen" : "+ Neue Runde"}
+        </motion.button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-4 space-y-3">
+              {loadingCourses ? (
+                <div className="flex justify-center py-4"><Spinner /></div>
+              ) : (
+                <>
+                  {/* Course Selection */}
+                  <div>
+                    <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Golfplatz</label>
+                    <div className="flex flex-wrap gap-2">
+                      {courses.map((c) => (
+                        <motion.button
+                          key={c.id}
+                          onClick={() => setForm({ ...form, course_id: c.id, tee_id: "" })}
+                          className={`px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                            form.course_id === c.id ? "border-dark bg-dark text-white" : "border-dark/20 bg-white text-dark/60"
+                          }`}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          {c.name} <span className="opacity-50">Par {c.par_total}</span>
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tee Selection */}
+                  {tees.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Abschlag</label>
+                      <div className="flex flex-wrap gap-2">
+                        {tees.map((t: any) => (
+                          <motion.button
+                            key={t.id}
+                            onClick={() => setForm({ ...form, tee_id: t.id })}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                              form.tee_id === t.id ? "border-dark bg-dark text-white" : "border-dark/20 bg-white text-dark/60"
+                            }`}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <span className={`w-3 h-3 rounded-full shrink-0 ${TEE_COLORS[t.color?.toLowerCase()] || "bg-gray-300"}`} />
+                            {t.name}
+                            <span className="opacity-40">{t.length_meters}m</span>
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Format */}
+                  <div>
+                    <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Format</label>
+                    <div className="flex gap-2">
+                      {FORMATS.map((f) => (
+                        <motion.button
+                          key={f.value}
+                          onClick={() => setForm({ ...form, format: f.value })}
+                          className={`px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                            form.format === f.value ? "border-dark bg-dark text-white" : "border-dark/20 bg-white text-dark/60"
+                          }`}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          {f.label}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Game Mode */}
+                  <div>
+                    <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Spielmodus</label>
+                    <div className="flex flex-wrap gap-2">
+                      {GAME_MODES.map((gm) => (
+                        <motion.button
+                          key={gm.value}
+                          onClick={() => setForm({ ...form, game_mode: gm.value })}
+                          className={`px-3 py-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                            form.game_mode === gm.value ? "border-dark bg-dark text-white" : "border-dark/20 bg-white text-dark/60"
+                          }`}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <span>{gm.label}</span>
+                        </motion.button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-dark/40 mt-1">
+                      {GAME_MODES.find((gm) => gm.value === form.game_mode)?.desc}
+                    </p>
+                  </div>
+
+                  {/* Date & Time */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Datum</label>
+                      <input
+                        type="date"
+                        value={form.date}
+                        onChange={(e) => setForm({ ...form, date: e.target.value })}
+                        className="w-full input-soft py-2.5 text-sm font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Tee-Time</label>
+                      <input
+                        type="time"
+                        value={form.tee_time}
+                        onChange={(e) => setForm({ ...form, tee_time: e.target.value })}
+                        className="w-full input-soft py-2.5 text-sm font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-1.5">Notizen (optional)</label>
+                    <input
+                      type="text"
+                      value={form.notes}
+                      onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                      placeholder="z.B. Shotgun Start, Startloch 10..."
+                      className="w-full input-soft py-2.5 text-sm"
+                    />
+                  </div>
+
+                  {/* Create Button */}
+                  <motion.button
+                    onClick={handleCreate}
+                    disabled={!form.course_id || !form.date || creating}
+                    className={`w-full py-3 rounded-xl border-2 border-dark text-sm font-extrabold shadow-brutal-xs transition-all ${
+                      success ? "bg-accent-mint" : "bg-gold-400"
+                    } disabled:opacity-30`}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {success ? "✓ Runde erstellt!" : creating ? "Wird erstellt..." : "Runde erstellen"}
+                  </motion.button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
