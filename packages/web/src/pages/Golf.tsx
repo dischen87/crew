@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 
@@ -15,6 +15,7 @@ export default function Golf({ auth }: Props) {
   const [golfData, setGolfData] = useState<any>(null);
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
   const [roundDetail, setRoundDetail] = useState<any>(null);
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [handicap, setHandicapVal] = useState<number | null>(null);
@@ -86,6 +87,16 @@ export default function Golf({ auth }: Props) {
 
   if (loading || handicapLoading) {
     return <div className="flex justify-center py-20"><Spinner /></div>;
+  }
+
+  // Course detail view
+  if (selectedCourse) {
+    return (
+      <CourseDetailView
+        courseId={selectedCourse}
+        onBack={() => setSelectedCourse(null)}
+      />
+    );
   }
 
   // Scorecard view
@@ -210,6 +221,15 @@ export default function Golf({ auth }: Props) {
                 </div>
                 {round.course_description && (
                   <p className="text-xs text-dark/50 mt-2 leading-relaxed">{round.course_description}</p>
+                )}
+                {round.course_id && (
+                  <motion.button
+                    onClick={(e) => { e.stopPropagation(); setSelectedCourse(round.course_id); }}
+                    className="mt-2 text-[11px] font-bold text-dark/50 underline underline-offset-2"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Platz-Details & Abschlaege →
+                  </motion.button>
                 )}
               </div>
               <div className="text-right">
@@ -601,6 +621,268 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
           </motion.div>
         )}
       </AnimatePresence>
+    </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Course Detail Component                                             */
+/* ------------------------------------------------------------------ */
+
+interface CourseDetailProps {
+  courseId: string;
+  onBack: () => void;
+}
+
+function CourseDetailView({ courseId, onBack }: CourseDetailProps) {
+  const [course, setCourse] = useState<any>(null);
+  const [holes, setHoles] = useState<any[]>([]);
+  const [tees, setTees] = useState<any[]>([]);
+  const [selectedTee, setSelectedTee] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      getCourseDetail(courseId).then((d) => {
+        setCourse(d.course);
+        setHoles(d.holes || []);
+      }),
+      getCourseTees(courseId).then((d) => setTees(d.tees || [])).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, [courseId]);
+
+  // Reload holes when tee changes
+  useEffect(() => {
+    if (!selectedTee) return;
+    getCourseHoles(courseId, selectedTee).then((d) => setHoles(d.holes || [])).catch(() => {});
+  }, [selectedTee, courseId]);
+
+  if (loading) {
+    return <div className="flex justify-center py-20"><Spinner /></div>;
+  }
+
+  if (!course) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-dark/40 font-medium">Platz nicht gefunden</p>
+        <motion.button onClick={onBack} className="btn-dark mt-4 px-6 py-2 text-sm" whileTap={{ scale: 0.95 }}>Zurueck</motion.button>
+      </div>
+    );
+  }
+
+  const TEE_COLORS: Record<string, string> = {
+    black: "bg-gray-900 text-white",
+    blue: "bg-blue-600 text-white",
+    white: "bg-white text-dark border-2 border-dark/20",
+    yellow: "bg-yellow-400 text-dark",
+    red: "bg-red-500 text-white",
+    orange: "bg-orange-400 text-dark",
+    green: "bg-green-500 text-white",
+  };
+
+  const front9 = holes.filter((h: any) => h.hole_number <= 9);
+  const back9 = holes.filter((h: any) => h.hole_number > 9);
+  const totalPar = holes.reduce((sum: number, h: any) => sum + (h.par || 0), 0);
+
+  return (
+    <motion.div
+      className="space-y-4"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Back button */}
+      <div className="flex items-center gap-3">
+        <motion.button
+          onClick={onBack}
+          className="w-9 h-9 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
+          whileTap={{ scale: 0.9 }}
+        >
+          <IconArrowLeft className="w-4 h-4" />
+        </motion.button>
+        <div className="text-sm">
+          <span className="text-dark/50 font-medium">Golf</span>
+          <span className="text-dark/15 mx-1">/</span>
+          <span className="font-bold">{course.name}</span>
+        </div>
+      </div>
+
+      {/* Course Header Card */}
+      <div className="card p-5">
+        {course.image_url && (
+          <img src={course.image_url} alt={course.name} className="w-full h-40 object-cover rounded-xl border-2 border-dark/10 mb-4" />
+        )}
+        <h2 className="text-xl font-extrabold tracking-tight">{course.name}</h2>
+        <p className="text-sm text-dark/50 font-medium mt-1">
+          {[course.location, course.country].filter(Boolean).join(", ")}
+        </p>
+
+        {/* Course Stats */}
+        <div className="grid grid-cols-4 gap-2 mt-4">
+          {[
+            { label: "Par", value: totalPar || course.par_total || "–" },
+            { label: "Loecher", value: course.total_holes || 18 },
+            { label: "CR", value: course.course_rating?.toFixed(1) || "–" },
+            { label: "Slope", value: course.slope_rating || "–" },
+          ].map((s) => (
+            <div key={s.label} className="bg-surface-0 border-2 border-dark/10 rounded-xl p-2.5 text-center">
+              <p className="text-[9px] text-dark/40 uppercase tracking-wider font-bold">{s.label}</p>
+              <p className="text-lg font-extrabold mt-0.5">{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {course.website && (
+          <a href={course.website} target="_blank" rel="noopener noreferrer" className="block mt-3 text-xs text-dark/40 font-medium underline underline-offset-2">
+            {course.website.replace(/^https?:\/\//, "")}
+          </a>
+        )}
+
+        {course.description && (
+          <p className="text-xs text-dark/50 mt-3 leading-relaxed">{course.description}</p>
+        )}
+      </div>
+
+      {/* Tee Selection */}
+      {tees.length > 0 && (
+        <div className="card p-4">
+          <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider mb-3">Abschlaege waehlen</p>
+          <div className="flex flex-wrap gap-2">
+            <motion.button
+              onClick={() => setSelectedTee(null)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                !selectedTee ? "border-dark bg-dark text-white shadow-brutal-xs" : "border-dark/20 bg-white text-dark/60"
+              }`}
+              whileTap={{ scale: 0.95 }}
+            >
+              Standard
+            </motion.button>
+            {tees.map((tee: any) => (
+              <motion.button
+                key={tee.id}
+                onClick={() => setSelectedTee(tee.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                  selectedTee === tee.id ? "border-dark bg-dark text-white shadow-brutal-xs" : "border-dark/20 bg-white text-dark/60"
+                }`}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className={`w-3.5 h-3.5 rounded-full ${TEE_COLORS[tee.color?.toLowerCase()] || "bg-gray-300"}`} />
+                {tee.name}
+                {tee.length_meters && <span className="text-[10px] opacity-50">{tee.length_meters}m</span>}
+              </motion.button>
+            ))}
+          </div>
+
+          {/* Selected tee info */}
+          {selectedTee && (() => {
+            const tee = tees.find((t: any) => t.id === selectedTee);
+            if (!tee) return null;
+            return (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[
+                  { label: "CR", value: tee.course_rating?.toFixed(1) || "–" },
+                  { label: "Slope", value: tee.slope_rating || "–" },
+                  { label: "Laenge", value: tee.length_meters ? `${tee.length_meters}m` : "–" },
+                ].map((s) => (
+                  <div key={s.label} className="bg-surface-0 border border-dark/10 rounded-lg p-2 text-center">
+                    <p className="text-[9px] text-dark/40 uppercase tracking-wider font-bold">{s.label}</p>
+                    <p className="text-sm font-extrabold">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Hole-by-Hole Table */}
+      {holes.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-dark/10">
+            <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Loch-Details</p>
+          </div>
+
+          {/* Header */}
+          <div className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 text-[10px] text-dark/40 font-bold uppercase tracking-wider px-3 py-2 border-b border-dark/[0.06]">
+            <span>Loch</span>
+            <span>Name</span>
+            <span className="text-center">Par</span>
+            <span className="text-center">Dist.</span>
+            <span className="text-center">HCP</span>
+          </div>
+
+          {/* Front 9 */}
+          {front9.map((hole: any, i: number) => (
+            <motion.div
+              key={hole.hole_number}
+              className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: i * 0.02 }}
+            >
+              <span className="text-sm font-bold text-dark/60">{hole.hole_number}</span>
+              <span className="text-xs text-dark/50 font-medium truncate">{hole.name || "–"}</span>
+              <span className="text-center text-sm font-bold">{hole.par}</span>
+              <span className="text-center text-xs font-medium text-dark/50">
+                {hole.tee_distance_m || hole.distance_m || "–"}m
+              </span>
+              <span className="text-center text-xs font-medium text-dark/40">{hole.handicap_index}</span>
+            </motion.div>
+          ))}
+
+          {/* Front 9 total */}
+          {front9.length > 0 && (
+            <div className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 items-center px-3 py-2 bg-dark/5 border-b-2 border-dark/10 text-xs font-bold">
+              <span></span>
+              <span className="text-dark/40">Front 9</span>
+              <span className="text-center">{front9.reduce((s: number, h: any) => s + (h.par || 0), 0)}</span>
+              <span className="text-center text-dark/50">{front9.reduce((s: number, h: any) => s + (h.tee_distance_m || h.distance_m || 0), 0)}m</span>
+              <span></span>
+            </div>
+          )}
+
+          {/* Back 9 */}
+          {back9.map((hole: any, i: number) => (
+            <motion.div
+              key={hole.hole_number}
+              className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 items-center px-3 py-2.5 border-b border-dark/[0.06]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: (i + 9) * 0.02 }}
+            >
+              <span className="text-sm font-bold text-dark/60">{hole.hole_number}</span>
+              <span className="text-xs text-dark/50 font-medium truncate">{hole.name || "–"}</span>
+              <span className="text-center text-sm font-bold">{hole.par}</span>
+              <span className="text-center text-xs font-medium text-dark/50">
+                {hole.tee_distance_m || hole.distance_m || "–"}m
+              </span>
+              <span className="text-center text-xs font-medium text-dark/40">{hole.handicap_index}</span>
+            </motion.div>
+          ))}
+
+          {/* Back 9 total */}
+          {back9.length > 0 && (
+            <div className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 items-center px-3 py-2 bg-dark/5 border-b-2 border-dark/10 text-xs font-bold">
+              <span></span>
+              <span className="text-dark/40">Back 9</span>
+              <span className="text-center">{back9.reduce((s: number, h: any) => s + (h.par || 0), 0)}</span>
+              <span className="text-center text-dark/50">{back9.reduce((s: number, h: any) => s + (h.tee_distance_m || h.distance_m || 0), 0)}m</span>
+              <span></span>
+            </div>
+          )}
+
+          {/* Total */}
+          <div className="grid grid-cols-[40px_1fr_50px_60px_50px] gap-1 items-center px-3 py-3 bg-dark text-white text-sm font-bold">
+            <span></span>
+            <span>Gesamt</span>
+            <span className="text-center">{totalPar}</span>
+            <span className="text-center text-xs">
+              {holes.reduce((s: number, h: any) => s + (h.tee_distance_m || h.distance_m || 0), 0)}m
+            </span>
+            <span></span>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }

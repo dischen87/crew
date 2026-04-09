@@ -131,6 +131,19 @@ export async function getCourseDetail(courseId: string) {
   return apiFetch(`/golf/course/${courseId}`);
 }
 
+export async function getCourseTees(courseId: string) {
+  return apiFetch(`/golf/course/${courseId}/tees`);
+}
+
+export async function getCourseHoles(courseId: string, teeId?: string) {
+  const query = teeId ? `?tee_id=${teeId}` : "";
+  return apiFetch(`/golf/course/${courseId}/holes${query}`);
+}
+
+export async function getRoundTeams(roundId: string) {
+  return apiFetch(`/golf/round/${roundId}/teams`);
+}
+
 export async function getHandicap(eventId: string) {
   return apiFetch(`/golf/handicap/${eventId}`);
 }
