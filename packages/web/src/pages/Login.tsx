@@ -292,8 +292,8 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                   </div>
                 )}
 
-                {/* Password — hidden when pre-filled from invite URL */}
-                {!(hasPasswordFromUrl && mode === "join") && (
+                {/* Password — hidden in login mode (uses PIN) and when pre-filled from invite URL */}
+                {mode !== "login" && !(hasPasswordFromUrl && mode === "join") && (
                   <div>
                     <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                       Passwort
