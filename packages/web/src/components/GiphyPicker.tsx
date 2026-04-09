@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
-const GIPHY_API_KEY = "GlVGYi8kxJBVFkGIGOAtMzfig2i3j2Cb"; // Public beta key
+const GIPHY_API_KEY = "dc6zaTOxFJmzC"; // Giphy public API key
 const GIPHY_URL = "https://api.giphy.com/v1/gifs";
 
 interface Props {
@@ -12,22 +12,23 @@ interface Props {
 export default function GiphyPicker({ onSelect, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [gifs, setGifs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load trending on open
   useEffect(() => {
     loadTrending();
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 300);
   }, []);
 
   const loadTrending = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${GIPHY_URL}/trending?api_key=${GIPHY_API_KEY}&limit=20&rating=g`);
+      const res = await fetch(`${GIPHY_URL}/trending?api_key=${GIPHY_API_KEY}&limit=30&rating=g`);
       const data = await res.json();
       setGifs(data.data || []);
-    } catch {}
+    } catch (err) {
+      console.error("Giphy trending error:", err);
+    }
     setLoading(false);
   };
 
@@ -35,10 +36,12 @@ export default function GiphyPicker({ onSelect, onClose }: Props) {
     if (!q.trim()) { loadTrending(); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${GIPHY_URL}/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(q)}&limit=20&rating=g`);
+      const res = await fetch(`${GIPHY_URL}/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(q)}&limit=30&rating=g`);
       const data = await res.json();
       setGifs(data.data || []);
-    } catch {}
+    } catch (err) {
+      console.error("Giphy search error:", err);
+    }
     setLoading(false);
   };
 
@@ -49,55 +52,68 @@ export default function GiphyPicker({ onSelect, onClose }: Props) {
 
   return (
     <motion.div
-      className="absolute bottom-full left-0 right-0 bg-white border-2 border-dark rounded-2xl shadow-brutal mb-2 overflow-hidden"
-      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-[20000] bg-white flex flex-col"
+      style={{ height: "100dvh" }}
+      initial={{ opacity: 0, y: "100%" }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: "100%" }}
+      transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      <div className="flex items-center gap-2 px-3 py-2 border-b-2 border-dark/10">
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="GIF suchen..."
-          className="flex-1 px-3 py-2 input-soft text-sm"
-        />
-        <motion.button
-          onClick={onClose}
-          className="text-dark/30 font-bold text-sm px-2"
-          whileTap={{ scale: 0.9 }}
-        >
-          ✕
-        </motion.button>
+      {/* Header */}
+      <div className="shrink-0 bg-white border-b-2 border-dark/10" style={{ paddingTop: "env(safe-area-inset-top, 12px)" }}>
+        <div className="px-4 py-3 flex items-center gap-3">
+          <motion.button
+            onClick={onClose}
+            className="w-10 h-10 bg-surface-0 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
+            whileTap={{ scale: 0.9 }}
+          >
+            <span className="text-dark font-bold">✕</span>
+          </motion.button>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="GIF suchen..."
+            className="flex-1 px-4 py-2.5 input-soft text-sm font-medium"
+            autoComplete="off"
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1 p-2 max-h-64 overflow-y-auto">
+      {/* GIF Grid */}
+      <div className="flex-1 overflow-y-auto overscroll-contain">
         {loading ? (
-          <div className="col-span-3 text-center py-8 text-xs text-dark/30 font-medium">Laden...</div>
+          <div className="flex items-center justify-center py-20">
+            <div className="text-sm text-dark/30 font-medium">GIFs laden...</div>
+          </div>
         ) : gifs.length === 0 ? (
-          <div className="col-span-3 text-center py-8 text-xs text-dark/30 font-medium">Keine GIFs gefunden</div>
+          <div className="flex items-center justify-center py-20">
+            <div className="text-sm text-dark/30 font-medium">Keine GIFs gefunden</div>
+          </div>
         ) : (
-          gifs.map((gif: any) => (
-            <motion.button
-              key={gif.id}
-              onClick={() => onSelect(gif.images.fixed_height.url)}
-              className="aspect-square rounded-lg overflow-hidden bg-dark/5"
-              whileTap={{ scale: 0.9 }}
-            >
-              <img
-                src={gif.images.fixed_height_small.url}
-                alt={gif.title}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </motion.button>
-          ))
+          <div className="grid grid-cols-2 gap-1.5 p-3">
+            {gifs.map((gif: any) => (
+              <motion.button
+                key={gif.id}
+                onClick={() => onSelect(gif.images.fixed_height.url)}
+                className="relative aspect-[4/3] rounded-xl overflow-hidden bg-dark/5 border-2 border-transparent active:border-dark"
+                whileTap={{ scale: 0.95 }}
+              >
+                <img
+                  src={gif.images.fixed_width.url}
+                  alt={gif.title || "GIF"}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </motion.button>
+            ))}
+          </div>
         )}
       </div>
 
-      <div className="px-3 py-1.5 border-t border-dark/5 text-center">
+      {/* Footer */}
+      <div className="shrink-0 px-4 py-2 border-t border-dark/5 bg-white text-center" style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
         <span className="text-[9px] text-dark/20 font-bold uppercase tracking-wider">Powered by GIPHY</span>
       </div>
     </motion.div>

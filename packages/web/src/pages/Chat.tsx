@@ -15,11 +15,17 @@ interface Props {
   onClose?: () => void;
 }
 
+function isGifUrl(text: string): boolean {
+  if (!text) return false;
+  return /\.(gif)(\?|$)/i.test(text) || /giphy\.com\/media/i.test(text) || /media\d*\.giphy\.com/i.test(text);
+}
+
 export default function Chat({ auth, onClose }: Props) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [showGiphy, setShowGiphy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
@@ -53,7 +59,6 @@ export default function Chat({ auth, onClose }: Props) {
     e.preventDefault();
     const text = input.trim();
     if (!text || sending) return;
-
     setSending(true);
     setInput("");
     try {
@@ -64,8 +69,19 @@ export default function Chat({ auth, onClose }: Props) {
       setInput(text);
     }
     setSending(false);
-    // Refocus input after send so keyboard stays open
     inputRef.current?.focus();
+  };
+
+  const handleGifSelect = async (gifUrl: string) => {
+    setShowGiphy(false);
+    setSending(true);
+    try {
+      await sendMessage(auth.group.id, gifUrl, auth.event.id);
+      await loadMessages();
+    } catch (err) {
+      console.error("Failed to send GIF:", err);
+    }
+    setSending(false);
   };
 
   const formatTime = (d: string) =>
@@ -83,30 +99,18 @@ export default function Chat({ auth, onClose }: Props) {
 
   let lastDate = "";
 
-  const [showGiphy, setShowGiphy] = useState(false);
-
-  const handleGifSelect = async (gifUrl: string) => {
-    setShowGiphy(false);
-    try {
-      await sendMessage(auth.group.id, gifUrl, auth.event.id);
-      await loadMessages();
-    } catch (err) {
-      console.error("Failed to send GIF:", err);
-    }
-  };
-
   return (
     <motion.div
-      className="fixed inset-0 z-[10000] bg-surface-0 flex flex-col"
+      className="fixed inset-0 z-[10000] bg-white flex flex-col"
       style={{ height: "100dvh" }}
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}
       transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
     >
-      {/* Chat Header — fixed, always visible */}
-      <div className="shrink-0 bg-white border-b-3 border-dark" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+      {/* Header */}
+      <div className="shrink-0 bg-white border-b-3 border-dark" style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}>
+        <div className="px-4 py-2.5 flex items-center gap-3">
           <motion.button
             onClick={onClose || (() => {})}
             className="w-10 h-10 bg-surface-0 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
@@ -115,7 +119,7 @@ export default function Chat({ auth, onClose }: Props) {
             <IconArrowLeft className="w-5 h-5 text-dark" />
           </motion.button>
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-extrabold tracking-tight">Chat</h2>
+            <h2 className="text-lg font-extrabold tracking-tight leading-tight">Chat</h2>
             <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
               {auth.group.name} · {messages.length} Nachrichten
             </p>
@@ -124,17 +128,17 @@ export default function Chat({ auth, onClose }: Props) {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1 min-h-0 overscroll-contain bg-surface-0 bg-grid">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 min-h-0 overscroll-contain bg-surface-0">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <span className="text-4xl mb-3">💬</span>
+            <p className="text-sm text-dark/40 font-bold">Noch keine Nachrichten</p>
+            <p className="text-xs text-dark/25 mt-1">Schreib die erste!</p>
+          </div>
         ) : (
-          <>
-            {messages.length === 0 && (
-              <p className="text-sm text-dark/40 text-center py-10 font-medium">
-                Noch keine Nachrichten. Schreib die erste!
-              </p>
-            )}
-
+          <div className="space-y-1.5">
             {messages.map((msg, msgIndex) => {
               const dateStr = new Date(msg.created_at).toDateString();
               let showDateHeader = false;
@@ -144,111 +148,94 @@ export default function Chat({ auth, onClose }: Props) {
               }
               const isMe = msg.sender_id === auth.member.id;
               const isActivity = msg.type === "activity";
+              const isGif = isGifUrl(msg.content);
 
               return (
                 <div key={msg.id}>
                   {showDateHeader && (
-                    <div className="flex justify-center my-5">
-                      <span className="text-[10px] text-dark/40 font-bold uppercase tracking-wider bg-white border-2 border-dark/15 px-4 py-1.5 rounded-full">
+                    <div className="flex justify-center my-4">
+                      <span className="text-[10px] text-dark/40 font-bold uppercase tracking-wider bg-white border-2 border-dark/10 px-4 py-1.5 rounded-full">
                         {formatDateHeader(msg.created_at)}
                       </span>
                     </div>
                   )}
 
                   {isActivity ? (
-                    <motion.div
-                      className="flex justify-center mb-2"
-                      initial={msgIndex === messages.length - 1 ? { opacity: 0, y: 6 } : false}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <div className="max-w-[90%] px-4 py-2.5 bg-accent-mint/40 border-2 border-dark/10 rounded-2xl text-center">
+                    <div className="flex justify-center mb-2">
+                      <div className="max-w-[85%] px-4 py-2 bg-accent-mint/30 border border-dark/10 rounded-2xl text-center">
                         <p className="text-[10px] font-bold text-dark/50 mb-0.5">
                           <Emoji emoji={msg.sender_emoji || "👤"} size={12} className="mr-1" />
                           {msg.sender_name}
                         </p>
                         <p className="text-[13px] font-semibold leading-snug">{msg.content}</p>
-                        <p className="text-[10px] text-dark/40 mt-1">{formatTime(msg.created_at)}</p>
+                        <p className="text-[10px] text-dark/30 mt-1">{formatTime(msg.created_at)}</p>
                       </div>
-                    </motion.div>
+                    </div>
                   ) : (
-                    <motion.div
-                      className={`flex ${isMe ? "justify-end" : "justify-start"} mb-2`}
-                      initial={msgIndex === messages.length - 1 ? { opacity: 0, y: 6, scale: 0.97 } : false}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.2 }}
-                    >
+                    <div className={`flex ${isMe ? "justify-end" : "justify-start"} mb-1.5`}>
                       {!isMe && (
                         <span className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center shrink-0 mr-2 mt-1">
-                          <Emoji emoji={msg.sender_emoji || "👤"} size={16} />
+                          <Emoji emoji={msg.sender_emoji || "👤"} size={14} />
                         </span>
                       )}
-                      <div
-                        className={`max-w-[75%] px-4 py-3 border-2 border-dark rounded-2xl ${
-                          isMe
-                            ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
-                            : "bg-white rounded-bl-md shadow-brutal-xs"
-                        }`}
-                      >
+                      <div className={`max-w-[78%] ${isGif ? "" : "px-4 py-2.5"} border-2 border-dark rounded-2xl overflow-hidden ${
+                        isMe
+                          ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
+                          : "bg-white rounded-bl-md shadow-brutal-xs"
+                      }`}>
                         {!isMe && (
-                          <p className="text-[10px] font-bold text-dark/50 mb-1">
-                            {msg.sender_name}
+                          <p className={`text-[10px] font-bold text-dark/50 mb-1 ${isGif ? "px-3 pt-2" : ""}`}>
+                            {msg.sender_name || "Unbekannt"}
                           </p>
                         )}
-                        {/* GIF / Image detection */}
-                        {msg.content?.match(/https?:\/\/[^\s]+\.(gif|giphy\.com)[^\s]*/i) ? (
+
+                        {isGif ? (
                           <img
-                            src={msg.content.match(/https?:\/\/[^\s]+/)?.[0]}
+                            src={msg.content}
                             alt="GIF"
-                            className="rounded-xl max-w-full max-h-48 object-cover"
+                            className="w-full max-h-52 object-cover"
                             loading="lazy"
                           />
                         ) : (
                           <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
                         )}
-                        {msg.link_preview && (
-                          <a href={msg.link_preview.url} target="_blank" rel="noopener noreferrer" className="block mt-2 bg-surface-0 border-2 border-dark/10 rounded-xl overflow-hidden no-underline hover:bg-dark/5 transition-colors">
+
+                        {msg.link_preview && !isGif && (
+                          <a href={msg.link_preview.url} target="_blank" rel="noopener noreferrer" className="block mt-2 bg-surface-0 border border-dark/10 rounded-xl overflow-hidden no-underline">
                             {msg.link_preview.image_url && (
-                              <img src={msg.link_preview.image_url} alt="" className="w-full h-28 object-cover" loading="lazy" />
+                              <img src={msg.link_preview.image_url} alt="" className="w-full h-24 object-cover" loading="lazy" />
                             )}
-                            <div className="p-2.5">
-                              {msg.link_preview.title && <p className="text-xs font-bold text-dark truncate">{msg.link_preview.title}</p>}
+                            <div className="p-2">
+                              {msg.link_preview.title && <p className="text-[11px] font-bold text-dark truncate">{msg.link_preview.title}</p>}
                               {msg.link_preview.description && <p className="text-[10px] text-dark/50 line-clamp-2 mt-0.5">{msg.link_preview.description}</p>}
-                              <p className="text-[9px] text-dark/30 mt-1">{new URL(msg.link_preview.url).hostname}</p>
                             </div>
                           </a>
                         )}
-                        <p className={`text-[10px] mt-1.5 ${isMe ? "text-dark/30" : "text-dark/30"}`}>
+
+                        <p className={`text-[10px] mt-1 ${isGif ? "px-3 pb-1.5" : ""} ${isMe ? "text-dark/30" : "text-dark/25"}`}>
                           {formatTime(msg.created_at)}
                         </p>
                       </div>
-                    </motion.div>
+                    </div>
                   )}
                 </div>
               );
             })}
-          </>
+          </div>
         )}
       </div>
 
-      {/* Input bar */}
-      <form onSubmit={handleSend} className="shrink-0 border-t-3 border-dark bg-white" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <div className="relative px-4 py-3">
-          <AnimatePresence>
-            {showGiphy && (
-              <GiphyPicker onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />
-            )}
-          </AnimatePresence>
-          <div className="flex gap-2 max-w-lg mx-auto">
+      {/* Input Bar */}
+      <div className="shrink-0 bg-white border-t-2 border-dark/10" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}>
+        <form onSubmit={handleSend} className="px-4 py-2.5">
+          <div className="flex gap-2 items-end">
             <motion.button
               type="button"
-              onClick={() => setShowGiphy(!showGiphy)}
-              className={`w-12 h-12 flex items-center justify-center shrink-0 rounded-xl border-2 transition-all ${
-                showGiphy ? "border-dark bg-dark text-white" : "border-dark/15 bg-surface-0 text-dark/40"
-              }`}
+              onClick={() => setShowGiphy(true)}
+              className="w-11 h-11 flex items-center justify-center shrink-0 rounded-xl border-2 border-dark/15 bg-surface-0 text-dark/50"
               whileTap={{ scale: 0.9 }}
             >
-              <span className="text-lg">GIF</span>
+              <span className="text-[11px] font-extrabold">GIF</span>
             </motion.button>
             <input
               ref={inputRef}
@@ -256,21 +243,28 @@ export default function Chat({ auth, onClose }: Props) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Nachricht..."
-              className="flex-1 px-4 py-3 input-soft"
+              className="flex-1 px-4 py-2.5 input-soft text-[15px]"
               autoComplete="off"
               enterKeyHint="send"
             />
             <motion.button
               type="submit"
               disabled={!input.trim() || sending}
-              className="btn-gold disabled:opacity-20 w-12 h-12 flex items-center justify-center shrink-0"
+              className="w-11 h-11 flex items-center justify-center shrink-0 rounded-xl border-2 border-dark bg-gold-400 shadow-brutal-xs disabled:opacity-20"
               whileTap={{ scale: 0.9 }}
             >
               <IconSend className="w-5 h-5" />
             </motion.button>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
+
+      {/* Giphy Fullscreen Overlay */}
+      <AnimatePresence>
+        {showGiphy && (
+          <GiphyPicker onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
