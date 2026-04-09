@@ -331,7 +331,7 @@ export default function AdminPanel({ auth }: Props) {
 /* Create Round Component                                              */
 /* ------------------------------------------------------------------ */
 
-function CreateRoundCard({ auth, members, token }: { auth: Props["auth"]; members: Member[]; token: string | null }) {
+function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth"]; members: Member[]; token: string | null }) {
   const [open, setOpen] = useState(false);
   const [courses, setCourses] = useState<any[]>([]);
   const [tees, setTees] = useState<any[]>([]);
