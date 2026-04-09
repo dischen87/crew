@@ -76,20 +76,20 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
     } else if (mode === "register" && onRegister) {
       await onRegister(name.trim(), password, groupName.trim(), selectedEmoji || undefined);
     } else if (mode === "join" && onJoin) {
-      await onJoin(inviteCode.trim(), name.trim(), password, selectedEmoji || undefined, pin || undefined);
+      const joinPassword = password || "BelekGolf4ever";
+      await onJoin(inviteCode.trim(), name.trim(), joinPassword, selectedEmoji || undefined, pin || undefined);
     }
 
     setSubmitting(false);
   };
 
   const canSubmit = () => {
-    if (!name.trim()) return false;
     if (mode === "login") {
-      return !!(loginCode.trim() && (pin || password));
+      return !!(name.trim() && loginCode.trim() && (pin || password));
     }
+    if (!name.trim()) return false;
     if (mode === "register" && (!groupName.trim() || !password)) return false;
     if (mode === "join" && !inviteCode.trim()) return false;
-    if (mode === "join" && !password && !hasPasswordFromUrl) return false;
     return true;
   };
 
@@ -292,8 +292,8 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
                   </div>
                 )}
 
-                {/* Password — hidden in login mode (uses PIN) and when pre-filled from invite URL */}
-                {mode !== "login" && !(hasPasswordFromUrl && mode === "join") && (
+                {/* Password — only shown for register mode. Hidden in login (uses PIN) and join (auto-sent) */}
+                {mode === "register" && (
                   <div>
                     <label className="block text-[11px] font-bold text-dark/50 uppercase tracking-[0.1em] mb-2">
                       Passwort
