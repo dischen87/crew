@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import { getTotalPendingCount } from "../lib/offlineDb";
@@ -20,7 +20,6 @@ export default function Golf() {
   const [handicapInput, setHandicapInput] = useState("");
   const [handicapLoading, setHandicapLoading] = useState(true);
   const [savingHandicap, setSavingHandicap] = useState(false);
-  const [roundTeams, setRoundTeams] = useState<Record<string, any[]>>({});
   const [pendingCount, setPendingCount] = useState(0);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -60,18 +59,6 @@ export default function Golf() {
       onCourseNavigated?.();
     }
   }, [navigateToCourse, golfData]);
-
-  // Load teams for all rounds
-  useEffect(() => {
-    if (!golfData?.rounds) return;
-    golfData.rounds.forEach((r: any) => {
-      getRoundTeams(r.id).then((data) => {
-        if (data.teams?.length > 0) {
-          setRoundTeams((prev) => ({ ...prev, [r.id]: data.teams }));
-        }
-      }).catch(() => {});
-    });
-  }, [golfData?.rounds]);
 
   const loadRound = useCallback(async (roundId: string) => {
     setSelectedRound(roundId);
