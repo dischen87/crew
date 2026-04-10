@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { getGolfData } from "../lib/api";
@@ -249,7 +249,7 @@ export default function Leaderboard() {
           </StaggerItem>
 
           {/* Round breakdown */}
-          {rounds.length > 0 && (
+          {allRounds.length > 0 && (
             <StaggerItem>
               <div className="card p-5">
                 <div className="flex items-center gap-2 mb-4">
@@ -259,7 +259,7 @@ export default function Leaderboard() {
                   <span className="pill bg-gold-400">Runden-Uebersicht</span>
                 </div>
                 <div className="space-y-3">
-                  {rounds.map((r: any, i: number) => (
+                  {allRounds.map((r: any, i: number) => (
                     <div key={r.id} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2.5">
                         <span className="pill bg-accent-mint">R{i + 1}</span>
