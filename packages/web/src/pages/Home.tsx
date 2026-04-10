@@ -78,7 +78,7 @@ export default function Home() {
       {nextRound && (
         <StaggerItem>
           <motion.button
-            onClick={() => onNavigate("golf")}
+            onClick={() => navigate({ to: `/events/${eventId}/golf/${nextRound.id}` })}
             className="w-full card-gold p-6 text-left"
             whileTap={{ scale: 0.98 }}
           >

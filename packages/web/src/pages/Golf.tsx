@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
@@ -8,8 +9,7 @@ import { getTotalPendingCount } from "../lib/offlineDb";
 
 export default function Golf() {
   const { auth } = useAuth();
-  const navigateToCourse: string | null = null;
-  const onCourseNavigated = () => {};
+  const routeParams = useParams({ strict: false }) as { roundId?: string };
   const [golfData, setGolfData] = useState<any>(null);
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
   const [roundDetail, setRoundDetail] = useState<any>(null);
@@ -51,14 +51,12 @@ export default function Golf() {
   }, []);
 
   // Auto-navigate to course (from GPS proximity notification)
+  // Auto-open round from URL param (e.g. /events/:eventId/golf/:roundId)
   useEffect(() => {
-    if (!navigateToCourse || !golfData?.rounds) return;
-    const round = golfData.rounds.find((r: any) => r.course_id === navigateToCourse);
-    if (round) {
-      loadRound(round.id);
-      onCourseNavigated?.();
+    if (routeParams.roundId && !selectedRound) {
+      loadRound(routeParams.roundId);
     }
-  }, [navigateToCourse, golfData]);
+  }, [routeParams.roundId]);
 
   const loadRound = useCallback(async (roundId: string) => {
     setSelectedRound(roundId);
