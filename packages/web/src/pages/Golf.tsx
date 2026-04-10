@@ -270,7 +270,7 @@ export default function Golf() {
       )}
 
       {/* Open rounds — prominent, full width */}
-      {golfData?.rounds?.filter((r: any) => r.status !== "closed").map((round: any, index: number) => (
+      {golfData?.rounds?.filter((r: any) => r.status !== "closed").map((round: any) => (
         <StaggerItem key={round.id}>
           <div className={`card-gold p-5 ${needsHandicap ? "opacity-50" : ""}`}>
             <div className="flex items-center gap-2 mb-2">
