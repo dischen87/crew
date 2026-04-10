@@ -11,7 +11,10 @@ const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
 export default function More() {
   const { auth, logout: onLogout } = useAuth();
-  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info" | "admin">(auth?.member?.is_admin ? "admin" : "flights");
+
+  if (!auth) return null;
+
+  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info" | "admin">(auth.member.is_admin ? "admin" : "flights");
   const [flightData, setFlightData] = useState<any>(null);
   const [flightsLoading, setFlightsLoading] = useState(true);
   const [handicap, setHandicap] = useState("");
@@ -120,8 +123,6 @@ export default function More() {
       { enableHighAccuracy: true }
     );
   }, [auth?.event?.id, token]);
-
-  if (!auth) return null;
 
   const formatLocationTime = (d: string) => {
     const date = new Date(d);
@@ -455,7 +456,7 @@ function FlightCard({ flight, myId, color = "primary" }: { flight: any; myId: st
 }
 
 /* Invite Link Card — share invite link with friends */
-function InviteCard({ auth }: { auth: Props["auth"] }) {
+function InviteCard({ auth }: { auth: { member: { id: string; display_name: string; is_admin: boolean }; event: { id: string; title: string }; group: { id: string; invite_code?: string } } }) {
   const [copied, setCopied] = useState(false);
   const [guestName, setGuestName] = useState("");
   const inviteCode = auth.group.invite_code;
