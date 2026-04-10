@@ -31,7 +31,12 @@ golf.get("/event/:id", async (c) => {
   try {
     const eventId = c.req.param("id");
     const courseId = c.req.query("course_id");
-    const courseFilter = courseId ? sql`AND course_id = ${courseId}` : sql``;
+    const roundId = c.req.query("round_id");
+    const scoreFilter = roundId
+      ? sql`AND gs.round_id = ${roundId}`
+      : courseId
+      ? sql`AND gs.round_id IN (SELECT id FROM golf_rounds WHERE event_id = ${eventId} AND course_id = ${courseId})`
+      : sql`AND gs.round_id IN (SELECT id FROM golf_rounds WHERE event_id = ${eventId})`;
 
     const rounds = await sql`
       SELECT r.id, r.course_id, r.format, r.game_mode, r.date, r.tee_time, r.notes, r.tee_id, r.status,
@@ -54,7 +59,7 @@ golf.get("/event/:id", async (c) => {
         COALESCE(SUM(gs.strokes), 0)::int AS total_strokes
       FROM group_members gm
       LEFT JOIN golf_scores gs ON gs.member_id = gm.id
-        AND gs.round_id IN (SELECT id FROM golf_rounds WHERE event_id = ${eventId} ${courseFilter})
+        ${scoreFilter}
       WHERE gm.group_id = (SELECT group_id FROM events WHERE id = ${eventId})
       GROUP BY gm.id, gm.display_name, gm.avatar_emoji
       ORDER BY total_points DESC

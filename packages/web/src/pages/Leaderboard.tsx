@@ -43,16 +43,16 @@ export default function Leaderboard() {
     if (!auth) return;
     setSelectedRound(roundId);
     setLoading(true);
-    // Fetch leaderboard filtered by this round's course
-    const round = allRounds.find((r: any) => r.id === roundId);
-    if (round?.course_id) {
-      getGolfData(auth.event.id, round.course_id)
-        .then((d) => setData(d))
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    // Fetch leaderboard filtered by this specific round
+    const API_BASE = import.meta.env.VITE_API_URL || "/v2";
+    const token = localStorage.getItem("crew_token");
+    fetch(`${API_BASE}/golf/event/${auth.event.id}?round_id=${roundId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((d) => setData(d))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   };
 
   const formatRoundDate = (d: string) => {
@@ -84,12 +84,12 @@ export default function Leaderboard() {
         </div>
       </StaggerItem>
 
-      {/* Round filter — compact cards */}
+      {/* Round filter — Gesamt button + compact round list */}
       {allRounds.length > 0 && (
         <StaggerItem>
           <motion.button
             onClick={handleSelectGesamt}
-            className={`w-full mb-2 px-4 py-2.5 rounded-xl text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all text-left ${
+            className={`w-full mb-3 px-4 py-3 rounded-xl text-[12px] font-extrabold uppercase tracking-wider border-2 transition-all text-left ${
               selectedRound === null
                 ? "bg-dark text-white border-dark shadow-brutal-xs"
                 : "bg-white text-dark/40 border-dark/15"
@@ -98,28 +98,35 @@ export default function Leaderboard() {
           >
             Gesamtwertung · {allRounds.length} Runden
           </motion.button>
-          <div className="grid grid-cols-2 gap-2">
-            {allRounds.map((round: any) => (
+          <div className="space-y-1.5">
+            {allRounds.map((round: any, i: number) => (
               <motion.button
                 key={round.id}
                 onClick={() => handleSelectRound(round.id)}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 text-left transition-all ${
                   selectedRound === round.id
                     ? "bg-dark text-white border-dark shadow-brutal-xs"
                     : "bg-white text-dark/60 border-dark/10"
                 }`}
-                whileTap={{ scale: 0.96 }}
+                whileTap={{ scale: 0.97 }}
               >
-                <p className={`text-[10px] font-bold ${selectedRound === round.id ? "text-white/50" : "text-dark/30"}`}>
-                  {formatRoundDate(round.date)} {round.tee_time?.slice(0, 5)}
-                </p>
-                <p className="font-extrabold text-[12px] tracking-tight leading-tight mt-0.5">
-                  {round.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim()}
-                </p>
-                {round.players_scored > 0 && (
-                  <p className={`text-[9px] mt-1 font-bold ${selectedRound === round.id ? "text-white/40" : "text-dark/25"}`}>
-                    {round.players_scored} Spieler
+                <span className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center text-[10px] font-extrabold shrink-0 ${
+                  selectedRound === round.id ? "border-white/30 text-white" : "border-dark/15 text-dark/30"
+                }`}>
+                  R{i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-[12px] tracking-tight leading-tight truncate">
+                    {round.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim()}
                   </p>
+                  <p className={`text-[10px] font-medium ${selectedRound === round.id ? "text-white/40" : "text-dark/25"}`}>
+                    {formatRoundDate(round.date)} · {round.tee_time?.slice(0, 5)}
+                  </p>
+                </div>
+                {round.players_scored > 0 && (
+                  <span className={`text-[10px] font-bold shrink-0 ${selectedRound === round.id ? "text-white/40" : "text-dark/20"}`}>
+                    {round.players_scored}
+                  </span>
                 )}
               </motion.button>
             ))}
