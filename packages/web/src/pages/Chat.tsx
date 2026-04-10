@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { getMessages, sendMessage } from "../lib/api";
-import { IconSend, IconArrowLeft } from "../components/Icons";
+import { IconSend } from "../components/Icons";
 import { Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
 import GiphyPicker from "../components/GiphyPicker";

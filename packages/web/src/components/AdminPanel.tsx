@@ -715,7 +715,6 @@ function FlightManager({ auth, members, token }: { auth: Props["auth"]; members:
   const [rounds, setRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingRound, setEditingRound] = useState<string | null>(null);
-  const [existingTeams, setExistingTeams] = useState<any[]>([]);
   const [flights, setFlights] = useState<{ name: string; member_ids: string[] }[]>([]);
   const [activeFlight, setActiveFlight] = useState(0);
   const [saving, setSaving] = useState(false);
