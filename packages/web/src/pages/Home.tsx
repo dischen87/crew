@@ -105,27 +105,48 @@ export default function Home() {
             {nextRound.course_location && (
               <p className="text-dark/30 text-xs mt-1">{nextRound.course_location}</p>
             )}
-            {/* Flights for this round */}
-            <div className="mt-3 flex items-center gap-2">
-              {roundFlights[nextRound.id]?.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5 flex-1">
+            {/* Flights */}
+            {roundFlights[nextRound.id]?.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Flights</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
+                    className="text-[10px] font-bold text-dark/50 underline"
+                  >
+                    Bearbeiten
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   {roundFlights[nextRound.id].map((f: any, i: number) => (
-                    <span key={i} className="pill bg-white/60 text-[10px]">
-                      {f.name || `Flight ${i + 1}`} · {f.members?.length || 0}
-                    </span>
+                    <div key={i} className="bg-white/50 border-2 border-dark/10 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] font-extrabold text-dark/40 uppercase tracking-wider mb-1.5">
+                        {f.name || `Flight ${i + 1}`}
+                      </p>
+                      <div className="space-y-1">
+                        {(f.members || []).slice(0, 4).map((m: any, mi: number) => (
+                          <p key={mi} className="text-[11px] font-bold text-dark/70 leading-tight">
+                            {m.avatar_emoji || "👤"} {(m.display_name || "").split(" ")[0]}
+                          </p>
+                        ))}
+                        {(!f.members || f.members.length === 0) && (
+                          <p className="text-[10px] text-dark/20 italic">Leer</p>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
-              ) : (
-                <span className="text-xs font-bold text-dark/40 flex-1">Noch keine Flights</span>
-              )}
+              </div>
+            ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
-                className="w-8 h-8 rounded-lg border-2 border-dark/20 bg-white/60 flex items-center justify-center text-dark/40 text-sm font-bold shrink-0"
+                className="mt-4 w-full bg-white/40 border-2 border-dashed border-dark/20 rounded-xl py-3.5 flex items-center justify-center gap-2"
               >
-                {roundFlights[nextRound.id]?.length > 0 ? "✎" : "+"}
+                <span className="w-6 h-6 bg-dark/10 rounded-lg flex items-center justify-center text-dark/40 text-xs font-bold">+</span>
+                <span className="text-[12px] font-extrabold text-dark/50">Flights einteilen</span>
               </button>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
+            )}
+            <div className="mt-3 flex items-center justify-between">
               <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Scores` : ""}</span>
               <span className="text-xs font-extrabold uppercase tracking-wider">Scorecard →</span>
             </div>
