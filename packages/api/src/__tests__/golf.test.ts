@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { api, createTestGroup, cleanTestData } from "./setup";
+import { api, createTestGroup, cleanTestData, sql } from "./setup";
 
 let ctx: Awaited<ReturnType<typeof createTestGroup>>;
 let courseId: string;

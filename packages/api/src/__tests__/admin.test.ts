@@ -8,16 +8,19 @@ beforeAll(async () => {
   await cleanTestData();
   adminCtx = await createTestGroup("Admin Test Crew");
 
-  // Join as non-admin member
-  const { data } = await api("/auth/join", {
+  // Join as non-admin member (password must match EVENT_PASSWORD)
+  const { status: joinStatus, data } = await api("/auth/join", {
     method: "POST",
     body: JSON.stringify({
       invite_code: adminCtx.group.invite_code,
       name: "Normal User",
-      password: "test1234",
+      password: process.env.EVENT_PASSWORD || "BelekGolf4ever",
       emoji: "👤",
     }),
   });
+  if (joinStatus !== 200 && joinStatus !== 201) {
+    throw new Error(`Failed to join group: ${JSON.stringify(data)}`);
+  }
   normalToken = data.token;
 });
 

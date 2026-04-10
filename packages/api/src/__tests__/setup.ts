@@ -19,7 +19,7 @@ export async function api(path: string, options?: RequestInit & { token?: string
   return { status: res.status, data };
 }
 
-/** Register a fresh group + admin member for testing */
+/** Register a fresh group + admin member + event for testing */
 export async function createTestGroup(groupName = "Test Group") {
   const { status, data } = await api("/auth/register", {
     method: "POST",
@@ -35,11 +35,26 @@ export async function createTestGroup(groupName = "Test Group") {
     throw new Error(`Failed to create test group: ${JSON.stringify(data)}`);
   }
 
+  // Create an event (register doesn't create one automatically)
+  const { status: eventStatus, data: eventData } = await api("/admin/event", {
+    method: "POST",
+    token: data.token,
+    body: JSON.stringify({
+      title: "Test Event",
+      date_from: "2026-04-01",
+      date_to: "2026-04-15",
+    }),
+  });
+
+  if (eventStatus !== 200 && eventStatus !== 201) {
+    throw new Error(`Failed to create test event: ${JSON.stringify(eventData)}`);
+  }
+
   return {
     token: data.token,
     member: data.member,
     group: data.group,
-    event: data.event,
+    event: eventData.event,
   };
 }
 

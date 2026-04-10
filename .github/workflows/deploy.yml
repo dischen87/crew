@@ -56,6 +56,7 @@ jobs:
           DATABASE_URL: postgres://crew:crew_test@localhost:5432/crew_test
           REDIS_URL: redis://localhost:6379
           API_PORT: "3000"
+          EVENT_PASSWORD: "BelekGolf4ever"
         run: |
           bun run src/index.ts &
           for i in 1 2 3 4 5; do
