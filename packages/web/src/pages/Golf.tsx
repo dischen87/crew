@@ -83,7 +83,7 @@ export default function Golf() {
   }, []);
 
   const handleScoreSubmit = useCallback(async (hole: number, strokes: number) => {
-    if (!selectedRound) return;
+    if (!selectedRound || !auth) return;
     setSaving(hole);
     try {
       const offlineCtx = roundDetail?.round?.course_id && handicap != null
@@ -119,7 +119,7 @@ export default function Golf() {
   }, [selectedRound, auth?.event?.id, auth?.member?.id, roundDetail, handicap]);
 
   const handleScoreDelete = useCallback(async (hole: number) => {
-    if (!selectedRound) return;
+    if (!selectedRound || !auth) return;
     setSaving(hole);
     try {
       await deleteScore(auth.event.id, { round_id: selectedRound, hole });
@@ -132,6 +132,7 @@ export default function Golf() {
   }, [selectedRound, auth?.event?.id]);
 
   const handleHandicapSave = async () => {
+    if (!auth) return;
     const val = parseFloat(handicapInput);
     if (isNaN(val) || val < 0 || val > 54) return;
     setSavingHandicap(true);
@@ -274,7 +275,6 @@ export default function Golf() {
 
       {golfData?.rounds?.map((round: any, index: number) => {
         // Determine if this is the "current" round (first round where user has no scores)
-        const hasMyScores = round.players_scored > 0; // Simplified — real check would need per-user data
         const isCurrent = index === (golfData.rounds.findIndex((r: any) => !r._userHasScored) ?? index);
 
         return (

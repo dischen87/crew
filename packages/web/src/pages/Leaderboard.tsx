@@ -37,7 +37,7 @@ export default function Leaderboard() {
 
   // Reset to full ranking
   const handleSelectGesamt = () => {
-    if (selectedCourse === null) return;
+    if (selectedCourse === null || !auth) return;
     setSelectedCourse(null);
     setLoading(true);
     getGolfData(auth.event.id)
