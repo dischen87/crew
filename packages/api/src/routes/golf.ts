@@ -172,6 +172,23 @@ golf.get("/round/:id", async (c) => {
 });
 
 /**
+ * GET /courses/nearby — All courses with coordinates for GPS proximity detection.
+ */
+golf.get("/courses/nearby", async (c) => {
+  try {
+    const courses = await sql`
+      SELECT id, name, latitude, longitude
+      FROM golf_courses
+      WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+    `;
+    return c.json({ courses });
+  } catch (err) {
+    console.error("GET /courses/nearby error:", err);
+    return c.json({ courses: [] });
+  }
+});
+
+/**
  * GET /course/:id — Course detail with description and all holes.
  */
 golf.get("/course/:id", async (c) => {

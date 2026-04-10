@@ -28,6 +28,21 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Viewport height fallback for Android browsers without dvh support.
+      // window.innerHeight gives the visible viewport height excluding browser chrome.
+      (function(){
+        function setHeight(){
+          document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+        }
+        setHeight();
+        window.addEventListener('resize', setHeight);
+        window.addEventListener('orientationchange', function(){ setTimeout(setHeight, 150); });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', setHeight);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

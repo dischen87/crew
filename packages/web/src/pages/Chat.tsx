@@ -101,7 +101,7 @@ export default function Chat({ auth, onClose }: Props) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[10000] bg-white flex flex-col h-dvh"
+      className="fixed inset-0 z-[10000] bg-white flex flex-col"
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}

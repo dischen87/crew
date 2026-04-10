@@ -41,7 +41,33 @@ self.addEventListener("fetch", (event) => {
   // Skip non-GET
   if (request.method !== "GET") return;
 
-  // API calls — always network, never cache
+  // Golf data — network-first with cache fallback for offline scorecard
+  if (
+    request.url.includes("/v2/golf/round/") ||
+    request.url.includes("/v2/golf/course/") ||
+    request.url.includes("/v2/golf/handicap/") ||
+    request.url.includes("/v2/golf/event/")
+  ) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((cached) => cached || new Response('{"error":"offline"}', {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          }))
+        )
+    );
+    return;
+  }
+
+  // Other API calls — always network, never cache
   if (request.url.includes("/v2/") || request.url.includes("/a/")) return;
 
   // Navigation requests (HTML pages) — always network, no cache
@@ -55,7 +81,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets — network first, cache fallback for offline
+  // Static assets — network-first, cache fallback for offline
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -69,4 +95,19 @@ self.addEventListener("fetch", (event) => {
         caches.match(request).then((cached) => cached || caches.match("/"))
       )
   );
+});
+
+// Background Sync — flush pending scores when connectivity is restored.
+// The SW cannot access localStorage (auth token), so it delegates to the
+// active client via postMessage.
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-scores") {
+    event.waitUntil(
+      self.clients.matchAll({ type: "window" }).then((clients) => {
+        if (clients.length > 0) {
+          clients[0].postMessage({ type: "SYNC_SCORES" });
+        }
+      })
+    );
+  }
 });

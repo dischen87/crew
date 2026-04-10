@@ -4,6 +4,7 @@ import { login, register, joinGroup, storeAuth, getStoredAuth, clearToken, getGr
 import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "./components/Icons";
 import { Spinner } from "./components/Motion";
 import Emoji from "./components/Emoji";
+import { startProximityMonitoring, checkProximityOnce } from "./lib/proximity";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -49,6 +50,8 @@ export default function App() {
   const [showTracker, setShowTracker] = useState(false);
   const [showLanding, setShowLanding] = useState(true);
   const [inviteParams] = useState(() => getInviteFromUrl());
+  const [navigateToCourse, setNavigateToCourse] = useState<string | null>(null);
+  const [nearbyAlert, setNearbyAlert] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const stored = getStoredAuth();
@@ -122,6 +125,54 @@ export default function App() {
     );
   }, [auth]);
 
+  // GPS proximity monitoring — notify when near a golf course
+  useEffect(() => {
+    if (!auth) return;
+
+    const cleanup = startProximityMonitoring(auth.event.id);
+
+    // Handle notification tap (native notification clicked)
+    const handleNotificationTap = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.courseId) {
+        setTab("golf");
+        setNavigateToCourse(detail.courseId);
+      }
+    };
+
+    // Handle in-app toast (fallback when notifications not available)
+    const handleCourseNearby = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setNearbyAlert({ id: detail.courseId, name: detail.courseName });
+        setTimeout(() => setNearbyAlert(null), 10000);
+      }
+    };
+
+    // Re-check proximity when app becomes visible
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        checkProximityOnce(auth.event.id).then((course) => {
+          if (course) {
+            setTab("golf");
+            setNavigateToCourse(course.id);
+          }
+        });
+      }
+    };
+
+    window.addEventListener("course-notification-tap", handleNotificationTap);
+    window.addEventListener("course-nearby", handleCourseNearby);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      cleanup();
+      window.removeEventListener("course-notification-tap", handleNotificationTap);
+      window.removeEventListener("course-nearby", handleCourseNearby);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [auth]);
+
   const handleLogin = useCallback(async (name: string, password: string) => {
     setLoginError("");
     try {
@@ -166,7 +217,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="h-dvh bg-surface-0 bg-grid flex items-center justify-center">
+      <div className="h-full bg-surface-0 bg-grid flex items-center justify-center">
         <Spinner size={40} />
       </div>
     );
@@ -194,7 +245,7 @@ export default function App() {
   const renderTab = () => {
     switch (tab) {
       case "home": return <Home auth={auth} onNavigate={(t) => t === "tracker" ? setShowTracker(true) : setTab(t as Tab)} />;
-      case "golf": return <Golf auth={auth} />;
+      case "golf": return <Golf auth={auth} navigateToCourse={navigateToCourse} onCourseNavigated={() => setNavigateToCourse(null)} />;
       case "ranking": return <Leaderboard auth={auth} />;
       case "chat": return null;
       case "photos": return <Photos auth={auth} />;
@@ -212,7 +263,7 @@ export default function App() {
   ];
 
   return (
-    <div className="h-dvh bg-surface-0 bg-grid text-dark font-sans flex flex-col overflow-hidden">
+    <div className="h-full bg-surface-0 bg-grid text-dark font-sans flex flex-col overflow-hidden">
       {/* Header */}
       <header className="sticky top-0 z-40 header-glass safe-top">
         <div className="flex items-center justify-between max-w-lg mx-auto px-5 py-3">
@@ -247,7 +298,7 @@ export default function App() {
       </main>
 
       {/* Bottom Tab Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-[9999] bg-white border-t-3 border-dark safe-bottom will-change-transform">
+      <nav className="fixed bottom-0 inset-x-0 z-[9999] bg-white border-t-3 border-dark safe-bottom" style={{ transform: 'translateZ(0)' }}>
         <div className="max-w-lg mx-auto flex">
           {tabs.map((t) => {
             const active = tab === t.id;
@@ -305,6 +356,35 @@ export default function App() {
       <AnimatePresence>
         {showTracker && (
           <LiveTracker auth={auth} onClose={() => setShowTracker(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Course proximity alert (in-app fallback for notifications) */}
+      <AnimatePresence>
+        {nearbyAlert && (
+          <motion.div
+            className="fixed top-16 inset-x-4 z-50 bg-emerald-50 border-2 border-dark rounded-xl p-4 shadow-brutal flex items-center justify-between"
+            initial={{ y: -80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+          >
+            <div>
+              <p className="font-extrabold text-sm">Golfplatz in der Naehe!</p>
+              <p className="text-xs text-dark/60">{nearbyAlert.name}</p>
+            </div>
+            <motion.button
+              onClick={() => {
+                setTab("golf");
+                setNavigateToCourse(nearbyAlert.id);
+                setNearbyAlert(null);
+              }}
+              className="btn-dark text-xs px-4 py-2 shrink-0"
+              whileTap={{ scale: 0.95 }}
+            >
+              Scorecard
+            </motion.button>
+          </motion.div>
         )}
       </AnimatePresence>
 

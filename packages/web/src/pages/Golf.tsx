@@ -3,15 +3,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
+import { getTotalPendingCount } from "../lib/offlineDb";
 
 interface Props {
   auth: {
     member: { id: string; display_name: string };
     event: { id: string };
   };
+  navigateToCourse?: string | null;
+  onCourseNavigated?: () => void;
 }
 
-export default function Golf({ auth }: Props) {
+export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Props) {
   const [golfData, setGolfData] = useState<any>(null);
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
   const [roundDetail, setRoundDetail] = useState<any>(null);
@@ -23,6 +26,8 @@ export default function Golf({ auth }: Props) {
   const [handicapLoading, setHandicapLoading] = useState(true);
   const [savingHandicap, setSavingHandicap] = useState(false);
   const [roundTeams, setRoundTeams] = useState<Record<string, any[]>>({});
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
     Promise.all([
@@ -33,6 +38,32 @@ export default function Golf({ auth }: Props) {
       }).catch(() => {}),
     ]).finally(() => { setLoading(false); setHandicapLoading(false); });
   }, [auth.event.id]);
+
+  // Offline sync tracking
+  useEffect(() => {
+    const updatePending = () => { getTotalPendingCount().then(setPendingCount); };
+    updatePending();
+    const handleOnline = () => { setIsOnline(true); updatePending(); };
+    const handleOffline = () => { setIsOnline(false); };
+    window.addEventListener("scores-synced", updatePending);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("scores-synced", updatePending);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Auto-navigate to course (from GPS proximity notification)
+  useEffect(() => {
+    if (!navigateToCourse || !golfData?.rounds) return;
+    const round = golfData.rounds.find((r: any) => r.course_id === navigateToCourse);
+    if (round) {
+      loadRound(round.id);
+      onCourseNavigated?.();
+    }
+  }, [navigateToCourse, golfData]);
 
   // Load teams for all rounds
   useEffect(() => {
@@ -57,14 +88,37 @@ export default function Golf({ auth }: Props) {
     if (!selectedRound) return;
     setSaving(hole);
     try {
-      await submitScore(auth.event.id, { round_id: selectedRound, hole, strokes });
-      const data = await getRoundDetails(selectedRound);
-      setRoundDetail(data);
+      const offlineCtx = roundDetail?.round?.course_id && handicap != null
+        ? { courseId: roundDetail.round.course_id, playingHandicap: handicap }
+        : undefined;
+      const result = await submitScore(auth.event.id, { round_id: selectedRound, hole, strokes }, offlineCtx);
+      if (result?.score?._offline) {
+        // Offline: merge locally computed score into roundDetail
+        setRoundDetail((prev: any) => {
+          if (!prev) return prev;
+          const existingScores = prev.scores.filter((s: any) => !(s.member_id === auth.member.id && s.hole === hole));
+          return {
+            ...prev,
+            scores: [...existingScores, {
+              member_id: auth.member.id,
+              hole,
+              strokes: result.score.strokes,
+              net_score: result.score.net_score,
+              stableford: result.score.stableford,
+              _offline: true,
+            }],
+          };
+        });
+        getTotalPendingCount().then(setPendingCount);
+      } else {
+        const data = await getRoundDetails(selectedRound);
+        setRoundDetail(data);
+      }
     } catch (err) {
       console.error("Score submit error:", err);
     }
     setSaving(null);
-  }, [selectedRound, auth.event.id]);
+  }, [selectedRound, auth.event.id, roundDetail, handicap]);
 
   const handleScoreDelete = useCallback(async (hole: number) => {
     if (!selectedRound) return;
@@ -141,6 +195,21 @@ export default function Golf({ auth }: Props) {
 
   return (
     <Stagger className="space-y-4">
+      {/* Offline indicator */}
+      {(!isOnline || pendingCount > 0) && (
+        <StaggerItem>
+          <div className={`rounded-xl px-4 py-2.5 text-xs font-bold flex items-center gap-2 border-2 ${
+            isOnline ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "bg-amber-50 border-amber-300 text-amber-800"
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
+            {isOnline
+              ? `${pendingCount} Score${pendingCount !== 1 ? "s" : ""} werden synchronisiert...`
+              : `Offline-Modus${pendingCount > 0 ? ` · ${pendingCount} ausstehend` : ""}`
+            }
+          </div>
+        </StaggerItem>
+      )}
+
       <StaggerItem>
         <div className="pt-2 pb-2">
           <div className="inline-block bg-accent-mint border-2 border-dark px-4 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider mb-3">
@@ -496,13 +565,14 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                       </>
                     ) : score ? (
                       <>
-                        <span className={`text-center text-sm font-bold ${
+                        <span className={`text-center text-sm font-bold flex items-center justify-center gap-0.5 ${
                           score.strokes < par ? "text-emerald-600" :
                           score.strokes === par ? "text-dark" :
                           score.strokes === par + 1 ? "text-amber-500" :
                           "text-red-500"
                         }`}>
                           {score.strokes}
+                          {score._offline && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-0.5" />}
                         </span>
                         <span className={`text-center text-sm font-bold ${
                           score.stableford >= 3 ? "text-emerald-600" :

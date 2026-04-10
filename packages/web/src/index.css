@@ -6,7 +6,14 @@
 
 html {
   height: 100%;
+  height: 100dvh;
+  height: var(--app-height, 100vh);
   overflow: hidden;
+}
+
+/* On browsers that support dvh, override the JS fallback */
+@supports (height: 100dvh) {
+  html { height: 100dvh; }
 }
 
 body {

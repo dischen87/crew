@@ -51,13 +51,20 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
         window.location.reload();
       });
 
-      // --- Listen for explicit update messages from the SW ---
+      // --- Listen for SW messages ---
       navigator.serviceWorker.addEventListener("message", (event) => {
         if (event.data?.type === "SW_UPDATED" && !refreshing) {
           refreshing = true;
           window.location.reload();
         }
+        // Background Sync: SW delegates score sync to main thread
+        if (event.data?.type === "SYNC_SCORES") {
+          import("./lib/syncEngine").then((m) => m.syncPendingScores());
+        }
       });
+
+      // Setup fallback sync for browsers without Background Sync (iOS Safari)
+      import("./lib/syncEngine").then((m) => m.setupFallbackSync());
     } catch {
       // SW registration failed — app works without it
     }
