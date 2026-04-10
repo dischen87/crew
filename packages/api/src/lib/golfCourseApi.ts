@@ -52,7 +52,7 @@ async function apiFetch<T>(path: string): Promise<T> {
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${API_KEY}` },
+    headers: { Authorization: `Key ${API_KEY}` },
   });
 
   if (!res.ok) {
