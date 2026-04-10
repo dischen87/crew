@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
@@ -9,7 +8,6 @@ import { getTotalPendingCount } from "../lib/offlineDb";
 
 export default function Golf() {
   const { auth } = useAuth();
-  const params = useParams({ strict: false }) as { eventId?: string; roundId?: string };
   const navigateToCourse: string | null = null;
   const onCourseNavigated = () => {};
   const [golfData, setGolfData] = useState<any>(null);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { getMessages, sendMessage } from "../lib/api";
 import { IconSend, IconArrowLeft } from "../components/Icons";
@@ -15,9 +15,7 @@ function isGifUrl(text: string): boolean {
 
 export default function Chat() {
   const { auth } = useAuth();
-  const navigate = useNavigate();
-  const { eventId } = useParams({ from: "/events/$eventId" });
-  const onClose = () => navigate({ to: `/events/${eventId}` });
+  const { eventId: _eventId } = useParams({ from: "/events/$eventId" });
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -125,7 +123,7 @@ export default function Chat() {
           </div>
         ) : (
           <div className="space-y-1.5">
-            {messages.map((msg, msgIndex) => {
+            {messages.map((msg) => {
               const dateStr = new Date(msg.created_at).toDateString();
               let showDateHeader = false;
               if (dateStr !== lastDate) {
