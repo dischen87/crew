@@ -320,7 +320,7 @@ export default function Golf() {
         <StaggerItem>
           <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-3">Abgeschlossene Runden</p>
           <div className="grid grid-cols-2 gap-3">
-            {golfData.rounds.filter((r: any) => r.status === "closed").map((round: any, i: number) => (
+            {golfData.rounds.filter((r: any) => r.status === "closed").map((round: any) => (
               <motion.button
                 key={round.id}
                 onClick={() => loadRound(round.id)}
