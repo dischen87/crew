@@ -106,17 +106,27 @@ export default function Home() {
               <p className="text-dark/30 text-xs mt-1">{nextRound.course_location}</p>
             )}
             {/* Flights for this round */}
-            {roundFlights[nextRound.id]?.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {roundFlights[nextRound.id].map((f: any, i: number) => (
-                  <span key={i} className="pill bg-white/60 text-[10px]">
-                    {f.name || `Flight ${i + 1}`} · {f.members?.length || 0} Spieler
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Spieler haben Scores` : "Noch keine Scores"}</span>
+            <div className="mt-3 flex items-center gap-2">
+              {roundFlights[nextRound.id]?.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 flex-1">
+                  {roundFlights[nextRound.id].map((f: any, i: number) => (
+                    <span key={i} className="pill bg-white/60 text-[10px]">
+                      {f.name || `Flight ${i + 1}`} · {f.members?.length || 0}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs font-bold text-dark/40 flex-1">Noch keine Flights</span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
+                className="w-8 h-8 rounded-lg border-2 border-dark/20 bg-white/60 flex items-center justify-center text-dark/40 text-sm font-bold shrink-0"
+              >
+                {roundFlights[nextRound.id]?.length > 0 ? "✎" : "+"}
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Scores` : ""}</span>
               <span className="text-xs font-extrabold uppercase tracking-wider">Scorecard →</span>
             </div>
           </motion.button>

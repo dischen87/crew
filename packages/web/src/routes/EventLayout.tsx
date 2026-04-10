@@ -8,6 +8,7 @@ import Emoji from "../components/Emoji";
 import { Spinner } from "../components/Motion";
 import Profile from "../pages/Profile";
 import LiveTracker from "../components/LiveTracker";
+import FlightEditor from "../components/FlightEditor";
 
 /** Icon mapping for module types */
 const MODULE_ICONS: Record<string, any> = {
@@ -57,12 +58,30 @@ function EventLayoutInner() {
   const matchRoute = useMatchRoute();
   const [showProfile, setShowProfile] = useState(false);
   const [showTracker, setShowTracker] = useState(false);
+  const [flightEditorRound, setFlightEditorRound] = useState<string | null>(null);
+  const [allMembers, setAllMembers] = useState<any[]>([]);
+
+  // Load members for flight editor
+  useEffect(() => {
+    if (!auth?.group?.id) return;
+    import("../lib/api").then(({ getGroup }) => {
+      getGroup(auth.group.id).then((g: any) => setAllMembers(g.members || [])).catch(() => {});
+    });
+  }, [auth?.group?.id]);
 
   // Listen for tracker navigation from child pages
   useEffect(() => {
-    const handler = () => setShowTracker(true);
-    window.addEventListener("open-tracker", handler);
-    return () => window.removeEventListener("open-tracker", handler);
+    const trackerHandler = () => setShowTracker(true);
+    const flightHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.roundId) setFlightEditorRound(detail.roundId);
+    };
+    window.addEventListener("open-tracker", trackerHandler);
+    window.addEventListener("open-flight-editor", flightHandler);
+    return () => {
+      window.removeEventListener("open-tracker", trackerHandler);
+      window.removeEventListener("open-flight-editor", flightHandler);
+    };
   }, []);
 
   // Build tabs dynamically from event modules
@@ -232,6 +251,17 @@ function EventLayoutInner() {
       <AnimatePresence>
         {showTracker && (
           <LiveTracker auth={auth} onClose={() => setShowTracker(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Flight Editor overlay */}
+      <AnimatePresence>
+        {flightEditorRound && (
+          <FlightEditor
+            roundId={flightEditorRound}
+            members={allMembers}
+            onClose={() => setFlightEditorRound(null)}
+          />
         )}
       </AnimatePresence>
     </div>
