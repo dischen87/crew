@@ -205,75 +205,75 @@ export default function Golf({ auth }: Props) {
         </StaggerItem>
       )}
 
-      {golfData?.rounds?.map((round: any, index: number) => (
+      {golfData?.rounds?.map((round: any, index: number) => {
+        // Determine if this is the "current" round (first round where user has no scores)
+        const hasMyScores = round.players_scored > 0; // Simplified — real check would need per-user data
+        const isCurrent = index === (golfData.rounds.findIndex((r: any) => !r._userHasScored) ?? index);
+
+        return (
         <StaggerItem key={round.id}>
-          <motion.button
-            onClick={() => needsHandicap ? null : loadRound(round.id)}
-            className={`w-full card p-5 text-left ${needsHandicap ? "opacity-50 cursor-not-allowed" : ""}`}
-            whileTap={needsHandicap ? undefined : { scale: 0.98 }}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="pill bg-gold-400">R{index + 1}</span>
-                  <span className="text-xs text-dark/40 font-medium">{formatDate(round.date)}</span>
-                </div>
-                <p className="font-extrabold mt-2 tracking-tight text-[15px]">{round.course_name}</p>
-                <div className="flex items-center gap-3 mt-1 text-xs text-dark/50 font-medium">
-                  <span>Tee {round.tee_time?.slice(0, 5)}</span>
-                  <span>Par {round.par_total}</span>
-                  <span>{round.format === "stableford" ? "Stableford" : round.format}</span>
-                  {round.game_mode && round.game_mode !== "individual" && (
-                    <span className="pill bg-accent-gold text-dark text-[10px] font-bold px-2 py-0.5 rounded-full">{
-                      round.game_mode === "4v4" ? "4 vs 4" :
-                      round.game_mode === "2v2" ? "2 vs 2" :
-                      round.game_mode === "scramble" ? "Scramble" :
-                      round.game_mode === "best_ball" ? "Best Ball" : round.game_mode
-                    }</span>
-                  )}
-                </div>
-                {round.course_id && (
-                  <motion.button
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedCourse(round.course_id); }}
-                    className="mt-2 pill bg-accent-mint text-[10px] font-bold"
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    ⛳ Platz-Details & Loecher →
-                  </motion.button>
-                )}
-              </div>
-              <div className="text-right">
-                {round.players_scored > 0 ? (
-                  <span className="pill bg-accent-mint">{round.players_scored} Spieler</span>
-                ) : (
-                  <span className="pill bg-white text-dark/40">Offen</span>
-                )}
-              </div>
+          {/* Round Card */}
+          <div className={`${isCurrent ? "card-gold" : "card"} p-4 ${needsHandicap ? "opacity-50" : ""}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`pill ${isCurrent ? "bg-dark text-white" : "bg-gold-400"}`}>R{index + 1}</span>
+              <span className="text-xs text-dark/40 font-medium">{formatDate(round.date)}</span>
+              {round.tee_time && <span className="text-xs text-dark/40">· {round.tee_time.slice(0, 5)}</span>}
+              {round.game_mode && round.game_mode !== "individual" && (
+                <span className="text-[10px] font-bold text-dark/40">{
+                  round.game_mode === "4v4" ? "4v4" : round.game_mode === "2v2" ? "2v2" :
+                  round.game_mode === "scramble" ? "Scramble" : round.game_mode === "best_ball" ? "Best Ball" : round.game_mode
+                }</span>
+              )}
             </div>
-            {round.notes && (
-              <p className="text-xs text-dark/40 mt-3 leading-relaxed border-t-2 border-dark/10 pt-2 font-medium">
-                {round.notes}
-              </p>
-            )}
-            {/* Flight info */}
+            <p className="font-extrabold tracking-tight text-[15px]">{round.course_name}</p>
+            <p className="text-xs text-dark/40 font-medium mt-0.5">
+              Par {round.par_total} · {round.format === "stableford" ? "Stableford" : round.format}
+              {round.players_scored > 0 && ` · ${round.players_scored} Scores`}
+            </p>
+
+            {/* Flight info (compact) */}
             {roundTeams[round.id] && roundTeams[round.id].length > 0 && (
-              <div className="mt-3 border-t-2 border-dark/10 pt-2.5">
-                <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-1.5">
-                  {roundTeams[round.id].length} Flights
-                </p>
-                <div className="space-y-1">
-                  {roundTeams[round.id].map((team: any, ti: number) => (
-                    <div key={team.id || ti} className="flex items-center gap-1.5 text-xs text-dark/50 font-medium">
-                      <span className="text-[10px] font-bold text-dark/25 w-4">{ti + 1}.</span>
-                      {team.members?.map((m: any) => m.display_name?.split(" ")[0]).join(", ")}
-                    </div>
-                  ))}
-                </div>
+              <div className="mt-2 text-[10px] text-dark/40 font-medium">
+                {roundTeams[round.id].map((team: any, ti: number) => (
+                  <span key={team.id || ti}>
+                    {ti > 0 && " · "}
+                    <span className="font-bold text-dark/30">F{ti + 1}:</span>{" "}
+                    {team.members?.map((m: any) => m.display_name?.split(" ")[0]).join(", ")}
+                  </span>
+                ))}
               </div>
             )}
-          </motion.button>
+
+            {round.notes && (
+              <p className="text-[10px] text-dark/30 mt-1 italic">{round.notes}</p>
+            )}
+
+            {/* CTAs */}
+            <div className="flex gap-2 mt-3">
+              <motion.button
+                onClick={() => !needsHandicap && loadRound(round.id)}
+                disabled={needsHandicap}
+                className={`flex-1 py-2.5 rounded-xl border-2 border-dark text-xs font-extrabold shadow-brutal-xs ${
+                  isCurrent ? "bg-dark text-white" : "bg-gold-400 text-dark"
+                } disabled:opacity-30`}
+                whileTap={{ scale: 0.95 }}
+              >
+                Score eintragen →
+              </motion.button>
+              {round.course_id && (
+                <motion.button
+                  onClick={() => setSelectedCourse(round.course_id)}
+                  className="px-3 py-2.5 rounded-xl border-2 border-dark/20 bg-white text-xs font-bold text-dark/50"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Details
+                </motion.button>
+              )}
+            </div>
+          </div>
         </StaggerItem>
-      ))}
+        );
+      })}
 
       {needsHandicap && golfData?.rounds?.length > 0 && (
         <StaggerItem>
@@ -306,11 +306,14 @@ interface ScorecardProps {
 
 function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving, handicap, onSubmitScore, onDeleteScore, onBack }: ScorecardProps) {
   const [viewMode, setViewMode] = useState<"my" | "all">("my");
-  const [activeHole, setActiveHole] = useState<number | null>(null);
 
   const myScores = scores.filter((s: any) => s.member_id === memberId);
   const myScoreMap: Record<number, any> = {};
   myScores.forEach((s: any) => { myScoreMap[s.hole] = s; });
+
+  // Auto-open first hole without a score
+  const firstEmptyHole = holes.find((h: any) => !myScoreMap[h.hole_number])?.hole_number ?? null;
+  const [activeHole, setActiveHole] = useState<number | null>(firstEmptyHole);
 
   const myTotalStrokes = myScores.reduce((sum: number, s: any) => sum + s.strokes, 0);
   const myTotalStableford = myScores.reduce((sum: number, s: any) => sum + s.stableford, 0);
@@ -318,7 +321,10 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
 
   const handleQuickScore = (hole: number, strokes: number) => {
     onSubmitScore(hole, strokes);
-    setActiveHole(null);
+    // Auto-advance to next empty hole
+    const currentIdx = holes.findIndex((h: any) => h.hole_number === hole);
+    const nextEmpty = holes.slice(currentIdx + 1).find((h: any) => !myScoreMap[h.hole_number] && h.hole_number !== hole);
+    setActiveHole(nextEmpty?.hole_number ?? null);
   };
 
   const handleDelete = (hole: number) => {
@@ -509,7 +515,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                       </>
                     ) : (
                       <>
-                        <span className="text-center text-sm text-dark/15 font-bold">–</span>
+                        <span className="text-center text-sm text-gold-400 font-bold">+</span>
                         <span className="text-center text-sm text-dark/15 font-bold">–</span>
                       </>
                     )}
@@ -538,7 +544,7 @@ function Scorecard({ round, roundLabel, holes, scores, members, memberId, saving
                           )}
 
                           {/* Quick score buttons */}
-                          <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider mb-2">Schläge wählen</p>
+                          <p className="text-[11px] font-bold text-dark/60 uppercase tracking-wider mb-2">Schlaege waehlen ↓</p>
                           <div className="flex gap-1.5 flex-wrap">
                             {quickScores.map((strokes) => {
                               const diff = strokes - par;

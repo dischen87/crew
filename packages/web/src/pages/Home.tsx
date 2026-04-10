@@ -90,7 +90,11 @@ export default function Home({ auth, onNavigate }: Props) {
       {/* Leaderboard Snapshot — SECOND */}
       {golfData?.leaderboard && golfData.leaderboard.length > 0 && (
         <StaggerItem>
-          <div className="card p-6">
+          <motion.button
+            onClick={() => onNavigate("ranking")}
+            className="w-full card p-6 text-left"
+            whileTap={{ scale: 0.98 }}
+          >
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 bg-gold-400 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs">
@@ -98,12 +102,9 @@ export default function Home({ auth, onNavigate }: Props) {
                 </div>
                 <span className="pill bg-gold-400">Leaderboard</span>
               </div>
-              <button
-                onClick={() => onNavigate("ranking")}
-                className="text-[11px] font-bold text-dark/25 hover:text-dark/50 transition-colors"
-              >
+              <span className="text-[11px] font-bold text-dark/25">
                 Alle →
-              </button>
+              </span>
             </div>
             <div className="space-y-3">
               {golfData.leaderboard.slice(0, 5).map((p: any, i: number) => (
@@ -131,7 +132,7 @@ export default function Home({ auth, onNavigate }: Props) {
                 </motion.div>
               ))}
             </div>
-          </div>
+          </motion.button>
         </StaggerItem>
       )}
 
