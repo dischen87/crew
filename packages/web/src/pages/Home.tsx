@@ -87,83 +87,91 @@ export default function Home() {
       {/* Next Round — TOP PRIORITY */}
       {nextRound && (
         <StaggerItem>
-          <motion.button
-            onClick={() => navigate({ to: `/events/${eventId}/golf/${nextRound.id}` })}
-            className="w-full card-gold p-6 text-left"
-            whileTap={{ scale: 0.98 }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 bg-dark border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs">
-                <IconFlag className="w-4.5 h-4.5 text-gold-400" />
+          <div className="card-gold overflow-hidden">
+            {/* Course info — tappable to scorecard */}
+            <motion.button
+              onClick={() => navigate({ to: `/events/${eventId}/golf/${nextRound.id}` })}
+              className="w-full p-5 pb-4 text-left"
+              whileTap={{ scale: 0.99 }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-dark border-2 border-dark rounded-xl flex items-center justify-center">
+                  <IconFlag className="w-4 h-4 text-gold-400" />
+                </div>
+                <span className="pill bg-dark text-white">
+                  {nextRound.date === todayStr ? "Heute" : nextRound.date === new Date(now.getTime() + 86400000).toISOString().split("T")[0] ? "Morgen" : formatDate(nextRound.date)}
+                </span>
+                {nextRound.game_mode && nextRound.game_mode !== "individual" && (
+                  <span className="pill bg-white/70">{
+                    nextRound.game_mode === "4v4" ? "4 vs 4" :
+                    nextRound.game_mode === "2v2" ? "2 vs 2" :
+                    nextRound.game_mode === "scramble" ? "Scramble" :
+                    nextRound.game_mode === "best_ball" ? "Best Ball" : nextRound.game_mode
+                  }</span>
+                )}
               </div>
-              <span className="pill bg-dark text-white">
-                {nextRound.date === todayStr ? "Heute" : nextRound.date === new Date(now.getTime() + 86400000).toISOString().split("T")[0] ? "Morgen" : formatDate(nextRound.date)}
-              </span>
-              {nextRound.game_mode && nextRound.game_mode !== "individual" && (
-                <span className="pill bg-white/80">{
-                  nextRound.game_mode === "4v4" ? "4 vs 4" :
-                  nextRound.game_mode === "2v2" ? "2 vs 2" :
-                  nextRound.game_mode === "scramble" ? "Scramble" :
-                  nextRound.game_mode === "best_ball" ? "Best Ball" : nextRound.game_mode
-                }</span>
+              <p className="font-extrabold text-xl tracking-tight">{nextRound.course_name}</p>
+              <p className="text-dark/50 mt-1 font-medium text-sm">
+                Tee-Time {nextRound.tee_time?.slice(0, 5)} · Par {nextRound.par_total} · Stableford
+              </p>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Scores` : ""}</span>
+                <span className="text-xs font-extrabold uppercase tracking-wider">Scorecard →</span>
+              </div>
+            </motion.button>
+
+            {/* Flights section — separated visually */}
+            <div className="border-t-2 border-dark/10 bg-white/30 px-5 py-4">
+              {roundFlights[nextRound.id]?.length > 0 ? (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold text-dark/40 uppercase tracking-wider">Flights</span>
+                      <span className="text-[10px] font-bold text-dark/20">{roundFlights[nextRound.id].length} Gruppen</span>
+                    </div>
+                    <motion.button
+                      onClick={() => window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } }))}
+                      className="flex items-center gap-1 bg-dark text-white rounded-lg px-3 py-1.5 text-[10px] font-extrabold"
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      ✎ Bearbeiten
+                    </motion.button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {roundFlights[nextRound.id].map((f: any, i: number) => (
+                      <div key={i} className="bg-white border-2 border-dark/8 rounded-xl p-3">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <span className="w-5 h-5 bg-gold-400 border border-dark/20 rounded-md flex items-center justify-center text-[8px] font-extrabold">
+                            {i + 1}
+                          </span>
+                          <span className="text-[10px] font-extrabold text-dark/50 uppercase tracking-wider">
+                            {f.name || `Flight ${i + 1}`}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {(f.members || []).slice(0, 4).map((m: any, mi: number) => (
+                            <div key={mi} className="flex items-center gap-1.5">
+                              <span className="text-xs">{m.avatar_emoji || "👤"}</span>
+                              <span className="text-[11px] font-bold text-dark/70 leading-tight">{(m.display_name || "").split(" ")[0]}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <motion.button
+                  onClick={() => window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } }))}
+                  className="w-full flex items-center justify-center gap-2.5 py-3"
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span className="w-7 h-7 bg-gold-400 border-2 border-dark rounded-lg flex items-center justify-center text-dark text-xs font-extrabold">+</span>
+                  <span className="text-[13px] font-extrabold text-dark/60">Flights einteilen</span>
+                </motion.button>
               )}
             </div>
-            <p className="font-extrabold text-xl tracking-tight">{nextRound.course_name}</p>
-            <p className="text-dark/50 mt-1 font-medium">
-              Tee-Time {nextRound.tee_time?.slice(0, 5)} · Par {nextRound.par_total} · {nextRound.format === "stableford" ? "Stableford" : nextRound.format}
-            </p>
-            {nextRound.course_location && (
-              <p className="text-dark/30 text-xs mt-1">{nextRound.course_location}</p>
-            )}
-            {/* Flights */}
-            {roundFlights[nextRound.id]?.length > 0 ? (
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Flights</span>
-                  <motion.button
-                    onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
-                    className="flex items-center gap-1.5 bg-white border-2 border-dark/20 rounded-lg px-3 py-1.5 shadow-brutal-xs"
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <span className="text-[10px] font-extrabold text-dark/60">Bearbeiten</span>
-                    <span className="text-[10px]">✎</span>
-                  </motion.button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {roundFlights[nextRound.id].map((f: any, i: number) => (
-                    <div key={i} className="bg-white/50 border-2 border-dark/10 rounded-xl px-3 py-2.5">
-                      <p className="text-[10px] font-extrabold text-dark/40 uppercase tracking-wider mb-1.5">
-                        {f.name || `Flight ${i + 1}`}
-                      </p>
-                      <div className="space-y-1">
-                        {(f.members || []).slice(0, 4).map((m: any, mi: number) => (
-                          <p key={mi} className="text-[11px] font-bold text-dark/70 leading-tight">
-                            {m.avatar_emoji || "👤"} {(m.display_name || "").split(" ")[0]}
-                          </p>
-                        ))}
-                        {(!f.members || f.members.length === 0) && (
-                          <p className="text-[10px] text-dark/20 italic">Leer</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <motion.button
-                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
-                className="mt-4 w-full bg-white border-2 border-dark/20 rounded-xl py-4 flex items-center justify-center gap-2.5 shadow-brutal-xs"
-                whileTap={{ scale: 0.97 }}
-              >
-                <span className="w-7 h-7 bg-gold-400 border-2 border-dark rounded-lg flex items-center justify-center text-dark text-xs font-extrabold">+</span>
-                <span className="text-[13px] font-extrabold text-dark/70">Flights einteilen</span>
-              </motion.button>
-            )}
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Scores` : ""}</span>
-              <span className="text-xs font-extrabold uppercase tracking-wider">Scorecard →</span>
-            </div>
-          </motion.button>
+          </div>
         </StaggerItem>
       )}
 
