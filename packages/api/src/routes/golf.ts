@@ -1,10 +1,28 @@
 import { Hono } from "hono";
 import { sql } from "../db/client";
 import { authMiddleware, getMember } from "../middleware/auth";
-import { calculateStableford, strokesReceivedOnHole } from "../../../shared/src/stableford";
 
 const golf = new Hono();
 golf.use("*", authMiddleware);
+
+// Stableford scoring — duplicated from shared/src/stableford.ts for Docker compatibility
+function calculateStableford(strokes: number, par: number, strokesReceived: number): number {
+  const netStrokes = strokes - strokesReceived;
+  const diff = netStrokes - par;
+  if (diff <= -3) return 5;
+  if (diff === -2) return 4;
+  if (diff === -1) return 3;
+  if (diff === 0) return 2;
+  if (diff === 1) return 1;
+  return 0;
+}
+
+function strokesReceivedOnHole(playingHandicap: number, holeHandicapIndex: number): number {
+  if (playingHandicap <= 0) return 0;
+  const full = Math.floor(playingHandicap / 18);
+  const remainder = playingHandicap % 18;
+  return full + (holeHandicapIndex <= remainder ? 1 : 0);
+}
 
 /**
  * GET /event/:id — Golf screen data (rounds, leaderboard).
