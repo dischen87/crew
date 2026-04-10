@@ -11,7 +11,7 @@ export default function Leaderboard() {
   const [data, setData] = useState<any>(null);
   const [allRounds, setAllRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedRound, setSelectedRound] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
 
   // Fetch all rounds once for course list
@@ -26,20 +26,12 @@ export default function Leaderboard() {
       .finally(() => setLoading(false));
   }, [auth?.event?.id]);
 
-  // Re-fetch when course filter changes
-  useEffect(() => {
-    if (!auth || selectedCourse === null) return;
-    setLoading(true);
-    getGolfData(auth.event.id, selectedCourse)
-      .then((d) => setData(d))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [auth?.event?.id, selectedCourse]);
+  // Re-fetch handled by handleSelectRound
 
   // Reset to full ranking
   const handleSelectGesamt = () => {
-    if (selectedCourse === null || !auth) return;
-    setSelectedCourse(null);
+    if (selectedRound === null || !auth) return;
+    setSelectedRound(null);
     setLoading(true);
     getGolfData(auth.event.id)
       .then((d) => setData(d))
@@ -47,28 +39,33 @@ export default function Leaderboard() {
       .finally(() => setLoading(false));
   };
 
-  const courses = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of allRounds) {
-      if (r.course_id && r.course_name && !seen.has(r.course_id)) {
-        seen.set(r.course_id, r.course_name);
-      }
+  const handleSelectRound = (roundId: string) => {
+    if (!auth) return;
+    setSelectedRound(roundId);
+    setLoading(true);
+    // Fetch leaderboard filtered by this round's course
+    const round = allRounds.find((r: any) => r.id === roundId);
+    if (round?.course_id) {
+      getGolfData(auth.event.id, round.course_id)
+        .then((d) => setData(d))
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
-    return Array.from(seen, ([id, name]) => ({ id, name }));
-  }, [allRounds]);
+  };
+
+  const formatRoundDate = (d: string) => {
+    const date = new Date(d);
+    return date.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+  };
 
   if (!auth) return null;
 
   const leaderboard = data?.leaderboard || [];
-  const rounds = data?.rounds || [];
 
-  const displayLabel = selectedCourse
-    ? courses.find((c) => c.id === selectedCourse)?.name || "Platz"
-    : "Gesamtwertung";
-
-  const displayRounds = selectedCourse
-    ? rounds.filter((r: any) => r.course_id === selectedCourse).length
-    : rounds.length;
+  const selectedRoundData = selectedRound ? allRounds.find((r: any) => r.id === selectedRound) : null;
+  const displayLabel = selectedRoundData ? selectedRoundData.course_name : "Gesamtwertung";
 
   return (
     <>
@@ -82,44 +79,50 @@ export default function Leaderboard() {
             Leader<span className="text-gold-400">board.</span>
           </h2>
           <p className="text-sm text-dark/50 mt-2 font-medium">
-            Stableford · {displayRounds} {displayRounds === 1 ? "Runde" : "Runden"}
+            Stableford · {selectedRoundData ? "1 Runde" : `${allRounds.length} Runden`}
           </p>
         </div>
       </StaggerItem>
 
-      {/* Course filter — full width, wrapped */}
-      {courses.length > 1 && (
+      {/* Round filter — compact cards */}
+      {allRounds.length > 0 && (
         <StaggerItem>
-          <div className="flex flex-wrap gap-2">
-            <motion.button
-              onClick={handleSelectGesamt}
-              className={`px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
-                selectedCourse === null
-                  ? "bg-dark text-white border-dark shadow-brutal-xs"
-                  : "bg-white text-dark/40 border-dark/15"
-              }`}
-              whileTap={{ scale: 0.95 }}
-            >
-              Gesamt
-            </motion.button>
-            {courses.map((course) => {
-              const courseRounds = allRounds.filter((r: any) => r.course_id === course.id);
-              return (
-                <motion.button
-                  key={course.id}
-                  onClick={() => setSelectedCourse(course.id)}
-                  className={`px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
-                    selectedCourse === course.id
-                      ? "bg-dark text-white border-dark shadow-brutal-xs"
-                      : "bg-white text-dark/40 border-dark/15"
-                  }`}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {course.name.replace("Golf Course", "").replace("Golf Club", "").trim()}
-                  <span className="ml-1 opacity-50">({courseRounds.length})</span>
-                </motion.button>
-              );
-            })}
+          <motion.button
+            onClick={handleSelectGesamt}
+            className={`w-full mb-2 px-4 py-2.5 rounded-xl text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all text-left ${
+              selectedRound === null
+                ? "bg-dark text-white border-dark shadow-brutal-xs"
+                : "bg-white text-dark/40 border-dark/15"
+            }`}
+            whileTap={{ scale: 0.97 }}
+          >
+            Gesamtwertung · {allRounds.length} Runden
+          </motion.button>
+          <div className="grid grid-cols-2 gap-2">
+            {allRounds.map((round: any) => (
+              <motion.button
+                key={round.id}
+                onClick={() => handleSelectRound(round.id)}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                  selectedRound === round.id
+                    ? "bg-dark text-white border-dark shadow-brutal-xs"
+                    : "bg-white text-dark/60 border-dark/10"
+                }`}
+                whileTap={{ scale: 0.96 }}
+              >
+                <p className={`text-[10px] font-bold ${selectedRound === round.id ? "text-white/50" : "text-dark/30"}`}>
+                  {formatRoundDate(round.date)} {round.tee_time?.slice(0, 5)}
+                </p>
+                <p className="font-extrabold text-[12px] tracking-tight leading-tight mt-0.5">
+                  {round.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim()}
+                </p>
+                {round.players_scored > 0 && (
+                  <p className={`text-[9px] mt-1 font-bold ${selectedRound === round.id ? "text-white/40" : "text-dark/25"}`}>
+                    {round.players_scored} Spieler
+                  </p>
+                )}
+              </motion.button>
+            ))}
           </div>
         </StaggerItem>
       )}
@@ -317,19 +320,18 @@ export default function Leaderboard() {
               </div>
             </div>
 
-            {/* Per-course breakdown */}
-            {courses.length > 0 && (
+            {/* Per-round breakdown */}
+            {allRounds.length > 0 && (
               <div className="space-y-3">
-                <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider">Pro Platz</p>
-                {courses.map((course) => {
-                  const courseRounds = allRounds.filter((r: any) => r.course_id === course.id);
-                  return (
-                    <div key={course.id} className="card p-4">
-                      <p className="font-bold text-sm tracking-tight">{course.name}</p>
-                      <p className="text-[10px] text-dark/40 mt-0.5">{courseRounds.length} Runde{courseRounds.length !== 1 ? "n" : ""}</p>
-                    </div>
-                  );
-                })}
+                <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider">Gespielte Runden</p>
+                {allRounds.map((round: any) => (
+                  <div key={round.id} className="card p-4">
+                    <p className="font-bold text-sm tracking-tight">{round.course_name}</p>
+                    <p className="text-[10px] text-dark/40 mt-0.5">
+                      {formatRoundDate(round.date)} · {round.tee_time?.slice(0, 5)} · Par {round.par_total}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
           </div>
