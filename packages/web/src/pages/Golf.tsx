@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 
@@ -22,6 +22,7 @@ export default function Golf({ auth }: Props) {
   const [handicapInput, setHandicapInput] = useState("");
   const [handicapLoading, setHandicapLoading] = useState(true);
   const [savingHandicap, setSavingHandicap] = useState(false);
+  const [roundTeams, setRoundTeams] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     Promise.all([
@@ -32,6 +33,18 @@ export default function Golf({ auth }: Props) {
       }).catch(() => {}),
     ]).finally(() => { setLoading(false); setHandicapLoading(false); });
   }, [auth.event.id]);
+
+  // Load teams for all rounds
+  useEffect(() => {
+    if (!golfData?.rounds) return;
+    golfData.rounds.forEach((r: any) => {
+      getRoundTeams(r.id).then((data) => {
+        if (data.teams?.length > 0) {
+          setRoundTeams((prev) => ({ ...prev, [r.id]: data.teams }));
+        }
+      }).catch(() => {});
+    });
+  }, [golfData?.rounds]);
 
   const loadRound = useCallback(async (roundId: string) => {
     setSelectedRound(roundId);
@@ -241,6 +254,22 @@ export default function Golf({ auth }: Props) {
               <p className="text-xs text-dark/40 mt-3 leading-relaxed border-t-2 border-dark/10 pt-2 font-medium">
                 {round.notes}
               </p>
+            )}
+            {/* Flight info */}
+            {roundTeams[round.id] && roundTeams[round.id].length > 0 && (
+              <div className="mt-3 border-t-2 border-dark/10 pt-2.5">
+                <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-1.5">
+                  {roundTeams[round.id].length} Flights
+                </p>
+                <div className="space-y-1">
+                  {roundTeams[round.id].map((team: any, ti: number) => (
+                    <div key={team.id || ti} className="flex items-center gap-1.5 text-xs text-dark/50 font-medium">
+                      <span className="text-[10px] font-bold text-dark/25 w-4">{ti + 1}.</span>
+                      {team.members?.map((m: any) => m.display_name?.split(" ")[0]).join(", ")}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </motion.button>
         </StaggerItem>

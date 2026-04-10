@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { IconUsers, IconCrown } from "./Icons";
 import { Spinner } from "./Motion";
+import Emoji from "./Emoji";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
@@ -331,7 +332,7 @@ export default function AdminPanel({ auth }: Props) {
 /* Create Round Component                                              */
 /* ------------------------------------------------------------------ */
 
-function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth"]; members: Member[]; token: string | null }) {
+function CreateRoundCard({ auth, members, token }: { auth: Props["auth"]; members: Member[]; token: string | null }) {
   const [open, setOpen] = useState(false);
   const [courses, setCourses] = useState<any[]>([]);
   const [tees, setTees] = useState<any[]>([]);
@@ -348,6 +349,41 @@ function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth
     tee_time: "",
     notes: "",
   });
+
+  // Flight management
+  const [flights, setFlights] = useState<{ name: string; member_ids: string[] }[]>([]);
+  const [activeFlight, setActiveFlight] = useState(0);
+
+  const assignedIds = new Set(flights.flatMap((f) => f.member_ids));
+  const available = members.filter((m) => !assignedIds.has(m.id));
+
+  const addFlight = () => {
+    setFlights([...flights, { name: `Flight ${flights.length + 1}`, member_ids: [] }]);
+    setActiveFlight(flights.length);
+  };
+
+  const addToFlight = (memberId: string) => {
+    if (flights.length === 0) {
+      setFlights([{ name: "Flight 1", member_ids: [memberId] }]);
+      setActiveFlight(0);
+      return;
+    }
+    setFlights(flights.map((f, i) =>
+      i === activeFlight ? { ...f, member_ids: [...f.member_ids, memberId] } : f
+    ));
+  };
+
+  const removeFromFlight = (flightIdx: number, memberId: string) => {
+    setFlights(flights.map((f, i) =>
+      i === flightIdx ? { ...f, member_ids: f.member_ids.filter((id) => id !== memberId) } : f
+    ).filter((f) => f.member_ids.length > 0));
+  };
+
+  const removeFlight = (idx: number) => {
+    const updated = flights.filter((_, i) => i !== idx);
+    setFlights(updated);
+    if (activeFlight >= updated.length) setActiveFlight(Math.max(0, updated.length - 1));
+  };
 
   // Load courses when opened
   useEffect(() => {
@@ -388,6 +424,7 @@ function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth
     if (!form.course_id || !form.date) return;
     setCreating(true);
     try {
+      const validFlights = flights.filter((f) => f.member_ids.length > 0);
       await fetch(`${API_BASE}/golf/event/${auth.event.id}/round`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -399,10 +436,14 @@ function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth
           date: form.date,
           tee_time: form.tee_time || undefined,
           notes: form.notes || undefined,
+          teams: validFlights.length > 0 ? validFlights : undefined,
         }),
       });
       setSuccess(true);
-      setTimeout(() => { setSuccess(false); setOpen(false); setForm({ course_id: "", tee_id: "", format: "stableford", game_mode: "individual", date: "", tee_time: "", notes: "" }); }, 1500);
+      setTimeout(() => {
+        setSuccess(false); setOpen(false); setFlights([]);
+        setForm({ course_id: "", tee_id: "", format: "stableford", game_mode: "individual", date: "", tee_time: "", notes: "" });
+      }, 1500);
     } catch (err) {
       alert("Fehler beim Erstellen der Runde");
     }
@@ -555,6 +596,91 @@ function CreateRoundCard({ auth, members: _members, token }: { auth: Props["auth
                       placeholder="z.B. Shotgun Start, Startloch 10..."
                       className="w-full input-soft py-2.5 text-sm"
                     />
+                  </div>
+
+                  {/* Flights */}
+                  <div>
+                    <label className="text-[10px] font-bold text-dark/40 uppercase tracking-wider block mb-2">
+                      Flights (optional)
+                    </label>
+
+                    {/* Available members */}
+                    {available.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-[10px] text-dark/30 font-bold mb-1.5">
+                          {flights.length === 0 ? "Spieler antippen um Flights zu erstellen" : `Verfuegbar (${available.length})`}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {available.map((m) => (
+                            <motion.button
+                              key={m.id}
+                              onClick={() => addToFlight(m.id)}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-dark/15 bg-white text-xs font-bold"
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              <Emoji emoji={m.avatar_emoji || "👤"} size={14} />
+                              {m.display_name.split(" ")[0]}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Flight groups */}
+                    <div className="space-y-2">
+                      {flights.map((flight, fi) => (
+                        <div
+                          key={fi}
+                          className={`rounded-xl border-2 p-3 transition-all ${
+                            fi === activeFlight ? "border-gold-400 bg-gold-400/10" : "border-dark/10 bg-surface-0"
+                          }`}
+                          onClick={() => setActiveFlight(fi)}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                              {flight.name}
+                            </span>
+                            <motion.button
+                              onClick={(e) => { e.stopPropagation(); removeFlight(fi); }}
+                              className="text-[10px] text-red-500 font-bold px-2 py-1 rounded-md border border-red-200 bg-red-50"
+                              whileTap={{ scale: 0.9 }}
+                            >
+                              Loeschen
+                            </motion.button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {flight.member_ids.map((mid) => {
+                              const m = members.find((m) => m.id === mid);
+                              if (!m) return null;
+                              return (
+                                <motion.button
+                                  key={mid}
+                                  onClick={(e) => { e.stopPropagation(); removeFromFlight(fi, mid); }}
+                                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-dark bg-white text-xs font-bold shadow-brutal-xs"
+                                  whileTap={{ scale: 0.95 }}
+                                >
+                                  <Emoji emoji={m.avatar_emoji || "👤"} size={14} />
+                                  {m.display_name.split(" ")[0]}
+                                  <span className="text-dark/30 ml-0.5">✕</span>
+                                </motion.button>
+                              );
+                            })}
+                            {flight.member_ids.length === 0 && (
+                              <p className="text-[10px] text-dark/30 font-medium py-1">Spieler oben antippen...</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add flight button */}
+                    <motion.button
+                      onClick={addFlight}
+                      className="mt-2 w-full py-2 rounded-xl border-2 border-dashed border-dark/20 text-xs font-bold text-dark/40"
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      + Flight hinzufuegen
+                    </motion.button>
                   </div>
 
                   {/* Create Button */}

@@ -1,25 +1,20 @@
-const CACHE_NAME = "crew-v1";
-const STATIC_ASSETS = ["/", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
+const CACHE_NAME = "crew-v2";
 
-// Install — cache shell
+// Install — skip waiting to activate immediately
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — clean ALL old caches, take control immediately
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch — network first, fallback to cache
+// Fetch — network-first for everything
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -29,25 +24,16 @@ self.addEventListener("fetch", (event) => {
   // API calls — network only (no caching)
   if (request.url.includes("/v2/") || request.url.includes("/a/")) return;
 
-  // HTML navigation — network first, fallback to cached index
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() => caches.match("/"))
-    );
-    return;
-  }
-
-  // Static assets — stale-while-revalidate
+  // Everything else — network first, cache fallback (for offline)
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetched = fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      });
-      return cached || fetched;
-    })
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
   );
 });

@@ -439,6 +439,51 @@ golf.post("/event/:id/round", async (c) => {
 });
 
 /**
+ * PUT /round/:id/teams — Update teams/flights for a round (admin).
+ * Replaces all existing teams with the provided ones.
+ * Body: { teams: [{ name, color?, member_ids[] }] }
+ */
+golf.put("/round/:id/teams", async (c) => {
+  try {
+    const roundId = c.req.param("id");
+    const member = getMember(c);
+    if (!member.is_admin) return c.json({ error: "Admin required" }, 403);
+
+    const { teams } = await c.req.json<{
+      teams: { name: string; color?: string; member_ids: string[] }[];
+    }>();
+
+    // Delete existing teams and members for this round
+    const existingTeams = await sql`SELECT id FROM golf_teams WHERE round_id = ${roundId}`;
+    if (existingTeams.length > 0) {
+      const teamIds = existingTeams.map((t: any) => t.id);
+      await sql`DELETE FROM golf_team_members WHERE team_id = ANY(${teamIds})`;
+      await sql`DELETE FROM golf_teams WHERE round_id = ${roundId}`;
+    }
+
+    // Create new teams
+    const created = [];
+    for (const team of teams || []) {
+      if (!team.member_ids || team.member_ids.length === 0) continue;
+      const [t] = await sql`
+        INSERT INTO golf_teams (round_id, name, color)
+        VALUES (${roundId}, ${team.name}, ${team.color || null})
+        RETURNING id, name, color
+      `;
+      for (const mid of team.member_ids) {
+        await sql`INSERT INTO golf_team_members (team_id, member_id) VALUES (${t.id}, ${mid})`;
+      }
+      created.push({ ...t, members: team.member_ids });
+    }
+
+    return c.json({ teams: created });
+  } catch (err) {
+    console.error("PUT /golf/round/:id/teams error:", err);
+    return c.json({ error: "Failed to update teams" }, 500);
+  }
+});
+
+/**
  * GET /round/:id/teams — Get teams for a round.
  */
 golf.get("/round/:id/teams", async (c) => {

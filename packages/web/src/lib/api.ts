@@ -144,6 +144,13 @@ export async function getRoundTeams(roundId: string) {
   return apiFetch(`/golf/round/${roundId}/teams`);
 }
 
+export async function updateRoundTeams(roundId: string, teams: { name: string; color?: string; member_ids: string[] }[]) {
+  return apiFetch(`/golf/round/${roundId}/teams`, {
+    method: "PUT",
+    body: JSON.stringify({ teams }),
+  });
+}
+
 export async function getHandicap(eventId: string) {
   return apiFetch(`/golf/handicap/${eventId}`);
 }
