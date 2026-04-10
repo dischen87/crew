@@ -12,6 +12,7 @@ export default function Leaderboard() {
   const [allRounds, setAllRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
+  const [showRounds, setShowRounds] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
 
   // Fetch all rounds once for course list
@@ -84,53 +85,79 @@ export default function Leaderboard() {
         </div>
       </StaggerItem>
 
-      {/* Round filter — Gesamt button + compact round list */}
+      {/* Gesamt button with round toggle */}
       {allRounds.length > 0 && (
         <StaggerItem>
-          <motion.button
-            onClick={handleSelectGesamt}
-            className={`w-full mb-3 px-4 py-3 rounded-xl text-[12px] font-extrabold uppercase tracking-wider border-2 transition-all text-left ${
-              selectedRound === null
-                ? "bg-dark text-white border-dark shadow-brutal-xs"
-                : "bg-white text-dark/40 border-dark/15"
-            }`}
-            whileTap={{ scale: 0.97 }}
-          >
-            Gesamtwertung · {allRounds.length} Runden
-          </motion.button>
-          <div className="space-y-1.5">
-            {allRounds.map((round: any, i: number) => (
-              <motion.button
-                key={round.id}
-                onClick={() => handleSelectRound(round.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 text-left transition-all ${
-                  selectedRound === round.id
-                    ? "bg-dark text-white border-dark shadow-brutal-xs"
-                    : "bg-white text-dark/60 border-dark/10"
-                }`}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center text-[10px] font-extrabold shrink-0 ${
-                  selectedRound === round.id ? "border-white/30 text-white" : "border-dark/15 text-dark/30"
-                }`}>
-                  R{i + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-extrabold text-[12px] tracking-tight leading-tight truncate">
-                    {round.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim()}
-                  </p>
-                  <p className={`text-[10px] font-medium ${selectedRound === round.id ? "text-white/40" : "text-dark/25"}`}>
-                    {formatRoundDate(round.date)} · {round.tee_time?.slice(0, 5)}
-                  </p>
-                </div>
-                {round.players_scored > 0 && (
-                  <span className={`text-[10px] font-bold shrink-0 ${selectedRound === round.id ? "text-white/40" : "text-dark/20"}`}>
-                    {round.players_scored}
-                  </span>
-                )}
-              </motion.button>
-            ))}
+          <div className={`flex items-center gap-2 rounded-xl border-2 transition-all ${
+            selectedRound === null
+              ? "bg-dark text-white border-dark shadow-brutal-xs"
+              : "bg-white text-dark/60 border-dark/15"
+          }`}>
+            <button
+              onClick={() => { handleSelectGesamt(); setShowRounds(false); }}
+              className="flex-1 px-4 py-3 text-left text-[12px] font-extrabold uppercase tracking-wider"
+            >
+              {selectedRound
+                ? allRounds.find((r: any) => r.id === selectedRound)?.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim() || "Runde"
+                : "Gesamtwertung"
+              }
+            </button>
+            <button
+              onClick={() => setShowRounds(!showRounds)}
+              className={`px-3 py-3 text-[10px] font-bold uppercase tracking-wider border-l-2 ${
+                selectedRound === null ? "border-white/20 text-white/50" : "border-dark/10 text-dark/30"
+              }`}
+            >
+              {showRounds ? "▲" : `${allRounds.length} Runden ▼`}
+            </button>
           </div>
+
+          {/* Rounds dropdown */}
+          <AnimatePresence>
+            {showRounds && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-1.5 pt-2">
+                  {allRounds.map((round: any, i: number) => (
+                    <motion.button
+                      key={round.id}
+                      onClick={() => { handleSelectRound(round.id); setShowRounds(false); }}
+                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 text-left transition-all ${
+                        selectedRound === round.id
+                          ? "bg-gold-400 text-dark border-dark shadow-brutal-xs"
+                          : "bg-white text-dark/60 border-dark/10"
+                      }`}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <span className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center text-[10px] font-extrabold shrink-0 ${
+                        selectedRound === round.id ? "border-dark text-dark" : "border-dark/15 text-dark/30"
+                      }`}>
+                        R{i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-[12px] tracking-tight leading-tight truncate">
+                          {round.course_name?.replace("Golf Course", "").replace("Golf Club", "").trim()}
+                        </p>
+                        <p className={`text-[10px] font-medium ${selectedRound === round.id ? "text-dark/40" : "text-dark/25"}`}>
+                          {formatRoundDate(round.date)} · {round.tee_time?.slice(0, 5)}
+                        </p>
+                      </div>
+                      {round.players_scored > 0 && (
+                        <span className={`text-[10px] font-bold shrink-0 ${selectedRound === round.id ? "text-dark/40" : "text-dark/20"}`}>
+                          {round.players_scored} Scores
+                        </span>
+                      )}
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </StaggerItem>
       )}
 
