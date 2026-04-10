@@ -43,29 +43,18 @@ export async function createTestGroup(groupName = "Test Group") {
   };
 }
 
-/** Clean up all test data */
+/** Clean up all test data — uses safe truncate cascade */
 export async function cleanTestData() {
-  // Delete in dependency order
-  await sql`DELETE FROM golf_score_history`;
-  await sql`DELETE FROM golf_scores`;
-  await sql`DELETE FROM golf_team_members`;
-  await sql`DELETE FROM golf_teams`;
-  await sql`DELETE FROM golf_player_handicaps`;
-  await sql`DELETE FROM golf_rounds`;
-  await sql`DELETE FROM golf_course_holes`;
-  await sql`DELETE FROM golf_courses`;
-  await sql`DELETE FROM participant_flights`;
-  await sql`DELETE FROM participant_extras`;
-  await sql`DELETE FROM participant_packages`;
-  await sql`DELETE FROM participant_forms`;
-  await sql`DELETE FROM flights`;
-  await sql`DELETE FROM event_modules`;
-  await sql`DELETE FROM messages`;
-  await sql`DELETE FROM media`;
-  await sql`DELETE FROM locations`;
-  await sql`DELETE FROM events`;
-  await sql`DELETE FROM group_members`;
-  await sql`DELETE FROM groups`;
+  await sql`DO $$ BEGIN
+    -- Truncate all tables in dependency-safe order
+    TRUNCATE golf_score_history, golf_scores, golf_team_members, golf_teams,
+             golf_player_handicaps, golf_rounds, golf_course_holes, golf_courses,
+             participant_flights, participant_extras, participant_packages, participant_forms,
+             flights, event_modules, messages, media, member_locations,
+             events, group_members, groups
+    CASCADE;
+  EXCEPTION WHEN undefined_table THEN NULL;
+  END $$;`;
 }
 
 export { sql };
