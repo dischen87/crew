@@ -15,6 +15,7 @@ import Photos from "./pages/Photos";
 import Profile from "./pages/Profile";
 import InstallPrompt from "./components/InstallPrompt";
 import OnboardingGuide from "./components/OnboardingGuide";
+import LiveTracker from "./components/LiveTracker";
 
 type Tab = "home" | "golf" | "ranking" | "chat" | "photos" | "more";
 
@@ -45,6 +46,7 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [showProfile, setShowProfile] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showTracker, setShowTracker] = useState(false);
   const [showLanding, setShowLanding] = useState(true);
   const [inviteParams] = useState(() => getInviteFromUrl());
 
@@ -191,7 +193,7 @@ export default function App() {
 
   const renderTab = () => {
     switch (tab) {
-      case "home": return <Home auth={auth} onNavigate={(t) => setTab(t as Tab)} />;
+      case "home": return <Home auth={auth} onNavigate={(t) => t === "tracker" ? setShowTracker(true) : setTab(t as Tab)} />;
       case "golf": return <Golf auth={auth} />;
       case "ranking": return <Leaderboard auth={auth} />;
       case "chat": return null;
@@ -296,6 +298,13 @@ export default function App() {
               localStorage.setItem("crew_member", JSON.stringify({ ...auth.member, ...member }));
             }}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Live Tracker overlay */}
+      <AnimatePresence>
+        {showTracker && (
+          <LiveTracker auth={auth} onClose={() => setShowTracker(false)} />
         )}
       </AnimatePresence>
 

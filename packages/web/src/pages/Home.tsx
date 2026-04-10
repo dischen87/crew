@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { getGolfData, getGroup } from "../lib/api";
-import { IconGolf, IconTrophy, IconChat, IconPlane, IconFlag, IconUsers, IconStar } from "../components/Icons";
+import { IconGolf, IconTrophy, IconChat, IconPlane, IconFlag, IconUsers, IconStar, IconMapPin } from "../components/Icons";
 import { Stagger, StaggerItem } from "../components/Motion";
 
 interface Props {
@@ -135,6 +135,26 @@ export default function Home({ auth, onNavigate }: Props) {
           </motion.button>
         </StaggerItem>
       )}
+
+      {/* Live Tracker */}
+      <StaggerItem>
+        <motion.button
+          onClick={() => onNavigate("tracker")}
+          className="w-full card-mint p-5 text-left"
+          whileTap={{ scale: 0.98 }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 bg-dark border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0">
+              <IconMapPin className="w-5 h-5 text-accent-mint" />
+            </div>
+            <div className="flex-1">
+              <p className="font-extrabold text-[16px] tracking-tight">Live Tracker</p>
+              <p className="text-[11px] text-dark/50 mt-0.5 font-medium">Wo ist die Crew gerade?</p>
+            </div>
+            <span className="text-xs font-extrabold text-dark/25 uppercase tracking-wider">Map →</span>
+          </div>
+        </motion.button>
+      </StaggerItem>
 
       {/* Quick Actions */}
       <StaggerItem>
