@@ -45,8 +45,22 @@ app.route("/v2", v2);
 app.use("/uploads/*", serveStatic({ root: "./" }));
 
 // --- Serve static web app (production) ---
+
+// No-cache middleware for PWA-critical files (sw.js, index.html, manifest)
+const noCache = async (c: any, next: any) => {
+  await next();
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+};
+
+// PWA-critical files — must never be HTTP-cached so updates always arrive
+app.get("/sw.js", noCache, serveStatic({ root: "../web/dist" }));
+app.get("/manifest.json", noCache, serveStatic({ root: "../web/dist" }));
+
+// Hashed assets — immutable, long-term cache is fine (filenames include hash)
 app.use("/assets/*", serveStatic({ root: "../web/dist" }));
-app.get("/*", serveStatic({ root: "../web/dist", path: "index.html" }));
+
+// SPA fallback — index.html must also never be cached
+app.get("/*", noCache, serveStatic({ root: "../web/dist", path: "index.html" }));
 
 // --- Start server ---
 const port = parseInt(process.env.API_PORT || "3000", 10);

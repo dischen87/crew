@@ -1,30 +1,61 @@
-const CACHE_NAME = "crew-v2";
+// Build version injected by Vite at build time — ensures every deploy
+// produces a byte-different SW file so the browser detects the update.
+const BUILD_VERSION = "__BUILD_VERSION__";
+const CACHE_NAME = "crew-" + BUILD_VERSION;
 
-// Install — skip waiting to activate immediately
-self.addEventListener("install", (event) => {
+// Install — skip waiting so the new SW activates immediately
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
-// Activate — clean ALL old caches, take control immediately
+// Activate — purge ALL old caches, claim all clients
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+      .then(() => {
+        // Notify all clients that a new version is active
+        self.clients.matchAll({ type: "window" }).then((clients) => {
+          clients.forEach((client) =>
+            client.postMessage({ type: "SW_UPDATED", version: BUILD_VERSION })
+          );
+        });
+      })
   );
 });
 
-// Fetch — network-first for everything
+// Message handler — allows the app to force skipWaiting
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+// Fetch — network-first for pages/assets, network-only for API
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
-  // Skip non-GET requests
+  // Skip non-GET
   if (request.method !== "GET") return;
 
-  // API calls — network only (no caching)
+  // API calls — always network, never cache
   if (request.url.includes("/v2/") || request.url.includes("/a/")) return;
 
-  // Everything else — network first, cache fallback (for offline)
+  // Navigation requests (HTML pages) — always network, no cache
+  // This ensures the latest index.html is always served
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(() =>
+        caches.match("/").then((cached) => cached || fetch(request))
+      )
+    );
+    return;
+  }
+
+  // Static assets — network first, cache fallback for offline
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -34,6 +65,8 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+      .catch(() =>
+        caches.match(request).then((cached) => cached || caches.match("/"))
+      )
   );
 });
