@@ -494,15 +494,13 @@ golf.post("/event/:id/round", async (c) => {
 });
 
 /**
- * PUT /round/:id/teams — Update teams/flights for a round (admin).
+ * PUT /round/:id/teams — Update teams/flights for a round (everyone can edit).
  * Replaces all existing teams with the provided ones.
  * Body: { teams: [{ name, color?, member_ids[] }] }
  */
 golf.put("/round/:id/teams", async (c) => {
   try {
     const roundId = c.req.param("id");
-    const member = getMember(c);
-    if (!member.is_admin) return c.json({ error: "Admin required" }, 403);
 
     const { teams } = await c.req.json<{
       teams: { name: string; color?: string; member_ids: string[] }[];

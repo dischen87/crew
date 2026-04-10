@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
-import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams, updateRoundTeams, getGroup } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import { getTotalPendingCount } from "../lib/offlineDb";
@@ -22,6 +22,13 @@ export default function Golf() {
   const [savingHandicap, setSavingHandicap] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [flightEditorRound, setFlightEditorRound] = useState<string | null>(null);
+  const [allMembers, setAllMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!auth) return;
+    getGroup(auth.group?.id || "").then((g) => setAllMembers(g.members || [])).catch(() => {});
+  }, [auth?.group?.id]);
 
   useEffect(() => {
     if (!auth) return;
@@ -176,6 +183,7 @@ export default function Golf() {
   const needsHandicap = handicap == null;
 
   return (
+    <>
     <Stagger className="space-y-4">
       {/* Offline indicator */}
       {(!isOnline || pendingCount > 0) && (
@@ -322,6 +330,13 @@ export default function Golf() {
               >
                 Score eintragen →
               </motion.button>
+              <motion.button
+                onClick={() => setFlightEditorRound(round.id)}
+                className="px-4 py-2.5 rounded-xl border-2 border-dark/20 bg-white text-xs font-bold text-dark/50"
+                whileTap={{ scale: 0.95 }}
+              >
+                Flights
+              </motion.button>
             </div>
             {/* Admin: close round */}
             {auth.member.is_admin && (
@@ -352,6 +367,171 @@ export default function Golf() {
         </StaggerItem>
       )}
     </Stagger>
+
+    {/* Flight Editor Popup */}
+    <AnimatePresence>
+      {flightEditorRound && (
+        <FlightEditor
+          roundId={flightEditorRound}
+          members={allMembers}
+          onClose={() => setFlightEditorRound(null)}
+        />
+      )}
+    </AnimatePresence>
+    </>
+  );
+}
+
+/** Flight Editor Modal — everyone can create/edit flights for a round */
+function FlightEditor({ roundId, members, onClose }: { roundId: string; members: any[]; onClose: () => void }) {
+  const [flights, setFlights] = useState<{ name: string; member_ids: string[] }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getRoundTeams(roundId).then((data) => {
+      if (data.teams?.length > 0) {
+        setFlights(data.teams.map((t: any) => ({
+          name: t.name || `Flight ${data.teams.indexOf(t) + 1}`,
+          member_ids: t.members?.map((m: any) => m.member_id || m.id).filter(Boolean) || [],
+        })));
+      } else {
+        setFlights([{ name: "Flight 1", member_ids: [] }]);
+      }
+    }).catch(() => {
+      setFlights([{ name: "Flight 1", member_ids: [] }]);
+    }).finally(() => setLoading(false));
+  }, [roundId]);
+
+  const addFlight = () => {
+    setFlights([...flights, { name: `Flight ${flights.length + 1}`, member_ids: [] }]);
+  };
+
+  const removeFlight = (index: number) => {
+    setFlights(flights.filter((_, i) => i !== index));
+  };
+
+  const toggleMember = (flightIndex: number, memberId: string) => {
+    setFlights(flights.map((f, i) => {
+      if (i !== flightIndex) {
+        // Remove from other flights
+        return { ...f, member_ids: f.member_ids.filter((id) => id !== memberId) };
+      }
+      // Toggle in this flight
+      return {
+        ...f,
+        member_ids: f.member_ids.includes(memberId)
+          ? f.member_ids.filter((id) => id !== memberId)
+          : [...f.member_ids, memberId],
+      };
+    }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateRoundTeams(roundId, flights.filter((f) => f.member_ids.length > 0));
+      onClose();
+    } catch (err) {
+      console.error("Failed to save flights:", err);
+    }
+    setSaving(false);
+  };
+
+  // Members already assigned to a flight
+  const assignedIds = new Set(flights.flatMap((f) => f.member_ids));
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[10000] bg-black/50 flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="bg-white rounded-t-3xl border-t-3 border-x-3 border-dark w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-5 pb-3">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-extrabold tracking-tight">Flights einteilen</h3>
+            <button onClick={onClose} className="text-dark/30 text-xl font-bold">✕</button>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-8"><Spinner /></div>
+          ) : (
+            <>
+              {flights.map((flight, fi) => (
+                <div key={fi} className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-dark/50">
+                      {flight.name}
+                    </span>
+                    {flights.length > 1 && (
+                      <button onClick={() => removeFlight(fi)} className="text-[10px] text-red-400 font-bold">
+                        Entfernen
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {members.map((m: any) => {
+                      const inThisFlight = flight.member_ids.includes(m.id);
+                      const inOtherFlight = !inThisFlight && assignedIds.has(m.id);
+                      return (
+                        <motion.button
+                          key={m.id}
+                          onClick={() => toggleMember(fi, m.id)}
+                          className={`px-3 py-1.5 rounded-full border-2 text-[11px] font-bold transition-all ${
+                            inThisFlight
+                              ? "bg-gold-400 border-dark text-dark"
+                              : inOtherFlight
+                              ? "bg-dark/5 border-dark/5 text-dark/20"
+                              : "bg-white border-dark/15 text-dark/50"
+                          }`}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          {m.avatar_emoji} {m.display_name?.split(" ")[0]}
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={addFlight}
+                className="w-full py-2 rounded-xl border-2 border-dashed border-dark/15 text-[11px] font-bold text-dark/30 mb-4"
+              >
+                + Flight hinzufügen
+              </button>
+
+              {/* Unassigned members */}
+              {members.filter((m: any) => !assignedIds.has(m.id)).length > 0 && (
+                <p className="text-[10px] text-dark/30 font-medium mb-4">
+                  {members.filter((m: any) => !assignedIds.has(m.id)).length} Spieler noch nicht eingeteilt
+                </p>
+              )}
+
+              <motion.button
+                onClick={handleSave}
+                disabled={saving}
+                className="w-full btn-dark py-3 text-sm disabled:opacity-30"
+                whileTap={{ scale: 0.97 }}
+              >
+                {saving ? "Speichern..." : "Flights speichern"}
+              </motion.button>
+            </>
+          )}
+        </div>
+        <div className="h-6" />
+      </motion.div>
+    </motion.div>
   );
 }
 
