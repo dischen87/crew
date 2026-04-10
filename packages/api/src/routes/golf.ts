@@ -70,7 +70,7 @@ golf.get("/event/:id", async (c) => {
       SELECT gs.round_id, COUNT(DISTINCT gs.member_id)::int AS players_scored
       FROM golf_scores gs
       JOIN golf_rounds gr ON gr.id = gs.round_id
-      WHERE gr.event_id = ${eventId} ${courseFilter}
+      WHERE gr.event_id = ${eventId}
       GROUP BY gs.round_id
     `;
 
