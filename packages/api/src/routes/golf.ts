@@ -506,6 +506,24 @@ golf.put("/round/:id/teams", async (c) => {
       teams: { name: string; color?: string; member_ids: string[] }[];
     }>();
 
+    // --- Server-side validation ---
+    // Max 4 members per flight
+    for (const team of teams || []) {
+      if (team.member_ids && team.member_ids.length > 4) {
+        return c.json({ error: `Flight "${team.name}" hat mehr als 4 Spieler (max. 4)` }, 400);
+      }
+    }
+
+    // Each member can only be in one flight
+    const allMemberIds = (teams || []).flatMap((t) => t.member_ids || []);
+    const uniqueIds = new Set(allMemberIds);
+    if (uniqueIds.size !== allMemberIds.length) {
+      return c.json({ error: "Ein Spieler kann nur in einem Flight sein" }, 400);
+    }
+
+    // Min 1 member per flight (skip empty flights)
+    const validTeams = (teams || []).filter((t) => t.member_ids && t.member_ids.length >= 1);
+
     // Delete existing teams and members for this round
     const existingTeams = await sql`SELECT id FROM golf_teams WHERE round_id = ${roundId}`;
     if (existingTeams.length > 0) {
@@ -516,8 +534,7 @@ golf.put("/round/:id/teams", async (c) => {
 
     // Create new teams
     const created = [];
-    for (const team of teams || []) {
-      if (!team.member_ids || team.member_ids.length === 0) continue;
+    for (const team of validTeams) {
       const [t] = await sql`
         INSERT INTO golf_teams (round_id, name, color)
         VALUES (${roundId}, ${team.name}, ${team.color || null})

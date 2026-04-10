@@ -13,6 +13,7 @@ export default function FlightEditor({ roundId, members, onClose }: Props) {
   const [flights, setFlights] = useState<{ name: string; member_ids: string[] }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     getRoundTeams(roundId).then((data) => {
@@ -45,19 +46,18 @@ export default function FlightEditor({ roundId, members, onClose }: Props) {
       if (f.member_ids.includes(memberId)) {
         return { ...f, member_ids: f.member_ids.filter((id) => id !== memberId) };
       }
-      // Max 4 per flight
-      if (f.member_ids.length >= 4) return f;
       return { ...f, member_ids: [...f.member_ids, memberId] };
     }));
   };
 
   const handleSave = async () => {
     setSaving(true);
+    setError("");
     try {
       await updateRoundTeams(roundId, flights.filter((f) => f.member_ids.length > 0));
       onClose();
-    } catch (err) {
-      console.error("Failed to save flights:", err);
+    } catch (err: any) {
+      setError(err.message || "Speichern fehlgeschlagen");
     }
     setSaving(false);
   };
@@ -162,6 +162,12 @@ export default function FlightEditor({ roundId, members, onClose }: Props) {
                 <p className="text-[10px] text-dark/30 font-medium mb-4">
                   {members.filter((m: any) => !assignedIds.has(m.id)).length} Spieler noch nicht eingeteilt
                 </p>
+              )}
+
+              {error && (
+                <div className="bg-red-50 border-2 border-red-300 text-red-600 text-[11px] font-bold px-3 py-2 rounded-xl mb-3">
+                  {error}
+                </div>
               )}
 
               <motion.button
