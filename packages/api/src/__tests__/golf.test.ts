@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { api, createTestGroup, cleanTestData, sql } from "./setup";
+import { api, createTestGroup, cleanTestData } from "./setup";
 
 let ctx: Awaited<ReturnType<typeof createTestGroup>>;
 let courseId: string;
@@ -27,7 +27,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanTestData();
-  await sql.end();
 });
 
 describe("Admin: Golf Course Import", () => {

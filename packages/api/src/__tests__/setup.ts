@@ -45,16 +45,24 @@ export async function createTestGroup(groupName = "Test Group") {
 
 /** Clean up all test data — uses safe truncate cascade */
 export async function cleanTestData() {
-  await sql`DO $$ BEGIN
-    -- Truncate all tables in dependency-safe order
-    TRUNCATE golf_score_history, golf_scores, golf_team_members, golf_teams,
-             golf_player_handicaps, golf_rounds, golf_course_holes, golf_courses,
-             participant_flights, participant_extras, participant_packages, participant_forms,
-             flights, event_modules, messages, media, member_locations,
-             events, group_members, groups
-    CASCADE;
-  EXCEPTION WHEN undefined_table THEN NULL;
-  END $$;`;
+  try {
+    await sql`DO $$ BEGIN
+      TRUNCATE golf_score_history, golf_scores, golf_team_members, golf_teams,
+               golf_player_handicaps, golf_rounds, golf_course_holes, golf_courses,
+               participant_flights, participant_extras, participant_packages, participant_forms,
+               flights, event_modules, messages, media, member_locations,
+               events, group_members, groups
+      CASCADE;
+    EXCEPTION WHEN undefined_table THEN NULL;
+    END $$;`;
+  } catch {
+    // Table may not exist yet — safe to ignore
+  }
+}
+
+/** Close DB connection — call only at the very end */
+export async function closeDb() {
+  await sql.end();
 }
 
 export { sql };

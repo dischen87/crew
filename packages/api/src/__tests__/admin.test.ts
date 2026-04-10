@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { api, createTestGroup, cleanTestData, sql } from "./setup";
+import { api, createTestGroup, cleanTestData } from "./setup";
 
 let adminCtx: Awaited<ReturnType<typeof createTestGroup>>;
 let normalToken: string;
@@ -23,7 +23,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanTestData();
-  await sql.end();
 });
 
 describe("Admin Authorization", () => {

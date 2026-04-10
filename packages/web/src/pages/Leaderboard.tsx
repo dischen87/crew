@@ -87,35 +87,39 @@ export default function Leaderboard() {
         </div>
       </StaggerItem>
 
-      {/* Course filter chips */}
+      {/* Course filter — full width, wrapped */}
       {courses.length > 1 && (
         <StaggerItem>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+          <div className="flex flex-wrap gap-2">
             <motion.button
               onClick={handleSelectGesamt}
-              className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
+              className={`px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
                 selectedCourse === null
                   ? "bg-dark text-white border-dark shadow-brutal-xs"
-                  : "bg-white text-dark/40 border-dark/15 hover:border-dark/30"
+                  : "bg-white text-dark/40 border-dark/15"
               }`}
               whileTap={{ scale: 0.95 }}
             >
               Gesamt
             </motion.button>
-            {courses.map((course) => (
-              <motion.button
-                key={course.id}
-                onClick={() => setSelectedCourse(course.id)}
-                className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
-                  selectedCourse === course.id
-                    ? "bg-dark text-white border-dark shadow-brutal-xs"
-                    : "bg-white text-dark/40 border-dark/15 hover:border-dark/30"
-                }`}
-                whileTap={{ scale: 0.95 }}
-              >
-                {course.name.replace("Golf Course", "").replace("Golf Club", "").trim()}
-              </motion.button>
-            ))}
+            {courses.map((course) => {
+              const courseRounds = allRounds.filter((r: any) => r.course_id === course.id);
+              return (
+                <motion.button
+                  key={course.id}
+                  onClick={() => setSelectedCourse(course.id)}
+                  className={`px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
+                    selectedCourse === course.id
+                      ? "bg-dark text-white border-dark shadow-brutal-xs"
+                      : "bg-white text-dark/40 border-dark/15"
+                  }`}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {course.name.replace("Golf Course", "").replace("Golf Club", "").trim()}
+                  <span className="ml-1 opacity-50">({courseRounds.length})</span>
+                </motion.button>
+              );
+            })}
           </div>
         </StaggerItem>
       )}

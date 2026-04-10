@@ -256,6 +256,50 @@ export default function Golf() {
         </StaggerItem>
       )}
 
+      {/* Closed rounds — compact 2-column grid, shown first */}
+      {golfData?.rounds?.some((r: any) => r.status === "closed") && (
+        <StaggerItem>
+          <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-3">Gespielte Runden</p>
+          <div className="grid grid-cols-2 gap-3">
+            {golfData.rounds.filter((r: any) => r.status === "closed").map((round: any) => (
+              <motion.button
+                key={round.id}
+                onClick={() => loadRound(round.id)}
+                className="card p-3.5 text-left aspect-square flex flex-col justify-between"
+                whileTap={{ scale: 0.96 }}
+              >
+                <div>
+                  <span className="pill bg-dark/10 text-[9px] mb-1.5">{formatDate(round.date)}</span>
+                  <p className="font-extrabold text-[13px] tracking-tight leading-tight mt-1">{round.course_name}</p>
+                  <p className="text-[10px] text-dark/40 mt-0.5">Par {round.par_total}</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-dark/30 font-bold">{round.players_scored || 0} Scores</span>
+                  <span className="text-[10px] font-extrabold text-dark/25">Ansehen →</span>
+                </div>
+                {auth.member.is_admin && (
+                  <motion.button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await fetch(`${import.meta.env.VITE_API_URL || "/v2"}/golf/round/${round.id}/status`, {
+                        method: "PUT",
+                        headers: { Authorization: `Bearer ${auth.member.id}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: "open" }),
+                      });
+                      getGolfData(auth.event.id).then(setGolfData);
+                    }}
+                    className="text-[9px] text-accent-mint-dark font-bold uppercase tracking-wider mt-1"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Wieder öffnen
+                  </motion.button>
+                )}
+              </motion.button>
+            ))}
+          </div>
+        </StaggerItem>
+      )}
+
       {/* Open rounds — prominent, full width */}
       {golfData?.rounds?.filter((r: any) => r.status !== "closed").map((round: any) => (
         <StaggerItem key={round.id}>
@@ -301,51 +345,6 @@ export default function Golf() {
           </div>
         </StaggerItem>
       ))}
-
-      {/* Closed rounds — compact 2-column grid */}
-      {golfData?.rounds?.some((r: any) => r.status === "closed") && (
-        <StaggerItem>
-          <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-3">Abgeschlossene Runden</p>
-          <div className="grid grid-cols-2 gap-3">
-            {golfData.rounds.filter((r: any) => r.status === "closed").map((round: any) => (
-              <motion.button
-                key={round.id}
-                onClick={() => loadRound(round.id)}
-                className="card p-3.5 text-left aspect-square flex flex-col justify-between"
-                whileTap={{ scale: 0.96 }}
-              >
-                <div>
-                  <span className="pill bg-dark/10 text-[9px] mb-1.5">{formatDate(round.date)}</span>
-                  <p className="font-extrabold text-[13px] tracking-tight leading-tight mt-1">{round.course_name}</p>
-                  <p className="text-[10px] text-dark/40 mt-0.5">Par {round.par_total}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-dark/30 font-bold">{round.players_scored || 0} Scores</span>
-                  <span className="text-[10px] font-extrabold text-dark/25">→</span>
-                </div>
-                {/* Admin: reopen round */}
-                {auth.member.is_admin && (
-                  <motion.button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await fetch(`${import.meta.env.VITE_API_URL || "/v2"}/golf/round/${round.id}/status`, {
-                        method: "PUT",
-                        headers: { Authorization: `Bearer ${auth.member.id}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: "open" }),
-                      });
-                      getGolfData(auth.event.id).then(setGolfData);
-                    }}
-                    className="text-[9px] text-accent-mint-dark font-bold uppercase tracking-wider mt-1"
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    Wieder öffnen
-                  </motion.button>
-                )}
-              </motion.button>
-            ))}
-          </div>
-        </StaggerItem>
-      )}
 
       {needsHandicap && golfData?.rounds?.length > 0 && (
         <StaggerItem>
