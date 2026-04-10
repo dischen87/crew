@@ -69,6 +69,9 @@ async function setup() {
   // === Phase: Image Thumbnails ===
   await sql`ALTER TABLE media ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
 
+  // === Phase: Round Status (open/closed) ===
+  await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open'`;
+
   // === Phase: Score Audit Trail ===
   await sql`CREATE TABLE IF NOT EXISTS golf_score_history (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

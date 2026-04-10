@@ -34,7 +34,7 @@ golf.get("/event/:id", async (c) => {
     const courseFilter = courseId ? sql`AND course_id = ${courseId}` : sql``;
 
     const rounds = await sql`
-      SELECT r.id, r.course_id, r.format, r.game_mode, r.date, r.tee_time, r.notes, r.tee_id,
+      SELECT r.id, r.course_id, r.format, r.game_mode, r.date, r.tee_time, r.notes, r.tee_id, r.status,
              c.name AS course_name, c.par_total, c.location AS course_location,
              c.description AS course_description, c.website AS course_website
       FROM golf_rounds r
@@ -277,10 +277,15 @@ golf.post("/event/:id/score", async (c) => {
 
     // Get round info and course hole data
     const [round] = await sql`
-      SELECT r.id, r.course_id, r.event_id
+      SELECT r.id, r.course_id, r.event_id, r.status
       FROM golf_rounds r
       WHERE r.id = ${body.round_id} AND r.event_id = ${eventId}
     `;
+
+    // Block scoring on closed rounds (admin can still edit)
+    if (round?.status === "closed" && !member.is_admin) {
+      return c.json({ error: "Runde ist geschlossen. Nur Admins können Scores anpassen." }, 403);
+    }
 
     if (!round) {
       return c.json({ error: "Round not found" }, 404);
@@ -525,6 +530,36 @@ golf.put("/round/:id/teams", async (c) => {
   } catch (err) {
     console.error("PUT /golf/round/:id/teams error:", err);
     return c.json({ error: "Failed to update teams" }, 500);
+  }
+});
+
+/**
+ * PUT /round/:id/status — Admin: open or close a round.
+ * Body: { status: "open" | "closed" }
+ */
+golf.put("/round/:id/status", async (c) => {
+  try {
+    const member = getMember(c);
+    if (!member.is_admin) return c.json({ error: "Admin-Rechte erforderlich" }, 403);
+
+    const roundId = c.req.param("id");
+    const body = await c.req.json<{ status: string }>();
+
+    if (!["open", "closed"].includes(body.status)) {
+      return c.json({ error: "Status muss 'open' oder 'closed' sein" }, 400);
+    }
+
+    const [round] = await sql`
+      UPDATE golf_rounds SET status = ${body.status}
+      WHERE id = ${roundId}
+      RETURNING id, status
+    `;
+
+    if (!round) return c.json({ error: "Runde nicht gefunden" }, 404);
+    return c.json({ round });
+  } catch (err) {
+    console.error("PUT /golf/round/:id/status error:", err);
+    return c.json({ error: "Status-Update fehlgeschlagen" }, 500);
   }
 });
 

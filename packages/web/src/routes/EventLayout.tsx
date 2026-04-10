@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Outlet, useNavigate, useParams, useMatchRoute } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
@@ -7,7 +7,7 @@ import { IconHome, IconGolf, IconTrophy, IconChat, IconCamera, IconMenu } from "
 import Emoji from "../components/Emoji";
 import { Spinner } from "../components/Motion";
 import Profile from "../pages/Profile";
-import InstallPrompt from "../components/InstallPrompt";
+import LiveTracker from "../components/LiveTracker";
 
 /** Icon mapping for module types */
 const MODULE_ICONS: Record<string, any> = {
@@ -56,6 +56,14 @@ function EventLayoutInner() {
   const { eventId } = useParams({ from: "/events/$eventId" });
   const matchRoute = useMatchRoute();
   const [showProfile, setShowProfile] = useState(false);
+  const [showTracker, setShowTracker] = useState(false);
+
+  // Listen for tracker navigation from child pages
+  useEffect(() => {
+    const handler = () => setShowTracker(true);
+    window.addEventListener("open-tracker", handler);
+    return () => window.removeEventListener("open-tracker", handler);
+  }, []);
 
   // Build tabs dynamically from event modules
   const tabs = useMemo(() => {
@@ -220,8 +228,12 @@ function EventLayoutInner() {
         )}
       </AnimatePresence>
 
-      {/* Install PWA prompt */}
-      <InstallPrompt />
+      {/* Live Tracker overlay */}
+      <AnimatePresence>
+        {showTracker && (
+          <LiveTracker auth={auth} onClose={() => setShowTracker(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

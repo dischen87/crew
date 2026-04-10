@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
 import { useEvent } from "../contexts/EventContext";
-import { getGolfData, getGroup } from "../lib/api";
+import { getGolfData, getGroup, getRoundTeams } from "../lib/api";
 import { IconGolf, IconTrophy, IconChat, IconPlane, IconFlag, IconUsers, IconStar, IconMapPin } from "../components/Icons";
 import { Stagger, StaggerItem } from "../components/Motion";
 
@@ -14,10 +14,11 @@ export default function Home() {
   const { eventId } = useParams({ from: "/events/$eventId" });
   const [golfData, setGolfData] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
+  const [roundFlights, setRoundFlights] = useState<Record<string, any[]>>({});
 
   const onNavigate = (tab: string) => {
     if (tab === "tracker") {
-      // TODO: tracker overlay
+      window.dispatchEvent(new CustomEvent("open-tracker"));
       return;
     }
     navigate({ to: `/events/${eventId}/${tab === "home" ? "" : tab}` });
@@ -25,7 +26,17 @@ export default function Home() {
 
   useEffect(() => {
     if (!auth) return;
-    getGolfData(auth.event.id).then(setGolfData).catch(console.error);
+    getGolfData(auth.event.id).then((data) => {
+      setGolfData(data);
+      // Load flights/teams for each round
+      data?.rounds?.forEach((r: any) => {
+        getRoundTeams(r.id).then((t) => {
+          if (t.teams?.length > 0) {
+            setRoundFlights((prev) => ({ ...prev, [r.id]: t.teams }));
+          }
+        }).catch(() => {});
+      });
+    }).catch(console.error);
     getGroup(auth.group.id).then((g) => setMembers(g.members || [])).catch(console.error);
   }, [auth?.event?.id, auth?.group?.id]);
 
@@ -38,9 +49,15 @@ export default function Home() {
 
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
-  // Find the next upcoming round (today or future), fallback to most recent
+  // Find the next upcoming round — compare date+tee_time, consider round finished after 5h
   const sortedRounds = [...(golfData?.rounds || [])].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const nextRound = sortedRounds.find((r: any) => r.date >= todayStr) || sortedRounds[sortedRounds.length - 1];
+  const getRoundEndTime = (r: any) => {
+    const [h = 0, m = 0] = (r.tee_time || "12:00").split(":").map(Number);
+    const d = new Date(r.date);
+    d.setHours(h + 5, m); // tee time + 5h estimated play time
+    return d;
+  };
+  const nextRound = sortedRounds.find((r: any) => getRoundEndTime(r) > now) || sortedRounds[sortedRounds.length - 1];
   const firstName = auth.member.display_name.split(" ")[0];
 
   return (
@@ -87,6 +104,16 @@ export default function Home() {
             </p>
             {nextRound.course_location && (
               <p className="text-dark/30 text-xs mt-1">{nextRound.course_location}</p>
+            )}
+            {/* Flights for this round */}
+            {roundFlights[nextRound.id]?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {roundFlights[nextRound.id].map((f: any, i: number) => (
+                  <span key={i} className="pill bg-white/60 text-[10px]">
+                    {f.name || `Flight ${i + 1}`} · {f.members?.length || 0} Spieler
+                  </span>
+                ))}
+              </div>
             )}
             <div className="mt-3 flex items-center justify-between">
               <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Spieler haben Scores` : "Noch keine Scores"}</span>
@@ -169,7 +196,7 @@ export default function Home() {
       <StaggerItem>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { id: "golf", Icon: IconGolf, label: "Golf", sub: "Scores eintragen", cls: "card-lavender" },
+            { id: "golf", Icon: IconGolf, label: "Golfplätze", sub: "Alle Plätze", cls: "card-lavender" },
             { id: "ranking", Icon: IconTrophy, label: "Ranking", sub: "Wer fuehrt?", cls: "card-gold" },
             { id: "chat", Icon: IconChat, label: "Chat", sub: "Nachrichten", cls: "card-mint" },
             { id: "more", Icon: IconPlane, label: "Fluege", sub: "Alle Flugdaten", cls: "card-pink" },

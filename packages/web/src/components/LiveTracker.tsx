@@ -87,13 +87,19 @@ export default function LiveTracker({ auth, onClose }: Props) {
   const shareLocation = useCallback(() => {
     if (!navigator.geolocation) return;
     setSharing(true);
-    navigator.geolocation.getCurrentPosition(
+
+    // Use watchPosition for continuous high-accuracy updates
+    const watchId = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
           await fetch(`${API_BASE}/locations/${auth.event.id}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            body: JSON.stringify({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            }),
           });
           localStorage.setItem("crew_location_shared", "1");
           await loadLocations();
@@ -101,14 +107,17 @@ export default function LiveTracker({ auth, onClose }: Props) {
         setSharing(false);
       },
       () => setSharing(false),
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
+
+    // Store watchId for cleanup
+    return () => navigator.geolocation.clearWatch(watchId);
   }, [auth.event.id, token, loadLocations]);
 
-  // Initial load + auto-refresh every 30s
+  // Initial load + auto-refresh every 15s
   useEffect(() => {
     loadLocations();
-    const interval = setInterval(loadLocations, 30_000);
+    const interval = setInterval(loadLocations, 15_000);
     return () => clearInterval(interval);
   }, [loadLocations]);
 

@@ -26,6 +26,8 @@ export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [handicap, setHandicap] = useState<number | null>(null);
+  const [handicapInput, setHandicapInput] = useState("");
+  const [editingHandicap, setEditingHandicap] = useState(false);
   const [flightInfo, setFlightInfo] = useState<any>(null);
   const [preferredTee, setPreferredTee] = useState("white");
   const [savingTee, setSavingTee] = useState(false);
@@ -39,9 +41,26 @@ export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
     { value: "red", label: "Damen", color: "bg-red-500 text-white" },
   ];
 
+  const saveHandicap = async () => {
+    const val = parseFloat(handicapInput);
+    if (isNaN(val) || val < 0 || val > 54) return;
+    try {
+      await fetch(`${API_BASE}/golf/handicap/${auth.event.id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ handicap: val }),
+      });
+      setHandicap(val);
+      setEditingHandicap(false);
+    } catch {}
+  };
+
   useEffect(() => {
     getHandicap(auth.event.id)
-      .then((d) => setHandicap(d.handicap ?? null))
+      .then((d) => {
+        setHandicap(d.handicap ?? null);
+        if (d.handicap != null) setHandicapInput(String(d.handicap));
+      })
       .catch(() => {});
     getFlights(auth.event.id)
       .then((d) => {
@@ -173,9 +192,27 @@ export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
               <IconGolf className="w-4 h-4 text-dark/40" />
               <p className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Handicap</p>
             </div>
-            <p className="text-2xl font-extrabold">
-              {handicap != null ? handicap : <span className="text-dark/20">–</span>}
-            </p>
+            {editingHandicap ? (
+              <div className="flex items-center gap-1 justify-center">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  max="54"
+                  value={handicapInput}
+                  onChange={(e) => setHandicapInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveHandicap(); }}
+                  className="w-16 text-center input-soft py-1 text-sm font-bold"
+                  autoFocus
+                />
+                <button onClick={saveHandicap} className="text-xs font-bold text-emerald-600">OK</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditingHandicap(true)} className="text-2xl font-extrabold">
+                {handicap != null ? handicap : <span className="text-dark/20">–</span>}
+              </button>
+            )}
           </div>
           <div className="card p-4 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1">

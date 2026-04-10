@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { getGolfData } from "../lib/api";
-import { IconCrown, IconTrophy } from "../components/Icons";
+import { IconCrown, IconTrophy, IconArrowLeft } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
 
@@ -12,6 +12,7 @@ export default function Leaderboard() {
   const [allRounds, setAllRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
 
   // Fetch all rounds once for course list
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function Leaderboard() {
     : rounds.length;
 
   return (
+    <>
     <Stagger className="space-y-6">
       <StaggerItem>
         <div className="pt-2 pb-2">
@@ -85,28 +87,34 @@ export default function Leaderboard() {
         </div>
       </StaggerItem>
 
-      {/* Course filter tabs */}
+      {/* Course filter chips */}
       {courses.length > 1 && (
         <StaggerItem>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            <button
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+            <motion.button
               onClick={handleSelectGesamt}
-              className={`pill whitespace-nowrap shrink-0 transition-colors ${
-                selectedCourse === null ? "bg-gold-400" : "bg-white"
+              className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
+                selectedCourse === null
+                  ? "bg-dark text-white border-dark shadow-brutal-xs"
+                  : "bg-white text-dark/40 border-dark/15 hover:border-dark/30"
               }`}
+              whileTap={{ scale: 0.95 }}
             >
               Gesamt
-            </button>
+            </motion.button>
             {courses.map((course) => (
-              <button
+              <motion.button
                 key={course.id}
                 onClick={() => setSelectedCourse(course.id)}
-                className={`pill whitespace-nowrap shrink-0 transition-colors ${
-                  selectedCourse === course.id ? "bg-gold-400" : "bg-white"
+                className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-[11px] font-extrabold uppercase tracking-wider border-2 transition-all ${
+                  selectedCourse === course.id
+                    ? "bg-dark text-white border-dark shadow-brutal-xs"
+                    : "bg-white text-dark/40 border-dark/15 hover:border-dark/30"
                 }`}
+                whileTap={{ scale: 0.95 }}
               >
-                {course.name}
-              </button>
+                {course.name.replace("Golf Course", "").replace("Golf Club", "").trim()}
+              </motion.button>
             ))}
           </div>
         </StaggerItem>
@@ -204,9 +212,10 @@ export default function Leaderboard() {
               )}
 
               {leaderboard.map((player: any, i: number) => (
-                <motion.div
+                <motion.button
                   key={player.member_id}
-                  className={`grid grid-cols-[36px_1fr_60px_60px_50px] gap-1 items-center px-4 py-3.5 border-b border-dark/[0.06] ${
+                  onClick={() => setSelectedPlayer(player)}
+                  className={`w-full grid grid-cols-[36px_1fr_60px_60px_50px] gap-1 items-center px-4 py-3.5 border-b border-dark/[0.06] text-left transition-colors hover:bg-dark/[0.02] active:bg-dark/[0.04] ${
                     player.member_id === auth.member.id
                       ? "bg-gold-400/15 border-l-4 border-l-gold-400"
                       : ""
@@ -227,7 +236,7 @@ export default function Leaderboard() {
                   <span className="text-center text-sm text-dark/40 tabular-nums font-medium">{player.rounds_played}</span>
                   <span className="text-center text-sm text-dark/40 tabular-nums font-medium">{player.total_strokes || "–"}</span>
                   <span className="text-center text-sm font-bold text-emerald-600 tabular-nums">{player.total_points}</span>
-                </motion.div>
+                </motion.button>
               ))}
             </div>
           </StaggerItem>
@@ -264,5 +273,65 @@ export default function Leaderboard() {
         </>
       )}
     </Stagger>
+
+    {/* Player Detail Overlay */}
+    <AnimatePresence>
+      {selectedPlayer && (
+        <motion.div
+          className="fixed inset-0 z-[10000] bg-surface-0 bg-grid overflow-y-auto safe-top safe-bottom"
+          initial={{ opacity: 0, y: "100%" }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: "100%" }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="max-w-lg mx-auto px-5 py-6">
+            <div className="flex items-center gap-3 mb-6">
+              <motion.button onClick={() => setSelectedPlayer(null)} className="w-10 h-10 bg-white border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs" whileTap={{ scale: 0.9 }}>
+                <IconArrowLeft className="w-5 h-5" />
+              </motion.button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Emoji emoji={selectedPlayer.avatar_emoji} size={24} />
+                  <h2 className="text-xl font-extrabold tracking-tight">{selectedPlayer.display_name}</h2>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="card p-4 text-center">
+                <p className="text-2xl font-extrabold text-emerald-600">{selectedPlayer.total_points}</p>
+                <p className="text-[10px] font-bold text-dark/30 uppercase">Punkte</p>
+              </div>
+              <div className="card p-4 text-center">
+                <p className="text-2xl font-extrabold">{selectedPlayer.rounds_played}</p>
+                <p className="text-[10px] font-bold text-dark/30 uppercase">Runden</p>
+              </div>
+              <div className="card p-4 text-center">
+                <p className="text-2xl font-extrabold">{selectedPlayer.total_strokes || "–"}</p>
+                <p className="text-[10px] font-bold text-dark/30 uppercase">Schläge</p>
+              </div>
+            </div>
+
+            {/* Per-course breakdown */}
+            {courses.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider">Pro Platz</p>
+                {courses.map((course) => {
+                  const courseRounds = allRounds.filter((r: any) => r.course_id === course.id);
+                  return (
+                    <div key={course.id} className="card p-4">
+                      <p className="font-bold text-sm tracking-tight">{course.name}</p>
+                      <p className="text-[10px] text-dark/40 mt-0.5">{courseRounds.length} Runde{courseRounds.length !== 1 ? "n" : ""}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }

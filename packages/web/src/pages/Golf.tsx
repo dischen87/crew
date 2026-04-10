@@ -219,43 +219,41 @@ export default function Golf() {
         </div>
       </StaggerItem>
 
-      {/* Handicap Card */}
-      <StaggerItem>
-        <div className={`card p-5 ${needsHandicap ? "border-gold-400 bg-gold-400/10" : ""}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold text-dark/50 uppercase tracking-wider">Dein Handicap</p>
-              {handicap != null ? (
-                <p className="text-2xl font-extrabold mt-1">{handicap}</p>
-              ) : (
+      {/* Handicap Card — only show if not set yet */}
+      {needsHandicap && (
+        <StaggerItem>
+          <div className="card p-5 border-gold-400 bg-gold-400/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold text-dark/50 uppercase tracking-wider">Dein Handicap</p>
                 <p className="text-sm text-dark/50 mt-1 font-medium">Bitte eintragen, um Scores zu erfassen</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min="0"
-                max="54"
-                value={handicapInput}
-                onChange={(e) => setHandicapInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleHandicapSave(); }}
-                placeholder="z.B. 18.4"
-                className="w-20 text-center input-soft py-2 text-sm font-bold"
-              />
-              <motion.button
-                onClick={handleHandicapSave}
-                disabled={savingHandicap || !handicapInput}
-                className="btn-dark text-xs px-4 py-2 disabled:opacity-20"
-                whileTap={{ scale: 0.95 }}
-              >
-                {savingHandicap ? "..." : "OK"}
-              </motion.button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  max="54"
+                  value={handicapInput}
+                  onChange={(e) => setHandicapInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleHandicapSave(); }}
+                  placeholder="z.B. 18.4"
+                  className="w-20 text-center input-soft py-2 text-sm font-bold"
+                />
+                <motion.button
+                  onClick={handleHandicapSave}
+                  disabled={savingHandicap || !handicapInput}
+                  className="btn-dark text-xs px-4 py-2 disabled:opacity-20"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {savingHandicap ? "..." : "OK"}
+                </motion.button>
+              </div>
             </div>
           </div>
-        </div>
-      </StaggerItem>
+        </StaggerItem>
+      )}
 
       {(!golfData?.rounds || golfData.rounds.length === 0) && (
         <StaggerItem>
@@ -271,74 +269,96 @@ export default function Golf() {
         </StaggerItem>
       )}
 
-      {golfData?.rounds?.map((round: any, index: number) => {
-        // Determine if this is the "current" round (first round where user has no scores)
-        const isCurrent = index === (golfData.rounds.findIndex((r: any) => !r._userHasScored) ?? index);
-
-        return (
+      {/* Open rounds — prominent, full width */}
+      {golfData?.rounds?.filter((r: any) => r.status !== "closed").map((round: any, index: number) => (
         <StaggerItem key={round.id}>
-          {/* Round Card */}
-          <div className={`${isCurrent ? "card-gold" : "card"} p-4 ${needsHandicap ? "opacity-50" : ""}`}>
+          <div className={`card-gold p-5 ${needsHandicap ? "opacity-50" : ""}`}>
             <div className="flex items-center gap-2 mb-2">
-              <span className={`pill ${isCurrent ? "bg-dark text-white" : "bg-gold-400"}`}>R{index + 1}</span>
+              <span className="pill bg-dark text-white">Aktiv</span>
               <span className="text-xs text-dark/40 font-medium">{formatDate(round.date)}</span>
               {round.tee_time && <span className="text-xs text-dark/40">· {round.tee_time.slice(0, 5)}</span>}
-              {round.game_mode && round.game_mode !== "individual" && (
-                <span className="text-[10px] font-bold text-dark/40">{
-                  round.game_mode === "4v4" ? "4v4" : round.game_mode === "2v2" ? "2v2" :
-                  round.game_mode === "scramble" ? "Scramble" : round.game_mode === "best_ball" ? "Best Ball" : round.game_mode
-                }</span>
-              )}
             </div>
-            <p className="font-extrabold tracking-tight text-[15px]">{round.course_name}</p>
-            <p className="text-xs text-dark/40 font-medium mt-0.5">
+            <p className="font-extrabold text-xl tracking-tight">{round.course_name}</p>
+            <p className="text-xs text-dark/50 font-medium mt-0.5">
               Par {round.par_total} · {round.format === "stableford" ? "Stableford" : round.format}
               {round.players_scored > 0 && ` · ${round.players_scored} Scores`}
             </p>
-
-            {/* Flight info (compact) */}
-            {roundTeams[round.id] && roundTeams[round.id].length > 0 && (
-              <div className="mt-2 text-[10px] text-dark/40 font-medium">
-                {roundTeams[round.id].map((team: any, ti: number) => (
-                  <span key={team.id || ti}>
-                    {ti > 0 && " · "}
-                    <span className="font-bold text-dark/30">F{ti + 1}:</span>{" "}
-                    {team.members?.map((m: any) => m.display_name?.split(" ")[0]).join(", ")}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {round.notes && (
-              <p className="text-[10px] text-dark/30 mt-1 italic">{round.notes}</p>
-            )}
-
-            {/* CTAs */}
+            {round.notes && <p className="text-[10px] text-dark/30 mt-1 italic">{round.notes}</p>}
             <div className="flex gap-2 mt-3">
               <motion.button
                 onClick={() => !needsHandicap && loadRound(round.id)}
                 disabled={needsHandicap}
-                className={`flex-1 py-2.5 rounded-xl border-2 border-dark text-xs font-extrabold shadow-brutal-xs ${
-                  isCurrent ? "bg-dark text-white" : "bg-gold-400 text-dark"
-                } disabled:opacity-30`}
+                className="flex-1 py-2.5 rounded-xl border-2 border-dark text-xs font-extrabold shadow-brutal-xs bg-dark text-white disabled:opacity-30"
                 whileTap={{ scale: 0.95 }}
               >
                 Score eintragen →
               </motion.button>
-              {round.course_id && (
-                <motion.button
-                  onClick={() => setSelectedCourse(round.course_id)}
-                  className="px-3 py-2.5 rounded-xl border-2 border-dark/20 bg-white text-xs font-bold text-dark/50"
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Details
-                </motion.button>
-              )}
             </div>
+            {/* Admin: close round */}
+            {auth.member.is_admin && (
+              <motion.button
+                onClick={async () => {
+                  await fetch(`${import.meta.env.VITE_API_URL || "/v2"}/golf/round/${round.id}/status`, {
+                    method: "PUT",
+                    headers: { Authorization: `Bearer ${auth.member.id}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "closed" }),
+                  });
+                  getGolfData(auth.event.id).then(setGolfData);
+                }}
+                className="mt-2 text-[10px] text-dark/30 font-bold uppercase tracking-wider"
+                whileTap={{ scale: 0.95 }}
+              >
+                Runde schliessen
+              </motion.button>
+            )}
           </div>
         </StaggerItem>
-        );
-      })}
+      ))}
+
+      {/* Closed rounds — compact 2-column grid */}
+      {golfData?.rounds?.some((r: any) => r.status === "closed") && (
+        <StaggerItem>
+          <p className="text-[10px] font-bold text-dark/30 uppercase tracking-wider mb-3">Abgeschlossene Runden</p>
+          <div className="grid grid-cols-2 gap-3">
+            {golfData.rounds.filter((r: any) => r.status === "closed").map((round: any, i: number) => (
+              <motion.button
+                key={round.id}
+                onClick={() => loadRound(round.id)}
+                className="card p-3.5 text-left aspect-square flex flex-col justify-between"
+                whileTap={{ scale: 0.96 }}
+              >
+                <div>
+                  <span className="pill bg-dark/10 text-[9px] mb-1.5">{formatDate(round.date)}</span>
+                  <p className="font-extrabold text-[13px] tracking-tight leading-tight mt-1">{round.course_name}</p>
+                  <p className="text-[10px] text-dark/40 mt-0.5">Par {round.par_total}</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-dark/30 font-bold">{round.players_scored || 0} Scores</span>
+                  <span className="text-[10px] font-extrabold text-dark/25">→</span>
+                </div>
+                {/* Admin: reopen round */}
+                {auth.member.is_admin && (
+                  <motion.button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await fetch(`${import.meta.env.VITE_API_URL || "/v2"}/golf/round/${round.id}/status`, {
+                        method: "PUT",
+                        headers: { Authorization: `Bearer ${auth.member.id}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: "open" }),
+                      });
+                      getGolfData(auth.event.id).then(setGolfData);
+                    }}
+                    className="text-[9px] text-accent-mint-dark font-bold uppercase tracking-wider mt-1"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Wieder öffnen
+                  </motion.button>
+                )}
+              </motion.button>
+            ))}
+          </div>
+        </StaggerItem>
+      )}
 
       {needsHandicap && golfData?.rounds?.length > 0 && (
         <StaggerItem>

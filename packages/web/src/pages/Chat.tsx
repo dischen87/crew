@@ -98,7 +98,7 @@ export default function Chat() {
   let lastDate = "";
 
   return (
-    <div className="flex flex-col -mx-5 -my-6" style={{ height: 'calc(100vh - 120px)' }}>
+    <div className="flex flex-col -mx-5 -mt-6 -mb-28" style={{ height: 'calc(100vh - 110px)' }}>
       {/* Chat Header */}
       <div className="shrink-0 bg-white border-b-3 border-dark px-4 py-2.5">
         <div className="flex items-center gap-3">
@@ -210,7 +210,7 @@ export default function Chat() {
       </div>
 
       {/* Input Bar */}
-      <div className="shrink-0 bg-white border-t-2 border-dark/10 pb-2">
+      <div className="shrink-0 bg-white border-t-2 border-dark/10 pb-16">
         <form onSubmit={handleSend} className="px-4 py-2.5">
           <div className="flex gap-2 items-end">
             <motion.button
