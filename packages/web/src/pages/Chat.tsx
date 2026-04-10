@@ -1,26 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { useAuth } from "../contexts/AuthContext";
 import { getMessages, sendMessage } from "../lib/api";
 import { IconSend, IconArrowLeft } from "../components/Icons";
 import { Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
 import GiphyPicker from "../components/GiphyPicker";
 
-interface Props {
-  auth: {
-    member: { id: string; display_name: string };
-    group: { id: string; name: string };
-    event: { id: string };
-  };
-  onClose?: () => void;
-}
-
 function isGifUrl(text: string): boolean {
   if (!text) return false;
   return /\.(gif)(\?|$)/i.test(text) || /giphy\.com\/media/i.test(text) || /media\d*\.giphy\.com/i.test(text);
 }
 
-export default function Chat({ auth, onClose }: Props) {
+export default function Chat() {
+  const { auth } = useAuth();
+  const navigate = useNavigate();
+  const { eventId } = useParams({ from: "/events/$eventId" });
+  const onClose = () => navigate({ to: `/events/${eventId}` });
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -32,6 +29,7 @@ export default function Chat({ auth, onClose }: Props) {
   const prevCountRef = useRef(0);
 
   const loadMessages = useCallback(async () => {
+    if (!auth) return;
     try {
       const data = await getMessages(auth.group.id, 100);
       const msgs = [...(data.messages || [])].reverse();
@@ -47,13 +45,15 @@ export default function Chat({ auth, onClose }: Props) {
       console.error("Failed to load messages:", err);
       setLoading(false);
     }
-  }, [auth.group.id]);
+  }, [auth?.group?.id]);
 
   useEffect(() => {
     loadMessages();
     pollRef.current = setInterval(loadMessages, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadMessages]);
+
+  if (!auth) return null;
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,23 +100,10 @@ export default function Chat({ auth, onClose }: Props) {
   let lastDate = "";
 
   return (
-    <motion.div
-      className="fixed inset-0 z-[10000] bg-white flex flex-col"
-      initial={{ opacity: 0, y: "100%" }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: "100%" }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-    >
-      {/* Header */}
-      <div className="shrink-0 bg-white border-b-3 border-dark" style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}>
-        <div className="px-4 py-2.5 flex items-center gap-3">
-          <motion.button
-            onClick={onClose || (() => {})}
-            className="w-10 h-10 bg-surface-0 border-2 border-dark rounded-xl flex items-center justify-center shadow-brutal-xs shrink-0"
-            whileTap={{ scale: 0.9 }}
-          >
-            <IconArrowLeft className="w-5 h-5 text-dark" />
-          </motion.button>
+    <div className="flex flex-col -mx-5 -my-6" style={{ height: 'calc(100vh - 120px)' }}>
+      {/* Chat Header */}
+      <div className="shrink-0 bg-white border-b-3 border-dark px-4 py-2.5">
+        <div className="flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-extrabold tracking-tight leading-tight">Chat</h2>
             <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
@@ -127,7 +114,7 @@ export default function Chat({ auth, onClose }: Props) {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 min-h-0 overscroll-contain bg-surface-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 min-h-0 overscroll-none bg-surface-0">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner /></div>
         ) : messages.length === 0 ? (
@@ -225,7 +212,7 @@ export default function Chat({ auth, onClose }: Props) {
       </div>
 
       {/* Input Bar */}
-      <div className="shrink-0 bg-white border-t-2 border-dark/10" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}>
+      <div className="shrink-0 bg-white border-t-2 border-dark/10 pb-2">
         <form onSubmit={handleSend} className="px-4 py-2.5">
           <div className="flex gap-2 items-end">
             <motion.button
@@ -264,6 +251,6 @@ export default function Chat({ auth, onClose }: Props) {
           <GiphyPicker onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

@@ -1,13 +1,3 @@
-import {
-  MOCK_GOLF_DATA,
-  MOCK_ROUND_DETAIL,
-  MOCK_MEMBERS,
-  MOCK_MESSAGES,
-  MOCK_FLIGHTS,
-  MOCK_LOCATIONS,
-  MOCK_ROUNDS,
-} from "./mock-data";
-
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
 function getToken(): string | null {
@@ -62,7 +52,6 @@ async function apiFetch<T = any>(path: string, options?: RequestInit): Promise<T
 
   if (res.status === 401) {
     clearToken();
-    window.location.reload();
     throw new Error("Unauthorized");
   }
 
@@ -97,11 +86,7 @@ export async function joinGroup(inviteCode: string, name: string, password: stri
 
 // Groups
 export async function getGroup(groupId: string) {
-  try {
-    return await apiFetch(`/groups/${groupId}`);
-  } catch {
-    return { members: MOCK_MEMBERS };
-  }
+  return apiFetch(`/groups/${groupId}`);
 }
 
 // Events
@@ -123,12 +108,8 @@ import { requestSync } from "./syncEngine";
 
 // Golf
 export async function getGolfData(eventId: string, courseId?: string) {
-  try {
-    const query = courseId ? `?course_id=${courseId}` : "";
-    return await apiFetch(`/golf/event/${eventId}${query}`);
-  } catch {
-    return MOCK_GOLF_DATA;
-  }
+  const query = courseId ? `?course_id=${courseId}` : "";
+  return apiFetch(`/golf/event/${eventId}${query}`);
 }
 
 export async function getRoundDetails(roundId: string) {
@@ -191,8 +172,7 @@ export async function getRoundDetails(roundId: string) {
         _offline: true,
       };
     }
-    const round = MOCK_ROUNDS.find((r) => r.id === roundId) || MOCK_ROUNDS[0];
-    return { ...MOCK_ROUND_DETAIL, round };
+    throw new Error("Offline und keine gecachten Daten verfuegbar");
   }
 }
 
@@ -324,20 +304,12 @@ export async function deleteScore(eventId: string, data: {
 
 // Flights
 export async function getFlights(eventId: string) {
-  try {
-    return await apiFetch(`/flights/event/${eventId}`);
-  } catch {
-    return MOCK_FLIGHTS;
-  }
+  return apiFetch(`/flights/event/${eventId}`);
 }
 
 // Chat
 export async function getMessages(groupId: string, limit = 50, offset = 0) {
-  try {
-    return await apiFetch(`/chat/${groupId}/messages?limit=${limit}&offset=${offset}`);
-  } catch {
-    return { messages: [...MOCK_MESSAGES].reverse().slice(0, limit) };
-  }
+  return apiFetch(`/chat/${groupId}/messages?limit=${limit}&offset=${offset}`);
 }
 
 export async function sendMessage(groupId: string, content: string, eventId?: string) {
@@ -347,19 +319,19 @@ export async function sendMessage(groupId: string, content: string, eventId?: st
   });
 }
 
-// Locations (mock fallback)
+// Locations
 export async function getLocations(eventId: string) {
-  try {
-    const token = getToken();
-    const res = await fetch(`${API_BASE}/locations/${eventId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.locations || [];
-    }
-    return MOCK_LOCATIONS;
-  } catch {
-    return MOCK_LOCATIONS;
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/locations/${eventId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) {
+    clearToken();
+    throw new Error("Unauthorized");
   }
+  if (!res.ok) {
+    throw new Error(`Failed to fetch locations: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.locations || [];
 }

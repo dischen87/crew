@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serveStatic } from "hono/bun";
+import { errorHandler } from "./middleware/errorHandler";
 
 import auth from "./routes/auth";
 import groups from "./routes/groups";
@@ -19,6 +20,7 @@ const app = new Hono();
 // --- Middleware ---
 app.use("*", cors());
 app.use("*", logger());
+app.use("*", errorHandler);
 
 // --- Health check ---
 app.get("/health", (c) => {

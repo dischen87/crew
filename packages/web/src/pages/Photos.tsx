@@ -1,19 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "../contexts/AuthContext";
 import { IconUpload, IconCamera } from "../components/Icons";
 import { Spinner } from "../components/Motion";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
-interface Props {
-  auth: {
-    member: { id: string; display_name: string };
-    event: { id: string };
-    token?: string;
-  };
-}
-
-export default function Photos({ auth }: Props) {
+export default function Photos() {
+  const { auth } = useAuth();
   const [photos, setPhotos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -22,6 +16,7 @@ export default function Photos({ auth }: Props) {
   const token = localStorage.getItem("crew_token");
 
   const loadPhotos = useCallback(async () => {
+    if (!auth) return;
     try {
       const res = await fetch(`${API_BASE}/media/event/${auth.event.id}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -32,11 +27,13 @@ export default function Photos({ auth }: Props) {
       console.error("Failed to load photos:", err);
     }
     setLoading(false);
-  }, [auth.event.id, token]);
+  }, [auth?.event?.id, token]);
 
   useEffect(() => {
     loadPhotos();
   }, [loadPhotos]);
+
+  if (!auth) return null;
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;

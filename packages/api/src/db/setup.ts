@@ -69,6 +69,22 @@ async function setup() {
   // === Phase: Image Thumbnails ===
   await sql`ALTER TABLE media ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
 
+  // === Phase: Score Audit Trail ===
+  await sql`CREATE TABLE IF NOT EXISTS golf_score_history (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    round_id   UUID NOT NULL,
+    member_id  UUID NOT NULL,
+    hole       INT NOT NULL,
+    strokes    INT NOT NULL,
+    putts      INT,
+    net_score  INT,
+    stableford INT,
+    action     TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_score_history_round ON golf_score_history(round_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_score_history_member ON golf_score_history(member_id)`;
+
   // Data migrations
   console.log("Running data migrations...");
   await sql`UPDATE group_members SET is_admin = TRUE WHERE LOWER(TRIM(display_name)) = 'mathias graf'`;

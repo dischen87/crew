@@ -1,21 +1,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useAuth } from "../contexts/AuthContext";
 import Emoji from "../components/Emoji";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
-
-interface Props {
-  onLogin: (name: string, pin: string) => void;
-  onRegister?: (name: string, password: string, groupName: string, emoji?: string) => void;
-  onJoin?: (inviteCode: string, name: string, password: string, emoji?: string, pin?: string) => void;
-  error: string;
-  /** Pre-filled invite code from URL (e.g. /join/BELEK26) */
-  initialInviteCode?: string | null;
-  /** Pre-filled name from URL (e.g. ?name=Mathias+Graf) */
-  initialName?: string | null;
-  /** Pre-filled password from URL (e.g. ?pw=BelekGolf4ever) */
-  initialPassword?: string | null;
-}
 
 type Mode = "login" | "register" | "join";
 
@@ -26,8 +15,17 @@ const EMOJI_OPTIONS = [
   "\u{1F48E}", "\u{1F680}", "\u{1F30A}", "\u{1F340}", "\u{1F3EA}", "\u{1F9CA}", "\u2600\uFE0F", "\u{1F319}",
 ];
 
-export default function Login({ onLogin, onRegister, onJoin, error, initialInviteCode, initialName, initialPassword }: Props) {
-  // Auto-switch to "join" mode if invite code is in URL
+export default function Login() {
+  const navigate = useNavigate();
+  const { auth, login: authLogin, register: authRegister, join: authJoin, loginError: error } = useAuth();
+
+  // Get invite params from URL (works for /join/:code and /login routes)
+  const params = useParams({ strict: false }) as { code?: string };
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialInviteCode = params.code?.toUpperCase() || null;
+  const initialName = searchParams.get("name");
+  const initialPassword = searchParams.get("pw");
+
   const [mode, setMode] = useState<Mode>(initialInviteCode ? "join" : "login");
   const [name, setName] = useState(initialName || "");
   const [password, setPassword] = useState(initialPassword || "");
@@ -45,6 +43,13 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
 
   const hasInviteFromUrl = !!initialInviteCode;
   const hasNameFromUrl = !!initialName;
+
+  // Redirect to event when auth succeeds
+  useEffect(() => {
+    if (auth?.event?.id) {
+      navigate({ to: `/events/${auth.event.id}` });
+    }
+  }, [auth?.event?.id, navigate]);
 
   // Load member list when login code changes
   useEffect(() => {
@@ -71,13 +76,17 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
     if (submitting) return;
     setSubmitting(true);
 
-    if (mode === "login") {
-      await onLogin(name.trim(), pin || password);
-    } else if (mode === "register" && onRegister) {
-      await onRegister(name.trim(), password, groupName.trim(), selectedEmoji || undefined);
-    } else if (mode === "join" && onJoin) {
-      const joinPassword = password || "BelekGolf4ever";
-      await onJoin(inviteCode.trim(), name.trim(), joinPassword, selectedEmoji || undefined, pin || undefined);
+    try {
+      if (mode === "login") {
+        await authLogin(name.trim(), pin || password);
+      } else if (mode === "register") {
+        await authRegister(name.trim(), password, groupName.trim(), selectedEmoji || undefined);
+      } else if (mode === "join") {
+        const joinPassword = password || "BelekGolf4ever";
+        await authJoin(inviteCode.trim(), name.trim(), joinPassword, selectedEmoji || undefined, pin || undefined);
+      }
+    } catch {
+      // Error is set in AuthContext
     }
 
     setSubmitting(false);
@@ -94,28 +103,21 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   };
 
   return (
-    <div className="h-full overflow-y-auto overscroll-contain bg-surface-0 bg-grid flex items-center justify-center px-6 safe-top safe-bottom">
+    <div className="h-full overflow-y-auto overscroll-none bg-surface-0 bg-grid flex items-center justify-center px-6 safe-top safe-bottom">
       <motion.div
         className="w-full max-w-sm"
-        initial={{ opacity: 0, y: 20 }}
+        initial={false}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.16, 0.84, 0.44, 1] }}
       >
         {/* Logo */}
         <div className="text-center mb-8">
           <motion.div
             className="inline-block bg-accent-mint border-2 border-dark px-8 py-3 rounded-full shadow-brutal mb-4"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.6 }}
           >
             <h1 className="text-4xl font-extrabold tracking-tight">CREW</h1>
           </motion.div>
           <motion.p
             className="text-dark/40 text-xs mt-2 font-bold"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
           >
             Dein Trip. Deine Crew. Dein Game.
           </motion.p>
@@ -125,9 +127,6 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
         {hasInviteFromUrl && mode === "join" && (
           <motion.div
             className="card-gold p-4 mb-5 text-center"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
           >
             <p className="text-[10px] font-bold text-dark/50 uppercase tracking-wider mb-1">
               Einladung
@@ -171,9 +170,6 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
         {/* Form */}
         <motion.div
           className="card p-6"
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.6 }}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
             <AnimatePresence mode="wait">

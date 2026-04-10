@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { IconArrowLeft, IconGolf, IconPlane } from "../components/Icons";
 import Emoji from "../components/Emoji";
 import { getHandicap, getFlights } from "../lib/api";
+import type { AuthData } from "../contexts/AuthContext";
 
 const EMOJI_OPTIONS = [
   "🏌️", "⛳", "🏆", "🎯", "💪", "🔥", "🎳", "⚡",
@@ -12,10 +13,7 @@ const EMOJI_OPTIONS = [
 ];
 
 interface Props {
-  auth: {
-    member: { id: string; display_name: string; avatar_emoji: string };
-    event: { id: string };
-  };
+  auth: AuthData;
   onClose: () => void;
   onLogout: () => void;
   onUpdate: (member: { display_name: string; avatar_emoji: string }) => void;
@@ -99,7 +97,7 @@ export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[9999] bg-surface-0 bg-grid safe-top safe-bottom overflow-y-auto overscroll-contain"
+      className="fixed inset-0 z-[9999] bg-surface-0 bg-grid safe-top safe-bottom overflow-y-auto overscroll-none"
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}

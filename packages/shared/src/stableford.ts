@@ -1,7 +1,5 @@
 /**
- * Client-side Stableford calculation.
- * Single source of truth: packages/shared/src/stableford.ts
- * This file re-exports to avoid cross-package resolution issues with Vite.
+ * Stableford scoring — single source of truth for API + Web.
  */
 
 export function calculateStableford(
@@ -15,9 +13,9 @@ export function calculateStableford(
   if (diff <= -3) return 5; // albatross or better
   if (diff === -2) return 4; // eagle
   if (diff === -1) return 3; // birdie
-  if (diff === 0) return 2; // par
-  if (diff === 1) return 1; // bogey
-  return 0; // double bogey or worse
+  if (diff === 0) return 2;  // par
+  if (diff === 1) return 1;  // bogey
+  return 0;                   // double bogey or worse
 }
 
 export function strokesReceivedOnHole(

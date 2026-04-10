@@ -6,7 +6,8 @@
     "dev": "bun --watch src/index.ts",
     "db:setup": "bun src/db/setup.ts",
     "db:seed": "bun src/db/seed.ts",
-    "db:seed-belek": "bun src/db/seed-belek.ts"
+    "db:seed-belek": "bun src/db/seed-belek.ts",
+    "test": "bun test src/__tests__/"
   },
   "dependencies": {
     "hono": "^4.4.0",

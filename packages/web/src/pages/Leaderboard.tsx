@@ -1,18 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useAuth } from "../contexts/AuthContext";
 import { getGolfData } from "../lib/api";
 import { IconCrown, IconTrophy } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
 
-interface Props {
-  auth: {
-    member: { id: string };
-    event: { id: string };
-  };
-}
-
-export default function Leaderboard({ auth }: Props) {
+export default function Leaderboard() {
+  const { auth } = useAuth();
   const [data, setData] = useState<any>(null);
   const [allRounds, setAllRounds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +15,7 @@ export default function Leaderboard({ auth }: Props) {
 
   // Fetch all rounds once for course list
   useEffect(() => {
+    if (!auth) return;
     getGolfData(auth.event.id)
       .then((d) => {
         setData(d);
@@ -27,17 +23,17 @@ export default function Leaderboard({ auth }: Props) {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [auth.event.id]);
+  }, [auth?.event?.id]);
 
   // Re-fetch when course filter changes
   useEffect(() => {
-    if (selectedCourse === null) return; // initial load already done
+    if (!auth || selectedCourse === null) return;
     setLoading(true);
     getGolfData(auth.event.id, selectedCourse)
       .then((d) => setData(d))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [auth.event.id, selectedCourse]);
+  }, [auth?.event?.id, selectedCourse]);
 
   // Reset to full ranking
   const handleSelectGesamt = () => {
@@ -59,6 +55,8 @@ export default function Leaderboard({ auth }: Props) {
     }
     return Array.from(seen, ([id, name]) => ({ id, name }));
   }, [allRounds]);
+
+  if (!auth) return null;
 
   const leaderboard = data?.leaderboard || [];
   const rounds = data?.rounds || [];

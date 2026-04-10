@@ -1,20 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useParams } from "@tanstack/react-router";
+import { useAuth } from "../contexts/AuthContext";
 import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import { getTotalPendingCount } from "../lib/offlineDb";
 
-interface Props {
-  auth: {
-    member: { id: string; display_name: string };
-    event: { id: string };
-  };
-  navigateToCourse?: string | null;
-  onCourseNavigated?: () => void;
-}
-
-export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Props) {
+export default function Golf() {
+  const { auth } = useAuth();
+  const params = useParams({ strict: false }) as { eventId?: string; roundId?: string };
+  const navigateToCourse: string | null = null;
+  const onCourseNavigated = () => {};
   const [golfData, setGolfData] = useState<any>(null);
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
   const [roundDetail, setRoundDetail] = useState<any>(null);
@@ -30,14 +27,15 @@ export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Prop
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
+    if (!auth) return;
     Promise.all([
-      getGolfData(auth.event.id).then(setGolfData),
+      getGolfData(auth.event.id).then(setGolfData).catch(console.error),
       getHandicap(auth.event.id).then((d) => {
         setHandicapVal(d.handicap);
         if (d.handicap != null) setHandicapInput(String(d.handicap));
       }).catch(() => {}),
     ]).finally(() => { setLoading(false); setHandicapLoading(false); });
-  }, [auth.event.id]);
+  }, [auth?.event?.id]);
 
   // Offline sync tracking
   useEffect(() => {
@@ -118,7 +116,7 @@ export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Prop
       console.error("Score submit error:", err);
     }
     setSaving(null);
-  }, [selectedRound, auth.event.id, roundDetail, handicap]);
+  }, [selectedRound, auth?.event?.id, auth?.member?.id, roundDetail, handicap]);
 
   const handleScoreDelete = useCallback(async (hole: number) => {
     if (!selectedRound) return;
@@ -131,7 +129,7 @@ export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Prop
       console.error("Score delete error:", err);
     }
     setSaving(null);
-  }, [selectedRound, auth.event.id]);
+  }, [selectedRound, auth?.event?.id]);
 
   const handleHandicapSave = async () => {
     const val = parseFloat(handicapInput);
@@ -152,7 +150,7 @@ export default function Golf({ auth, navigateToCourse, onCourseNavigated }: Prop
     return `${days[date.getDay()]}, ${date.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}`;
   };
 
-  if (loading || handicapLoading) {
+  if (!auth || loading || handicapLoading) {
     return <div className="flex justify-center py-20"><Spinner /></div>;
   }
 

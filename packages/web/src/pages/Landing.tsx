@@ -1,12 +1,20 @@
 import { motion } from "framer-motion";
+import { useNavigate } from "@tanstack/react-router";
+import { useAuth } from "../contexts/AuthContext";
 
-interface Props {
-  onGetStarted: () => void;
-}
+export default function Landing() {
+  const navigate = useNavigate();
+  const { auth } = useAuth();
 
-export default function Landing({ onGetStarted }: Props) {
+  const onGetStarted = () => {
+    if (auth?.event?.id) {
+      navigate({ to: `/events/${auth.event.id}` });
+    } else {
+      navigate({ to: "/login" });
+    }
+  };
   return (
-    <div className="h-full overflow-y-auto overscroll-contain bg-surface-0 text-dark font-sans">
+    <div className="h-full overflow-y-auto overscroll-none bg-surface-0 text-dark font-sans">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-surface-0/95 backdrop-blur-md border-b-2 border-dark/10">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -32,9 +40,8 @@ export default function Landing({ onGetStarted }: Props) {
         <div className="flex flex-col md:flex-row items-center gap-12 md:gap-20">
           <motion.div
             className="flex-1 text-center md:text-left"
-            initial={{ opacity: 0, y: 30 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl md:text-6xl font-extrabold leading-tight tracking-tight mb-6">
               Dein Trip.<br />
@@ -63,9 +70,8 @@ export default function Landing({ onGetStarted }: Props) {
 
           <motion.div
             className="flex-shrink-0 hidden md:block"
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={false}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
           >
             <div className="w-72 h-[500px] bg-dark rounded-[2.5rem] p-4 shadow-brutal-lg border-2 border-dark">
               <div className="w-full h-full bg-surface-0 rounded-[2rem] p-6 flex flex-col gap-5">

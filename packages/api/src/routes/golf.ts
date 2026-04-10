@@ -1,34 +1,10 @@
 import { Hono } from "hono";
 import { sql } from "../db/client";
 import { authMiddleware, getMember } from "../middleware/auth";
+import { calculateStableford, strokesReceivedOnHole } from "../../../shared/src/stableford";
 
 const golf = new Hono();
 golf.use("*", authMiddleware);
-
-/**
- * Calculate stableford points for a hole.
- */
-function calculateStableford(strokes: number, par: number, strokesReceived: number): number {
-  const netStrokes = strokes - strokesReceived;
-  const diff = netStrokes - par;
-
-  if (diff <= -3) return 5; // albatross or better
-  if (diff === -2) return 4; // eagle
-  if (diff === -1) return 3; // birdie
-  if (diff === 0) return 2;  // par
-  if (diff === 1) return 1;  // bogey
-  return 0;                   // double bogey or worse
-}
-
-/**
- * Calculate strokes received on a specific hole based on playing handicap and hole handicap index.
- */
-function strokesReceivedOnHole(playingHandicap: number, holeHandicapIndex: number): number {
-  if (playingHandicap <= 0) return 0;
-  const full = Math.floor(playingHandicap / 18);
-  const remainder = playingHandicap % 18;
-  return full + (holeHandicapIndex <= remainder ? 1 : 0);
-}
 
 /**
  * GET /event/:id — Golf screen data (rounds, leaderboard).
@@ -313,6 +289,22 @@ golf.post("/event/:id/score", async (c) => {
     const netScore = body.strokes - received;
     const stableford = calculateStableford(body.strokes, holeData.par, received);
 
+    // Audit: save existing score to history before overwriting
+    const [existingScore] = await sql`
+      SELECT strokes, putts, net_score, stableford
+      FROM golf_scores
+      WHERE round_id = ${body.round_id} AND member_id = ${member.id} AND hole = ${body.hole}
+    `;
+
+    if (existingScore) {
+      await sql`
+        INSERT INTO golf_score_history (round_id, member_id, hole, strokes, putts, net_score, stableford, action)
+        VALUES (${body.round_id}, ${member.id}, ${body.hole},
+                ${existingScore.strokes}, ${existingScore.putts}, ${existingScore.net_score}, ${existingScore.stableford},
+                'update')
+      `;
+    }
+
     const [score] = await sql`
       INSERT INTO golf_scores (round_id, member_id, hole, strokes, putts, net_score, stableford)
       VALUES (
@@ -384,6 +376,22 @@ golf.delete("/event/:id/score", async (c) => {
     `;
     if (!round) {
       return c.json({ error: "Round not found" }, 404);
+    }
+
+    // Audit: save score to history before deleting
+    const [existingScore] = await sql`
+      SELECT strokes, putts, net_score, stableford
+      FROM golf_scores
+      WHERE round_id = ${body.round_id} AND member_id = ${member.id} AND hole = ${body.hole}
+    `;
+
+    if (existingScore) {
+      await sql`
+        INSERT INTO golf_score_history (round_id, member_id, hole, strokes, putts, net_score, stableford, action)
+        VALUES (${body.round_id}, ${member.id}, ${body.hole},
+                ${existingScore.strokes}, ${existingScore.putts}, ${existingScore.net_score}, ${existingScore.stableford},
+                'delete')
+      `;
     }
 
     await sql`
@@ -577,6 +585,36 @@ golf.get("/course/:id/holes", async (c) => {
   } catch (err) {
     console.error("GET /golf/course/:id/holes error:", err);
     return c.json({ error: "Failed to fetch holes" }, 500);
+  }
+});
+
+/**
+ * GET /event/:id/score-history — Score audit trail (admin-only).
+ */
+golf.get("/event/:id/score-history", async (c) => {
+  try {
+    const eventId = c.req.param("id");
+    const member = getMember(c);
+
+    if (!member.is_admin) {
+      return c.json({ error: "Admin-Rechte erforderlich" }, 403);
+    }
+
+    const history = await sql`
+      SELECT h.*, gm.display_name, gc.name AS course_name
+      FROM golf_score_history h
+      LEFT JOIN group_members gm ON gm.id = h.member_id
+      LEFT JOIN golf_rounds gr ON gr.id = h.round_id
+      LEFT JOIN golf_courses gc ON gc.id = gr.course_id
+      WHERE gr.event_id = ${eventId}
+      ORDER BY h.created_at DESC
+      LIMIT 200
+    `;
+
+    return c.json({ history });
+  } catch (err) {
+    console.error("GET /golf/event/:id/score-history error:", err);
+    return c.json({ error: "Failed to fetch score history" }, 500);
   }
 });
 

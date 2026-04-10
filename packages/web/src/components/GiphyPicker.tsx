@@ -81,7 +81,7 @@ export default function GiphyPicker({ onSelect, onClose }: Props) {
       </div>
 
       {/* GIF Grid */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-none">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-sm text-dark/30 font-medium">GIFs laden...</div>

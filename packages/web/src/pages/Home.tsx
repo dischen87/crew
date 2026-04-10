@@ -1,26 +1,35 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { useAuth } from "../contexts/AuthContext";
+import { useEvent } from "../contexts/EventContext";
 import { getGolfData, getGroup } from "../lib/api";
 import { IconGolf, IconTrophy, IconChat, IconPlane, IconFlag, IconUsers, IconStar, IconMapPin } from "../components/Icons";
 import { Stagger, StaggerItem } from "../components/Motion";
 
-interface Props {
-  auth: {
-    member: { id: string; display_name: string };
-    group: { id: string; name: string };
-    event: { id: string; title: string; date_from: string; date_to: string; location: string };
-  };
-  onNavigate: (tab: string) => void;
-}
-
-export default function Home({ auth, onNavigate }: Props) {
+export default function Home() {
+  const { auth } = useAuth();
+  const { modules } = useEvent();
+  const navigate = useNavigate();
+  const { eventId } = useParams({ from: "/events/$eventId" });
   const [golfData, setGolfData] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
 
+  const onNavigate = (tab: string) => {
+    if (tab === "tracker") {
+      // TODO: tracker overlay
+      return;
+    }
+    navigate({ to: `/events/${eventId}/${tab === "home" ? "" : tab}` });
+  };
+
   useEffect(() => {
+    if (!auth) return;
     getGolfData(auth.event.id).then(setGolfData).catch(console.error);
     getGroup(auth.group.id).then((g) => setMembers(g.members || [])).catch(console.error);
-  }, [auth.event.id, auth.group.id]);
+  }, [auth?.event?.id, auth?.group?.id]);
+
+  if (!auth) return null;
 
   const formatDate = (d: string) => {
     const date = new Date(d);
@@ -199,36 +208,44 @@ export default function Home({ auth, onNavigate }: Props) {
         </div>
       </StaggerItem>
 
-      {/* Masters Pool */}
-      <StaggerItem>
-        <div className="card-mint p-6">
-          <div className="flex items-center gap-2 mb-2">
-            <IconStar className="w-4 h-4" />
-            <p className="font-extrabold tracking-tight text-[15px]">Masters Pool 2026</p>
-          </div>
-          <p className="text-[12px] opacity-50 font-medium mb-5">
-            Einsatz 20 CHF · 1. Platz 50% · 2. Platz 30% · 3. Platz 20%
-          </p>
-          <div className="flex gap-2">
-            <a
-              href="http://www.easyofficepools.com/join/?p=464087&e=wlld"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-dark text-[11px] uppercase tracking-wider px-4 py-2.5"
-            >
-              Team wählen →
-            </a>
-            <a
-              href="http://www.easyofficepools.com/leaderboard/?p=464087"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pill bg-white text-[11px] uppercase tracking-wider px-4 py-2"
-            >
-              Leaderboard
-            </a>
-          </div>
-        </div>
-      </StaggerItem>
+      {/* Masters Pool — driven by event module config */}
+      {(() => {
+        const poolModule = modules.find((m) => m.type === "masters_pool");
+        if (!poolModule?.config?.url) return null;
+        const cfg = poolModule.config;
+        const prizes = cfg.prizes || {};
+        return (
+          <StaggerItem>
+            <div className="card-mint p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <IconStar className="w-4 h-4" />
+                <p className="font-extrabold tracking-tight text-[15px]">Masters Pool</p>
+              </div>
+              {cfg.buy_in && (
+                <p className="text-[12px] opacity-50 font-medium mb-5">
+                  Einsatz {cfg.buy_in}
+                  {prizes.first && <> · 1. Platz {prizes.first}</>}
+                  {prizes.second && <> · 2. Platz {prizes.second}</>}
+                  {prizes.third && <> · 3. Platz {prizes.third}</>}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <a href={cfg.url} target="_blank" rel="noopener noreferrer"
+                  className="btn-dark text-[11px] uppercase tracking-wider px-4 py-2.5">
+                  Team wählen →
+                </a>
+                {cfg.leaderboard_url && (
+                  <a href={cfg.leaderboard_url} target="_blank" rel="noopener noreferrer"
+                    className="pill bg-white text-[11px] uppercase tracking-wider px-4 py-2">
+                    Leaderboard
+                  </a>
+                )}
+              </div>
+            </div>
+          </StaggerItem>
+        );
+      })()}
+
 
       {/* Participants */}
       <StaggerItem>

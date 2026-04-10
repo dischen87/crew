@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
+import { useAuth } from "../contexts/AuthContext";
 import { getFlights, getLocations } from "../lib/api";
 import { IconPlane, IconGolf, IconMapPin, IconStar, IconInfo, IconLogout, IconHotel, IconCalendar, IconUsers, IconCrown } from "../components/Icons";
 import AdminPanel from "../components/AdminPanel";
@@ -8,17 +9,9 @@ import LocationMap from "../components/LocationMap";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/v2";
 
-interface Props {
-  auth: {
-    member: { id: string; display_name: string; is_admin: boolean };
-    event: { id: string; title: string };
-    group: { id: string; invite_code?: string };
-  };
-  onLogout: () => void;
-}
-
-export default function More({ auth, onLogout }: Props) {
-  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info" | "admin">(auth.member.is_admin ? "admin" : "flights");
+export default function More() {
+  const { auth, logout: onLogout } = useAuth();
+  const [tab, setTab] = useState<"flights" | "handicap" | "location" | "masters" | "info" | "admin">(auth?.member?.is_admin ? "admin" : "flights");
   const [flightData, setFlightData] = useState<any>(null);
   const [flightsLoading, setFlightsLoading] = useState(true);
   const [handicap, setHandicap] = useState("");
@@ -29,6 +22,7 @@ export default function More({ auth, onLogout }: Props) {
   const token = localStorage.getItem("crew_token");
 
   useEffect(() => {
+    if (!auth) return;
     getFlights(auth.event.id)
       .then((d) => { setFlightData(d); setFlightsLoading(false); })
       .catch(() => setFlightsLoading(false));
@@ -54,7 +48,7 @@ export default function More({ auth, onLogout }: Props) {
         );
       }
     });
-  }, [auth.event.id]);
+  }, [auth?.event?.id]);
 
   const loadHandicap = async () => {
     try {
@@ -125,7 +119,9 @@ export default function More({ auth, onLogout }: Props) {
       },
       { enableHighAccuracy: true }
     );
-  }, [auth.event.id, token]);
+  }, [auth?.event?.id, token]);
+
+  if (!auth) return null;
 
   const formatLocationTime = (d: string) => {
     const date = new Date(d);
