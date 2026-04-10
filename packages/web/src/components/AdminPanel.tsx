@@ -739,7 +739,6 @@ function FlightManager({ auth, members, token }: { auth: Props["auth"]; members:
       });
       const data = await res.json();
       const teams = data.teams || [];
-      setExistingTeams(teams);
       if (teams.length > 0) {
         setFlights(teams.map((t: any, i: number) => ({
           name: t.name || `Flight ${i + 1}`,
