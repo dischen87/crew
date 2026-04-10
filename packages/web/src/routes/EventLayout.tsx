@@ -10,7 +10,7 @@ import Profile from "../pages/Profile";
 import InstallPrompt from "../components/InstallPrompt";
 
 /** Icon mapping for module types */
-const MODULE_ICONS: Record<string, React.FC<React.SVGProps<SVGSVGElement>>> = {
+const MODULE_ICONS: Record<string, any> = {
   golf: IconGolf,
   leaderboard: IconTrophy,
   chat: IconChat,
