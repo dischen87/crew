@@ -261,6 +261,7 @@ function EventLayoutInner() {
             roundId={flightEditorRound}
             members={allMembers}
             onClose={() => setFlightEditorRound(null)}
+            onSaved={() => window.dispatchEvent(new CustomEvent("flights-updated"))}
           />
         )}
       </AnimatePresence>

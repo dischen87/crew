@@ -24,21 +24,31 @@ export default function Home() {
     navigate({ to: `/events/${eventId}/${tab === "home" ? "" : tab}` });
   };
 
+  const loadFlights = (rounds: any[]) => {
+    rounds?.forEach((r: any) => {
+      getRoundTeams(r.id).then((t) => {
+        setRoundFlights((prev) => ({ ...prev, [r.id]: t.teams || [] }));
+      }).catch(() => {});
+    });
+  };
+
   useEffect(() => {
     if (!auth) return;
     getGolfData(auth.event.id).then((data) => {
       setGolfData(data);
-      // Load flights/teams for each round
-      data?.rounds?.forEach((r: any) => {
-        getRoundTeams(r.id).then((t) => {
-          if (t.teams?.length > 0) {
-            setRoundFlights((prev) => ({ ...prev, [r.id]: t.teams }));
-          }
-        }).catch(() => {});
-      });
+      loadFlights(data?.rounds || []);
     }).catch(console.error);
     getGroup(auth.group.id).then((g) => setMembers(g.members || [])).catch(console.error);
   }, [auth?.event?.id, auth?.group?.id]);
+
+  // Reload flights when they're updated from the FlightEditor
+  useEffect(() => {
+    const handler = () => {
+      if (golfData?.rounds) loadFlights(golfData.rounds);
+    };
+    window.addEventListener("flights-updated", handler);
+    return () => window.removeEventListener("flights-updated", handler);
+  }, [golfData?.rounds]);
 
   if (!auth) return null;
 
@@ -110,12 +120,14 @@ export default function Home() {
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-dark/40 uppercase tracking-wider">Flights</span>
-                  <button
+                  <motion.button
                     onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
-                    className="text-[10px] font-bold text-dark/50 underline"
+                    className="flex items-center gap-1.5 bg-white border-2 border-dark/20 rounded-lg px-3 py-1.5 shadow-brutal-xs"
+                    whileTap={{ scale: 0.95 }}
                   >
-                    Bearbeiten
-                  </button>
+                    <span className="text-[10px] font-extrabold text-dark/60">Bearbeiten</span>
+                    <span className="text-[10px]">✎</span>
+                  </motion.button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {roundFlights[nextRound.id].map((f: any, i: number) => (
@@ -138,13 +150,14 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <button
+              <motion.button
                 onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("open-flight-editor", { detail: { roundId: nextRound.id } })); }}
-                className="mt-4 w-full bg-white/40 border-2 border-dashed border-dark/20 rounded-xl py-3.5 flex items-center justify-center gap-2"
+                className="mt-4 w-full bg-white border-2 border-dark/20 rounded-xl py-4 flex items-center justify-center gap-2.5 shadow-brutal-xs"
+                whileTap={{ scale: 0.97 }}
               >
-                <span className="w-6 h-6 bg-dark/10 rounded-lg flex items-center justify-center text-dark/40 text-xs font-bold">+</span>
-                <span className="text-[12px] font-extrabold text-dark/50">Flights einteilen</span>
-              </button>
+                <span className="w-7 h-7 bg-gold-400 border-2 border-dark rounded-lg flex items-center justify-center text-dark text-xs font-extrabold">+</span>
+                <span className="text-[13px] font-extrabold text-dark/70">Flights einteilen</span>
+              </motion.button>
             )}
             <div className="mt-3 flex items-center justify-between">
               <span className="text-xs font-bold text-dark/40">{nextRound.players_scored > 0 ? `${nextRound.players_scored} Scores` : ""}</span>
