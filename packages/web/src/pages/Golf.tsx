@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "@tanstack/react-router";
 import { useAuth } from "../contexts/AuthContext";
-import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getRoundTeams, updateRoundTeams, getGroup } from "../lib/api";
+import { getGolfData, getRoundDetails, submitScore, deleteScore, getHandicap, setHandicap, getCourseDetail, getCourseTees, getCourseHoles, getGroup } from "../lib/api";
 import { IconArrowLeft, IconGolf } from "../components/Icons";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import { getTotalPendingCount } from "../lib/offlineDb";
