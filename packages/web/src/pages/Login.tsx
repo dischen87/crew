@@ -94,7 +94,7 @@ export default function Login({ onLogin, onRegister, onJoin, error, initialInvit
   };
 
   return (
-    <div className="min-h-screen bg-surface-0 bg-grid flex items-center justify-center px-6 safe-top safe-bottom">
+    <div className="h-dvh overflow-y-auto overscroll-contain bg-surface-0 bg-grid flex items-center justify-center px-6 safe-top safe-bottom">
       <motion.div
         className="w-full max-w-sm"
         initial={{ opacity: 0, y: 20 }}

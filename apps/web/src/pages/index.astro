@@ -1,0 +1,509 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Crew — Dein Trip. Deine Crew. Eine App.">
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">
+        <span class="logo-badge">C</span>
+        <span class="logo-text">Crew</span>
+      </a>
+      <nav class="nav">
+        <a href="#wie-es-funktioniert">So geht's</a>
+        <a href="#features">Features</a>
+        <a href="#download" class="nav-cta">App laden</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>
+          Dein Trip.<br />
+          Deine Crew.<br />
+          <span class="hero-accent">Eine App.</span>
+        </h1>
+        <p class="hero-subtitle">
+          Organisiere Golftrips, Gruppenreisen und Erlebnisse mit deiner Crew.
+          Alles an einem Ort — von der Planung bis zum Recap.
+        </p>
+        <div class="hero-actions">
+          <a href="#download" class="btn btn-primary">Jetzt starten</a>
+          <a href="#wie-es-funktioniert" class="btn btn-secondary">Mehr erfahren</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="phone-mockup">
+          <div class="phone-screen">
+            <div class="mockup-header">
+              <span class="mockup-emoji">🏌️</span>
+              <span class="mockup-title">Belek 2025</span>
+            </div>
+            <div class="mockup-modules">
+              <div class="mockup-chip">Golf</div>
+              <div class="mockup-chip">Fluege</div>
+              <div class="mockup-chip">Fotos</div>
+              <div class="mockup-chip">Chat</div>
+              <div class="mockup-chip">Wetten</div>
+              <div class="mockup-chip">Poker</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="wie-es-funktioniert" class="how-it-works">
+    <div class="container">
+      <h2>So funktioniert's</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3>Crew erstellen</h3>
+          <p>Erstelle deine Crew und lade deine Freunde mit einem einfachen Link ein.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h3>Trip planen</h3>
+          <p>Waehle Module wie Golf, Fluege, Zimmer oder Extras — ganz nach eurem Trip.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h3>Gemeinsam erleben</h3>
+          <p>Scores tracken, Fotos teilen, chatten und Wetten abschliessen — alles live.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="features">
+    <div class="container">
+      <h2>Alles fuer eure Crew</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <span class="feature-icon">🏌️</span>
+          <h3>Golf Scoring</h3>
+          <p>Stableford, Strokeplay, Matchplay. Teams, Scramble, Best Ball. Alles dabei.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">💬</span>
+          <h3>Crew Chat</h3>
+          <p>Echtzeit-Chat mit Link-Previews und Bilder-Sharing — wie WhatsApp, nur besser.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">📸</span>
+          <h3>Fotos & Medien</h3>
+          <p>Gemeinsame Foto-Galerie fuer alle Trip-Erinnerungen.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">✈️</span>
+          <h3>Fluege & Logistik</h3>
+          <p>Fluege, Zimmer und Packages — alles organisiert an einem Ort.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🎯</span>
+          <h3>Wetten & Challenges</h3>
+          <p>Wer macht den laengsten Drive? Wettet untereinander und habt Spass.</p>
+        </div>
+        <div class="feature-card">
+          <span class="feature-icon">🏆</span>
+          <h3>Leaderboard</h3>
+          <p>Punkte sammeln ueber alle Aktivitaeten — vom Golfplatz bis zum Pokertisch.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download CTA -->
+  <section id="download" class="download">
+    <div class="container">
+      <h2>Bereit fuer euren naechsten Trip?</h2>
+      <p class="download-subtitle">Lade die Crew App herunter und starte mit deiner Crew.</p>
+      <div class="store-buttons">
+        <a href="#" class="store-btn">
+          <span class="store-label">Bald verfuegbar im</span>
+          <span class="store-name">App Store</span>
+        </a>
+        <a href="#" class="store-btn">
+          <span class="store-label">Bald verfuegbar auf</span>
+          <span class="store-name">Google Play</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo-badge">C</span>
+          <span class="logo-text">Crew</span>
+        </div>
+        <p class="footer-copy">&copy; 2025 crew-haus.com — Made with ❤️ in Switzerland</p>
+      </div>
+    </div>
+  </footer>
+</Base>
+
+<style>
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Header */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(251, 247, 244, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1.5px solid var(--border);
+  }
+  .header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 72px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+  .logo-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--navy);
+    color: var(--coral);
+    font-family: Georgia, serif;
+    font-size: 20px;
+    font-weight: 700;
+    border-radius: 12px;
+  }
+  .logo-text {
+    font-family: Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+  .nav a {
+    color: var(--navy);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .nav-cta {
+    background: var(--navy);
+    color: var(--white) !important;
+    padding: 10px 24px;
+    border-radius: 100px;
+    font-weight: 600 !important;
+  }
+
+  /* Hero */
+  .hero {
+    padding: 100px 0 80px;
+  }
+  .hero .container {
+    display: flex;
+    align-items: center;
+    gap: 80px;
+  }
+  .hero-content {
+    flex: 1;
+  }
+  .hero h1 {
+    font-family: Georgia, serif;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--navy);
+    margin-bottom: 24px;
+  }
+  .hero-accent {
+    color: var(--coral-dark);
+  }
+  .hero-subtitle {
+    font-size: 18px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    max-width: 480px;
+    margin-bottom: 36px;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 16px 36px;
+    border-radius: 100px;
+    font-weight: 700;
+    font-size: 16px;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover {
+    transform: translateY(-2px);
+  }
+  .btn-primary {
+    background: var(--navy);
+    color: var(--white);
+    box-shadow: 0 4px 16px rgba(34, 36, 50, 0.2);
+  }
+  .btn-secondary {
+    background: var(--white);
+    color: var(--navy);
+    border: 2px solid var(--border);
+  }
+
+  /* Phone Mockup */
+  .hero-visual {
+    flex-shrink: 0;
+  }
+  .phone-mockup {
+    width: 300px;
+    height: 540px;
+    background: var(--navy);
+    border-radius: 40px;
+    padding: 16px;
+    box-shadow: 0 32px 64px rgba(34, 36, 50, 0.2);
+  }
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+    background: var(--cream);
+    border-radius: 28px;
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .mockup-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .mockup-emoji {
+    font-size: 32px;
+  }
+  .mockup-title {
+    font-family: Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .mockup-modules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mockup-chip {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 100px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+
+  /* How it works */
+  .how-it-works {
+    padding: 100px 0;
+    background: var(--white);
+  }
+  .how-it-works h2,
+  .features h2,
+  .download h2 {
+    font-family: Georgia, serif;
+    font-size: 40px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 60px;
+    color: var(--navy);
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+  }
+  .step {
+    text-align: center;
+    padding: 32px;
+  }
+  .step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: var(--coral);
+    color: var(--navy);
+    font-family: Georgia, serif;
+    font-size: 24px;
+    font-weight: 800;
+    border-radius: 16px;
+    margin: 0 auto 20px;
+  }
+  .step h3 {
+    font-family: Georgia, serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--navy);
+  }
+  .step p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* Features */
+  .features {
+    padding: 100px 0;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .feature-card {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 32px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(34, 36, 50, 0.08);
+  }
+  .feature-icon {
+    font-size: 36px;
+    display: block;
+    margin-bottom: 16px;
+  }
+  .feature-card h3 {
+    font-family: Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--navy);
+  }
+  .feature-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* Download */
+  .download {
+    padding: 100px 0;
+    background: var(--navy);
+    text-align: center;
+  }
+  .download h2 {
+    color: var(--white);
+  }
+  .download-subtitle {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 40px;
+    margin-top: -36px;
+  }
+  .store-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+  .store-btn {
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 16px 32px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .store-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  .store-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .store-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  /* Footer */
+  .footer {
+    padding: 32px 0;
+    border-top: 1.5px solid var(--border);
+  }
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .footer-copy {
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero .container {
+      flex-direction: column;
+      gap: 48px;
+    }
+    .hero h1 {
+      font-size: 36px;
+    }
+    .hero-visual {
+      display: none;
+    }
+    .steps {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .feature-grid {
+      grid-template-columns: 1fr;
+    }
+    .nav a:not(.nav-cta) {
+      display: none;
+    }
+    .store-buttons {
+      flex-direction: column;
+      align-items: center;
+    }
+  }
+</style>

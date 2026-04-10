@@ -164,7 +164,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface-0 bg-grid flex items-center justify-center">
+      <div className="h-dvh bg-surface-0 bg-grid flex items-center justify-center">
         <Spinner size={40} />
       </div>
     );
@@ -210,7 +210,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-surface-0 bg-grid text-dark font-sans flex flex-col">
+    <div className="h-dvh bg-surface-0 bg-grid text-dark font-sans flex flex-col overflow-hidden">
       {/* Header */}
       <header className="sticky top-0 z-40 header-glass safe-top">
         <div className="flex items-center justify-between max-w-lg mx-auto px-5 py-3">
@@ -230,7 +230,7 @@ export default function App() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto overscroll-contain max-w-lg mx-auto w-full px-5 py-6 pb-28">
+      <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain max-w-lg mx-auto w-full px-5 py-6 pb-28">
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}
@@ -245,7 +245,7 @@ export default function App() {
       </main>
 
       {/* Bottom Tab Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-[9999] bg-white border-t-3 border-dark safe-bottom">
+      <nav className="fixed bottom-0 inset-x-0 z-[9999] bg-white border-t-3 border-dark safe-bottom will-change-transform">
         <div className="max-w-lg mx-auto flex">
           {tabs.map((t) => {
             const active = tab === t.id;

@@ -52,8 +52,7 @@ export default function GiphyPicker({ onSelect, onClose }: Props) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[20000] bg-white flex flex-col"
-      style={{ height: "100dvh" }}
+      className="fixed inset-0 z-[20000] bg-white flex flex-col h-dvh"
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}
@@ -82,7 +81,7 @@ export default function GiphyPicker({ onSelect, onClose }: Props) {
       </div>
 
       {/* GIF Grid */}
-      <div className="flex-1 overflow-y-auto overscroll-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-sm text-dark/30 font-medium">GIFs laden...</div>

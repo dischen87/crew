@@ -1,0 +1,304 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const { code } = Astro.params;
+const deepLink = `crew://join/${code}`;
+const appStoreUrl = "#"; // TODO: Add actual App Store URL
+const playStoreUrl = "#"; // TODO: Add actual Play Store URL
+---
+
+<Base title={`Crew beitreten — ${code}`} description="Du wurdest zu einer Crew eingeladen. Tritt jetzt bei!">
+  <div class="join-page">
+    <div class="join-card">
+      <div class="logo">
+        <span class="logo-badge">C</span>
+        <span class="logo-text">Crew</span>
+      </div>
+
+      <h1>Du wurdest eingeladen!</h1>
+      <p class="subtitle">Tritt der Crew bei und sei Teil des naechsten Abenteuers.</p>
+
+      <div class="invite-code">
+        <span class="code-label">Invite Code</span>
+        <span class="code-value">{code}</span>
+      </div>
+
+      <!-- Web join form (fallback when app not installed) -->
+      <div class="join-form" id="join-form">
+        <div class="form-group">
+          <label for="firstName">Dein Vorname</label>
+          <input type="text" id="firstName" placeholder="z.B. Mathias" maxlength="30" autocomplete="given-name" />
+        </div>
+        <button class="btn btn-primary" id="join-btn" disabled>Beitreten</button>
+      </div>
+
+      <div class="divider">
+        <span>oder</span>
+      </div>
+
+      <a href={deepLink} class="btn btn-app" id="open-app">In der App oeffnen</a>
+
+      <div class="store-links">
+        <p>Noch keine App?</p>
+        <div class="store-row">
+          <a href={appStoreUrl} class="store-link">App Store</a>
+          <a href={playStoreUrl} class="store-link">Google Play</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script define:vars={{ code, deepLink }}>
+    const input = document.getElementById('firstName');
+    const btn = document.getElementById('join-btn');
+
+    input.addEventListener('input', () => {
+      btn.disabled = !input.value.trim();
+    });
+
+    btn.addEventListener('click', async () => {
+      const firstName = input.value.trim();
+      if (!firstName) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Wird beigetreten...';
+
+      try {
+        const apiUrl = window.location.hostname === 'localhost'
+          ? 'http://localhost:3000'
+          : 'https://api.crew-haus.com';
+
+        const res = await fetch(`${apiUrl}/v2/auth/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inviteCode: code,
+            displayName: firstName,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Beitreten fehlgeschlagen');
+        }
+
+        const data = await res.json();
+        // Store member info and redirect to app
+        localStorage.setItem('crew_member_id', data.member.id);
+        localStorage.setItem('crew_group_id', data.group.id);
+
+        btn.textContent = 'Erfolgreich!';
+        // Try to open the app
+        window.location.href = deepLink;
+      } catch (err) {
+        btn.textContent = 'Beitreten';
+        btn.disabled = false;
+        alert(err.message || 'Etwas ist schiefgelaufen.');
+      }
+    });
+
+    // Auto-attempt to open the app on page load
+    setTimeout(() => {
+      window.location.href = deepLink;
+    }, 500);
+  </script>
+</Base>
+
+<style>
+  .join-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .join-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--white);
+    border-radius: 28px;
+    border: 1.5px solid var(--border);
+    padding: 48px 36px;
+    text-align: center;
+    box-shadow: 0 16px 48px rgba(34, 36, 50, 0.08);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 32px;
+  }
+
+  .logo-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: var(--navy);
+    color: var(--coral);
+    font-family: Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    border-radius: 14px;
+  }
+
+  .logo-text {
+    font-family: Georgia, serif;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+
+  h1 {
+    font-family: Georgia, serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+  }
+
+  .invite-code {
+    display: flex;
+    flex-direction: column;
+    background: var(--cream);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 32px;
+  }
+
+  .code-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .code-value {
+    font-family: Georgia, serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--navy);
+    letter-spacing: 4px;
+  }
+
+  .join-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .form-group {
+    text-align: left;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 14px 20px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    font-size: 16px;
+    color: var(--navy);
+    background: var(--cream);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .form-group input:focus {
+    border-color: var(--navy);
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 100px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--navy);
+    color: var(--white);
+  }
+
+  .btn-app {
+    background: var(--coral);
+    color: var(--navy);
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .store-links {
+    margin-top: 32px;
+  }
+
+  .store-links p {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .store-row {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .store-link {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--navy);
+    text-decoration: underline;
+  }
+</style>

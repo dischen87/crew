@@ -99,7 +99,7 @@ export default function Profile({ auth, onClose, onLogout, onUpdate }: Props) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[9999] bg-surface-0 bg-grid safe-top safe-bottom overflow-y-auto"
+      className="fixed inset-0 z-[9999] bg-surface-0 bg-grid safe-top safe-bottom overflow-y-auto overscroll-contain h-dvh"
       initial={{ opacity: 0, y: "100%" }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: "100%" }}

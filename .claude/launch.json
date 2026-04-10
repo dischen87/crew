@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "web",
-      "runtimeExecutable": "/Users/mathias/.bun/bin/bunx",
+      "runtimeExecutable": "/Users/mathias/.nvm/versions/node/v24.14.1/bin/bunx",
       "runtimeArgs": ["vite", "--port", "5174"],
       "port": 5174,
       "cwd": "packages/web"
