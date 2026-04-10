@@ -8,6 +8,7 @@ services:
       REDIS_URL: redis://redis:6379
       API_PORT: "3000"
       EVENT_PASSWORD: ${EVENT_PASSWORD:-BelekGolf4ever}
+      GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY:-}
     ports:
       - "127.0.0.1:3100:3000"
     depends_on:
