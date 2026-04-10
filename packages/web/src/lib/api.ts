@@ -122,9 +122,10 @@ import { computeScoreLocally } from "./stableford";
 import { requestSync } from "./syncEngine";
 
 // Golf
-export async function getGolfData(eventId: string) {
+export async function getGolfData(eventId: string, courseId?: string) {
   try {
-    return await apiFetch(`/golf/event/${eventId}`);
+    const query = courseId ? `?course_id=${courseId}` : "";
+    return await apiFetch(`/golf/event/${eventId}${query}`);
   } catch {
     return MOCK_GOLF_DATA;
   }

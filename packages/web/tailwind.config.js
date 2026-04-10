@@ -35,6 +35,9 @@ export default {
         "3xl": "20px",
         "4xl": "24px",
       },
+      borderWidth: {
+        '3': '3px',
+      },
       boxShadow: {
         brutal: "4px 4px 0px 0px #2d2d2d",
         "brutal-sm": "3px 3px 0px 0px #2d2d2d",
