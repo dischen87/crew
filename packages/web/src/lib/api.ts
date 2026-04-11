@@ -94,6 +94,27 @@ export async function getEvent(eventId: string) {
   return apiFetch(`/events/${eventId}`);
 }
 
+// Activities (Billiards, Darts, etc.)
+export async function getActivityMatches(eventId: string, type: string) {
+  return apiFetch(`/activities/event/${eventId}?type=${type}`);
+}
+
+export async function createActivityMatch(eventId: string, data: { type: string; player1_id: string; player2_id: string; notes?: string }) {
+  return apiFetch(`/activities/event/${eventId}`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function recordActivityResult(matchId: string, data: { winner_id: string; score_p1?: number; score_p2?: number }) {
+  return apiFetch(`/activities/${matchId}/result`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function deleteActivityMatch(matchId: string) {
+  return apiFetch(`/activities/${matchId}`, { method: "DELETE" });
+}
+
+export async function getActivityLeaderboard(eventId: string, type: string) {
+  return apiFetch(`/activities/event/${eventId}/leaderboard?type=${type}`);
+}
+
 // Offline support
 import {
   addPendingScore,

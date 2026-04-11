@@ -9,6 +9,7 @@ import Leaderboard from "../pages/Leaderboard";
 import Chat from "../pages/Chat";
 import Photos from "../pages/Photos";
 import More from "../pages/More";
+import Billiards from "../pages/Billiards";
 
 // ---- Root ----
 const rootRoute = createRootRoute({
@@ -83,6 +84,12 @@ const eventMoreRoute = createRoute({
   component: More,
 });
 
+const eventBilliardsRoute = createRoute({
+  getParentRoute: () => eventRoute,
+  path: "/billiards",
+  component: Billiards,
+});
+
 // ---- Route tree ----
 const routeTree = rootRoute.addChildren([
   landingRoute,
@@ -96,6 +103,7 @@ const routeTree = rootRoute.addChildren([
     eventChatRoute,
     eventPhotosRoute,
     eventMoreRoute,
+    eventBilliardsRoute,
   ]),
 ]);
 

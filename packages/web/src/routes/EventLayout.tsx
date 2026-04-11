@@ -18,6 +18,8 @@ const MODULE_ICONS: Record<string, any> = {
   media: IconCamera,
   flights: IconMenu,
   masters_pool: IconMenu,
+  billiards: IconTrophy,
+  darts: IconTrophy,
 };
 
 /** Route path mapping for module types */
@@ -28,6 +30,8 @@ const MODULE_PATHS: Record<string, string> = {
   media: "/photos",
   flights: "/more",
   masters_pool: "/more",
+  billiards: "/billiards",
+  darts: "/darts",
 };
 
 /** Display labels for module types */
@@ -38,6 +42,8 @@ const MODULE_LABELS: Record<string, string> = {
   media: "Fotos",
   flights: "Mehr",
   masters_pool: "Mehr",
+  billiards: "Billard",
+  darts: "Darts",
 };
 
 export default function EventLayout() {
