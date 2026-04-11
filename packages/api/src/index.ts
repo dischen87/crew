@@ -14,6 +14,7 @@ import master from "./routes/master";
 import flights from "./routes/flights";
 import locations from "./routes/locations";
 import admin from "./routes/admin";
+import activities from "./routes/activities";
 
 const app = new Hono();
 
@@ -38,6 +39,7 @@ v2.route("/chat", chat);
 v2.route("/media", media);
 v2.route("/master", master);
 v2.route("/flights", flights);
+v2.route("/activities", activities);
 v2.route("/locations", locations);
 v2.route("/admin", admin);
 

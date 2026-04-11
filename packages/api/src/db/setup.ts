@@ -69,6 +69,24 @@ async function setup() {
   // === Phase: Image Thumbnails ===
   await sql`ALTER TABLE media ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
 
+  // === Phase: Generic Activity Matches (Billard, Darts, etc.) ===
+  await sql`CREATE TABLE IF NOT EXISTS activity_matches (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id   UUID REFERENCES events(id) ON DELETE CASCADE,
+    module_id  UUID REFERENCES event_modules(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL,
+    player1_id UUID REFERENCES group_members(id),
+    player2_id UUID REFERENCES group_members(id),
+    winner_id  UUID REFERENCES group_members(id),
+    score_p1   INT,
+    score_p2   INT,
+    status     TEXT DEFAULT 'open',
+    date       TIMESTAMPTZ DEFAULT NOW(),
+    notes      TEXT
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_activity_matches_event ON activity_matches(event_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_activity_matches_module ON activity_matches(module_id)`;
+
   // === Phase: Round Status (open/closed) ===
   await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open'`;
 

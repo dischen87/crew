@@ -467,4 +467,76 @@ admin.post("/import", requireAdmin, async (c) => {
   }
 });
 
+/**
+ * POST /event/:id/module — Add a module to an event.
+ * Body: { type: "billiards", config?: { format: "8-ball", points: { win: 3, loss: 0 } } }
+ */
+admin.post("/event/:id/module", requireAdmin, async (c) => {
+  try {
+    const eventId = c.req.param("id");
+    const body = await c.req.json<{
+      type: string;
+      config?: Record<string, any>;
+    }>();
+
+    if (!body.type?.trim()) {
+      return c.json({ error: "type erforderlich" }, 400);
+    }
+
+    // Check if module already exists for this event
+    const [existing] = await sql`
+      SELECT id FROM event_modules WHERE event_id = ${eventId} AND type = ${body.type}
+    `;
+
+    if (existing) {
+      // Reactivate + update config
+      const [mod] = await sql`
+        UPDATE event_modules
+        SET active = true, config = ${sql.json(body.config || {})}
+        WHERE id = ${existing.id}
+        RETURNING id, type, config, sort_order, active
+      `;
+      return c.json({ module: mod });
+    }
+
+    // Get next sort_order
+    const [maxOrder] = await sql`
+      SELECT COALESCE(MAX(sort_order), 0)::int AS max_order
+      FROM event_modules WHERE event_id = ${eventId}
+    `;
+
+    const [mod] = await sql`
+      INSERT INTO event_modules (event_id, type, config, sort_order, active)
+      VALUES (${eventId}, ${body.type.trim()}, ${sql.json(body.config || {})}, ${maxOrder.max_order + 1}, true)
+      RETURNING id, type, config, sort_order, active
+    `;
+
+    return c.json({ module: mod }, 201);
+  } catch (err) {
+    console.error("POST /admin/event/:id/module error:", err);
+    return c.json({ error: "Modul-Erstellung fehlgeschlagen" }, 500);
+  }
+});
+
+/**
+ * DELETE /event/:id/module/:moduleId — Remove a module from an event.
+ */
+admin.delete("/event/:id/module/:moduleId", requireAdmin, async (c) => {
+  try {
+    const moduleId = c.req.param("moduleId");
+
+    const [mod] = await sql`
+      UPDATE event_modules SET active = false
+      WHERE id = ${moduleId}
+      RETURNING id, type, active
+    `;
+
+    if (!mod) return c.json({ error: "Modul nicht gefunden" }, 404);
+    return c.json({ module: mod });
+  } catch (err) {
+    console.error("DELETE /admin/event/:id/module/:moduleId error:", err);
+    return c.json({ error: "Modul-Entfernung fehlgeschlagen" }, 500);
+  }
+});
+
 export default admin;
