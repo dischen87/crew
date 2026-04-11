@@ -115,6 +115,14 @@ export async function getActivityLeaderboard(eventId: string, type: string) {
   return apiFetch(`/activities/event/${eventId}/leaderboard?type=${type}`);
 }
 
+export async function createTournament(eventId: string, data: { type: string; player_ids: string[] }) {
+  return apiFetch(`/activities/event/${eventId}/tournament`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function getTournament(eventId: string, type: string) {
+  return apiFetch(`/activities/event/${eventId}/tournament?type=${type}`);
+}
+
 // Offline support
 import {
   addPendingScore,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
-import { getActivityMatches, createActivityMatch, recordActivityResult, deleteActivityMatch, getActivityLeaderboard, getGroup } from "../lib/api";
+import { getActivityMatches, createActivityMatch, recordActivityResult, deleteActivityMatch, getActivityLeaderboard, getGroup, createTournament, getTournament } from "../lib/api";
 import { Stagger, StaggerItem, Spinner } from "../components/Motion";
 import Emoji from "../components/Emoji";
 
@@ -12,7 +12,9 @@ export default function Billiards() {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showTournament, setShowTournament] = useState(false);
   const [resultMatch, setResultMatch] = useState<any>(null);
+  const [tournaments, setTournaments] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     if (!auth) return;
@@ -25,6 +27,8 @@ export default function Billiards() {
       setMatches(matchData.matches || []);
       setLeaderboard(lbData.leaderboard || []);
       setMembers(groupData.members || []);
+      // Load tournaments
+      getTournament(auth.event.id, "billiards").then((t) => setTournaments(t.tournaments || [])).catch(() => {});
     } catch (err) {
       console.error("Failed to load billiards:", err);
     }
@@ -59,17 +63,34 @@ export default function Billiards() {
         </div>
       </StaggerItem>
 
-      {/* New match CTA */}
+      {/* Actions */}
       <StaggerItem>
-        <motion.button
-          onClick={() => setShowCreate(true)}
-          className="w-full card-gold p-4 flex items-center justify-center gap-2.5"
-          whileTap={{ scale: 0.97 }}
-        >
-          <span className="w-8 h-8 bg-dark border-2 border-dark rounded-xl flex items-center justify-center text-white text-sm font-extrabold">+</span>
-          <span className="text-[14px] font-extrabold">Neues Match</span>
-        </motion.button>
+        <div className="grid grid-cols-2 gap-2">
+          <motion.button
+            onClick={() => setShowCreate(true)}
+            className="card-gold p-4 flex flex-col items-center gap-1.5"
+            whileTap={{ scale: 0.97 }}
+          >
+            <span className="w-8 h-8 bg-dark border-2 border-dark rounded-xl flex items-center justify-center text-white text-sm font-extrabold">+</span>
+            <span className="text-[12px] font-extrabold">Freies Match</span>
+          </motion.button>
+          <motion.button
+            onClick={() => setShowTournament(true)}
+            className="card-lavender p-4 flex flex-col items-center gap-1.5"
+            whileTap={{ scale: 0.97 }}
+          >
+            <span className="text-xl">🏆</span>
+            <span className="text-[12px] font-extrabold">Turnier</span>
+          </motion.button>
+        </div>
       </StaggerItem>
+
+      {/* Tournament brackets */}
+      {tournaments.map((t) => (
+        <StaggerItem key={t.id}>
+          <TournamentBracket tournament={t} onResult={(m: any) => setResultMatch(m)} />
+        </StaggerItem>
+      ))}
 
       {/* Open matches */}
       {openMatches.length > 0 && (
@@ -191,6 +212,13 @@ export default function Billiards() {
     <AnimatePresence>
       {resultMatch && (
         <ResultSheet match={resultMatch} onClose={() => setResultMatch(null)} onSaved={() => { setResultMatch(null); load(); }} />
+      )}
+    </AnimatePresence>
+
+    {/* Tournament creation */}
+    <AnimatePresence>
+      {showTournament && (
+        <TournamentCreateSheet members={members} eventId={auth.event.id} onClose={() => setShowTournament(false)} onCreated={() => { setShowTournament(false); load(); }} />
       )}
     </AnimatePresence>
     </>
@@ -373,6 +401,126 @@ function ResultSheet({ match, onClose, onSaved }: { match: any; onClose: () => v
             whileTap={{ scale: 0.97 }}
           >
             {saving ? "..." : "Ergebnis speichern"}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ── Tournament Bracket ────────────────────────────────── */
+
+const ROUND_LABELS: Record<string, string> = {
+  "round-of-16": "Achtel",
+  quarterfinal: "Viertel",
+  semifinal: "Halbfinale",
+  final: "Finale",
+};
+
+function TournamentBracket({ tournament, onResult }: { tournament: any; onResult: (m: any) => void }) {
+  const roundOrder = ["round-of-16", "quarterfinal", "semifinal", "final"];
+  const rounds = roundOrder.filter((r) => tournament.rounds[r]);
+  const finalMatch = tournament.rounds["final"]?.[0];
+  const isComplete = finalMatch?.status === "completed";
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🏆</span>
+        <span className="text-[12px] font-extrabold uppercase tracking-wider">Turnier</span>
+        {isComplete && finalMatch?.winner_name && (
+          <span className="pill bg-gold-400 text-[10px]">{finalMatch.winner_name.split(" ")[0]}</span>
+        )}
+      </div>
+      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+        {rounds.map((roundKey) => (
+          <div key={roundKey} className="shrink-0" style={{ minWidth: "130px" }}>
+            <p className="text-[9px] font-extrabold text-dark/30 uppercase tracking-wider mb-2 text-center">
+              {ROUND_LABELS[roundKey]}
+            </p>
+            <div className="space-y-2 flex flex-col justify-around h-full">
+              {tournament.rounds[roundKey].map((match: any) => {
+                const isOpen = match.status === "open";
+                const isPending = match.status === "pending";
+                const p1Won = match.winner_id === match.player1_id;
+                const p2Won = match.winner_id === match.player2_id;
+                return (
+                  <motion.button
+                    key={match.id}
+                    onClick={() => isOpen && onResult(match)}
+                    disabled={!isOpen}
+                    className={`w-full rounded-xl border-2 p-2 text-left ${
+                      isOpen ? "border-dark bg-gold-400/10" : isPending ? "border-dashed border-dark/10" : "border-dark/10"
+                    }`}
+                    whileTap={isOpen ? { scale: 0.95 } : undefined}
+                  >
+                    <div className={`flex items-center gap-1.5 ${p2Won ? "opacity-30" : ""}`}>
+                      {match.player1_emoji && <Emoji emoji={match.player1_emoji} size={13} />}
+                      <span className="text-[10px] font-bold truncate flex-1">{match.player1_name?.split(" ")[0] || "..."}</span>
+                      {match.score_p1 != null && <span className="text-[9px] font-extrabold">{match.score_p1}</span>}
+                    </div>
+                    <div className="border-t border-dark/5 my-0.5" />
+                    <div className={`flex items-center gap-1.5 ${p1Won ? "opacity-30" : ""}`}>
+                      {match.player2_emoji && <Emoji emoji={match.player2_emoji} size={13} />}
+                      <span className="text-[10px] font-bold truncate flex-1">{match.player2_name?.split(" ")[0] || "..."}</span>
+                      {match.score_p2 != null && <span className="text-[9px] font-extrabold">{match.score_p2}</span>}
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tournament Create ─────────────────────────────────── */
+
+function TournamentCreateSheet({ members, eventId, onClose, onCreated }: { members: any[]; eventId: string; onClose: () => void; onCreated: () => void }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id: string) => setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+
+  const handleCreate = async () => {
+    if (selected.length < 2) return;
+    setSaving(true);
+    try { await createTournament(eventId, { type: "billiards", player_ids: selected }); onCreated(); } catch {}
+    setSaving(false);
+  };
+
+  const bracketSize = selected.length >= 2 ? Math.pow(2, Math.ceil(Math.log2(selected.length))) : 0;
+
+  return (
+    <motion.div className="fixed inset-0 z-[10000] bg-black/50 flex items-end justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="bg-white rounded-t-3xl border-t-3 border-x-3 border-dark w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 bg-dark/10 rounded-full" /></div>
+        <div className="px-5 pt-2 pb-8">
+          <h3 className="text-lg font-extrabold tracking-tight mb-1">Turnier erstellen</h3>
+          <p className="text-[11px] text-dark/40 font-medium mb-4">Teilnehmer waehlen — Auslosung automatisch.</p>
+
+          {selected.length >= 2 && (
+            <div className="card-lavender p-3 mb-4 text-center">
+              <span className="text-[12px] font-extrabold">{selected.length} Spieler · {bracketSize - 1} Matches</span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-1.5 mb-5">
+            {members.map((m: any) => (
+              <motion.button key={m.id} onClick={() => toggle(m.id)}
+                className={`px-3 py-2 rounded-xl border-2 text-[11px] font-bold ${selected.includes(m.id) ? "bg-gold-400 border-dark shadow-brutal-xs" : "bg-white border-dark/15 text-dark/60"}`}
+                whileTap={{ scale: 0.95 }}>
+                {m.avatar_emoji} {m.display_name?.split(" ")[0]}
+              </motion.button>
+            ))}
+          </div>
+
+          <motion.button onClick={handleCreate} disabled={saving || selected.length < 2}
+            className="w-full btn-dark py-3.5 text-sm font-extrabold disabled:opacity-20" whileTap={{ scale: 0.97 }}>
+            {saving ? "Auslosung..." : `Turnier starten 🏆`}
           </motion.button>
         </div>
       </motion.div>

@@ -87,6 +87,11 @@ async function setup() {
   await sql`CREATE INDEX IF NOT EXISTS idx_activity_matches_event ON activity_matches(event_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_activity_matches_module ON activity_matches(module_id)`;
 
+  // === Phase: Tournament support ===
+  await sql`ALTER TABLE activity_matches ADD COLUMN IF NOT EXISTS round TEXT`;
+  await sql`ALTER TABLE activity_matches ADD COLUMN IF NOT EXISTS tournament_id UUID`;
+  await sql`ALTER TABLE activity_matches ADD COLUMN IF NOT EXISTS match_number INT`;
+
   // === Phase: Round Status (open/closed) ===
   await sql`ALTER TABLE golf_rounds ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open'`;
 
