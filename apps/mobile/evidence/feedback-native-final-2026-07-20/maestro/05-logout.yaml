@@ -1,0 +1,24 @@
+appId: app.crew.next.feedbackfinal
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: events-logout
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn:
+    id: events-logout
+- extendedWaitUntil:
+    visible: Abmelden?
+    timeout: 10000
+- tapOn: Abmelden
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 30000
+- assertVisible: Bitte anmelden

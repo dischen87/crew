@@ -1,0 +1,15 @@
+appId: app.crew.next.feedbackfinal
+---
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-submit
+- extendedWaitUntil:
+    visible: Feedback wurde zugestellt.
+    timeout: 90000
+- assertVisible: ZUGESTELLT

@@ -1,0 +1,49 @@
+{
+	"schemaVersion": 1,
+	"runDate": "2026-07-20",
+	"platform": "ios",
+	"device": "iPhone 17 Pro simulator",
+	"osVersion": "26.2",
+	"imagePixels": {
+		"width": 1206,
+		"height": 2622
+	},
+	"result": {
+		"nativeCapture": "passed",
+		"actualPreview": "passed",
+		"explicitConsent": "passed",
+		"restartRetention": "passed",
+		"logoutPurge": "passed",
+		"serverPrepare": "not_reached",
+		"nativeUpload": "not_proven",
+		"serverCommit": "not_proven",
+		"androidRuntime": "not_run",
+		"accountSwitch": "not_run",
+		"safeFailureTextOnlyRecovery": "not_run"
+	},
+	"serverOracleAfterSubmit": {
+		"feedback": 0,
+		"feedbackAttachments": 0,
+		"attachments": 0,
+		"attachmentUploads": 0
+	},
+	"retainedPngOracle": {
+		"beforeRestart": 1,
+		"afterRestart": 1,
+		"afterLogout": 0
+	},
+	"assets": [
+		"ios/01-community-source.png",
+		"ios/02-compose-native-preview.png",
+		"ios/03-consent-selected.png",
+		"ios/04-submit-stalled.png",
+		"ios/05-after-restart.png",
+		"ios/06-logout-purged.png",
+		"maestro/01-open-source.yaml",
+		"maestro/02-capture-preview.yaml",
+		"maestro/03-fill-and-consent.yaml",
+		"maestro/04-submit-consented.yaml",
+		"maestro/05-logout.yaml",
+		"maestro/06-confirm-logout.yaml"
+	]
+}
