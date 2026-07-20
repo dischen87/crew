@@ -10,6 +10,9 @@ const workflowSource = await Bun.file(workflowUrl).text();
 const dockerIgnoreSource = await Bun.file(
 	new URL(".dockerignore", repositoryRoot),
 ).text();
+const composeSource = await Bun.file(
+	new URL("compose.yaml", repositoryRoot),
+).text();
 const checkoutSha = "34e114876b0b11c390a56381ad16ebd13914f8d5";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
@@ -85,6 +88,11 @@ describe("Crew Next GitHub Actions workflow", () => {
 			[
 				'          MINIO_PROVIDER_TEST_METRICS_TOKEN="$metrics_token" bun test',
 				"          true #",
+			],
+			["          docker compose config --quiet\n", "          true #\n"],
+			[
+				"          docker compose up --wait --wait-timeout 180\n",
+				"          true #\n",
 			],
 		] as const) {
 			const drifted = workflowSource.replace(needle, replacement);
@@ -190,6 +198,25 @@ describe("Crew Next GitHub Actions workflow", () => {
 			}
 		}
 	});
+
+	test("pins external Compose images and keeps fixture bootstrap API-only", () => {
+		expect(composeSource).not.toMatch(/\blatest\b/i);
+		const compose = object(Bun.YAML.parse(composeSource), "Compose document");
+		const services = object(compose.services, "Compose services");
+		for (const [name, value] of Object.entries(services)) {
+			const service = object(value, `${name} service`);
+			if ("image" in service && !("build" in service)) {
+				expect(string(service.image, `${name} image`)).toMatch(
+					/:[^@\s]+@sha256:[0-9a-f]{64}$/,
+				);
+			}
+		}
+		const fixture = object(services["fixture-bootstrap"], "fixture service");
+		expect(fixture.command).toEqual(["bun", "infra/bootstrap-fixture.ts"]);
+		expect(
+			Object.keys(object(fixture.environment, "fixture environment")),
+		).not.toContainEqual(expect.stringMatching(/DATABASE|POSTGRES|SQL/));
+	});
 });
 
 function validateWorkflow(source: string) {
@@ -197,7 +224,7 @@ function validateWorkflow(source: string) {
 	expect(source).not.toContain("continue-on-error");
 	expect(source).not.toMatch(/\|\|\s*true|;\s*true|set \+e/);
 	expect(source).not.toMatch(
-		/\b(?:deploy|ssh|scp|kubectl|helm|git push|docker (?:compose|stack|push))\b/i,
+		/\b(?:deploy|ssh|scp|kubectl|helm|git push|docker (?:stack|push))\b/i,
 	);
 
 	const workflow = object(Bun.YAML.parse(source), "workflow");
@@ -394,6 +421,39 @@ function validateWorkflow(source: string) {
 		`docker build --file services/event-service/Dockerfile --tag crew-next-event-service:${githubShaExpression} .`,
 		`docker build --file infra/redis/Dockerfile --tag crew-next-rate-limit-redis:${githubShaExpression} .`,
 	]);
+
+	const composeJob = object(jobs["compose-smoke"], "Compose smoke job");
+	expect(composeJob["runs-on"]).toBe("ubuntu-24.04");
+	expect(composeJob["timeout-minutes"]).toBe(30);
+	expect(composeJob).not.toHaveProperty("environment");
+	const composeSteps = array(composeJob.steps, "Compose steps").map(
+		(value, index) => object(value, `Compose step ${index}`),
+	);
+	expect(requiredStep(composeSteps, "Check out repository").uses).toBe(
+		`actions/checkout@${checkoutSha}`,
+	);
+	const composeSmoke = runStep(
+		composeSteps,
+		"Prove fresh Compose platform and API fixtures",
+	);
+	expect(composeSmoke.trimStart().startsWith("set -euo pipefail\n")).toBe(true);
+	for (const required of [
+		"docker compose config --quiet",
+		"docker compose build --pull",
+		"docker compose up --wait --wait-timeout 180",
+		"docker compose down --volumes --remove-orphans",
+		"docker volume ls --quiet --filter label=com.docker.compose.project=crew-new",
+		"CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap",
+		"SELECT count(*) FROM user_schema_migrations",
+		"SELECT count(*) FROM event_schema_migrations",
+		"http://127.0.0.1:3000/internal/ready",
+		'test -z "$(git status --porcelain)"',
+	]) {
+		expect(composeSmoke).toContain(required);
+	}
+	expect(occurrences(composeSmoke, "docker compose up --wait")).toBe(2);
+	expect(composeSmoke).not.toMatch(/docker compose\s+(?:push|publish)\b/);
+	expect(source).not.toContain("secrets.");
 }
 
 function requiredStep(steps: Record<string, unknown>[], name: string) {

@@ -252,3 +252,54 @@ jobs:
           docker build --file services/user-service/Dockerfile --tag crew-next-user-service:${{ github.sha }} .
           docker build --file services/event-service/Dockerfile --tag crew-next-event-service:${{ github.sha }} .
           docker build --file infra/redis/Dockerfile --tag crew-next-rate-limit-redis:${{ github.sha }} .
+
+  compose-smoke:
+    name: Fresh Compose platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Prove fresh Compose platform and API fixtures
+        run: |
+          set -euo pipefail
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              docker compose ps --all || :
+              docker compose logs --no-color --tail=200 || :
+            fi
+            docker compose down --volumes --remove-orphans || :
+            exit "$status"
+          }
+          trap cleanup EXIT
+          probe() {
+            running_services="$(docker compose ps --status running --services)"
+            for service in postgres redis-rate-limit minio typesense provider-sink user-api event-api magic-worker push-worker attachment-worker notification-worker recap-retention-worker api-gateway; do
+              grep -Fxq "$service" <<<"$running_services"
+            done
+            completed_services="$(docker compose ps --all --status exited --services)"
+            for service in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
+              grep -Fxq "$service" <<<"$completed_services"
+            done
+            curl --fail --silent --show-error http://127.0.0.1:3000/internal/ready >/dev/null
+            curl --fail --silent --show-error http://127.0.0.1:3001/internal/ready >/dev/null
+            curl --fail --silent --show-error http://127.0.0.1:3002/internal/ready >/dev/null
+            curl --fail --silent --show-error http://127.0.0.1:8108/health >/dev/null
+            curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/ready >/dev/null
+            user_migrations="$(find services/user-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
+            event_migrations="$(find services/event-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
+            test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_user --tuples-only --no-align --command 'SELECT count(*) FROM user_schema_migrations')" -eq "$user_migrations"
+            test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command 'SELECT count(*) FROM event_schema_migrations')" -eq "$event_migrations"
+            docker compose --profile tools run --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+          }
+          docker compose config --quiet
+          docker compose build --pull
+          docker compose up --wait --wait-timeout 180
+          probe
+          docker compose down --volumes --remove-orphans
+          test -z "$(docker volume ls --quiet --filter label=com.docker.compose.project=crew-new)"
+          docker compose up --wait --wait-timeout 180
+          probe
+          test -z "$(git status --porcelain)"
