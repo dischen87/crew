@@ -235,6 +235,7 @@ describe("Crew Next GitHub Actions workflow", () => {
 			"GRANT SELECT, UPDATE, DELETE ON TABLE event_attachments",
 			"GRANT SELECT ON TABLE event_feedback_attachments",
 			"GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox",
+			"GRANT UPDATE (root_event_id) ON TABLE event_roots",
 		]) {
 			expect(runtimeGrantSource).toContain(required);
 		}
@@ -469,7 +470,7 @@ function validateWorkflow(source: string) {
 		"docker compose up --wait --wait-timeout 180",
 		"docker compose down --volumes --remove-orphans",
 		"docker volume ls --quiet --filter label=com.docker.compose.project=crew-new",
-		"CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap",
+		"docker compose --profile tools run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap",
 		"SELECT count(*) FROM user_schema_migrations",
 		"SELECT count(*) FROM event_schema_migrations",
 		"http://127.0.0.1:3000/internal/ready",
@@ -478,6 +479,9 @@ function validateWorkflow(source: string) {
 		expect(composeSmoke).toContain(required);
 	}
 	expect(occurrences(composeSmoke, "docker compose up --wait")).toBe(2);
+	expect(composeSmoke).not.toContain(
+		"docker compose --profile tools run --rm -e CREW_FIXTURE_SCENARIO",
+	);
 	expect(composeSmoke).not.toMatch(/docker compose\s+(?:push|publish)\b/);
 	expect(source).not.toContain("secrets.");
 }

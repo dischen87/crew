@@ -65,6 +65,8 @@ TO crew_event_attachment_worker;
 
 GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox
 TO crew_event_notification_worker;
+GRANT UPDATE (root_event_id) ON TABLE event_roots
+TO crew_event_notification_worker;
 GRANT SELECT ON TABLE
 	event_roots,
 	events,

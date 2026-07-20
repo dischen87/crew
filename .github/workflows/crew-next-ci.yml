@@ -294,7 +294,7 @@ jobs:
             event_migrations="$(find services/event-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
             test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_user --tuples-only --no-align --command 'SELECT count(*) FROM user_schema_migrations')" -eq "$user_migrations"
             test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command 'SELECT count(*) FROM event_schema_migrations')" -eq "$event_migrations"
-            docker compose --profile tools run --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+            docker compose --profile tools run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
             worker_logs="$(docker compose logs --no-color magic-worker push-worker attachment-worker notification-worker recap-retention-worker)"
             ! grep -Eq 'worker tick failed|permission denied' <<<"$worker_logs"
           }

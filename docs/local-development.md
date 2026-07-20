@@ -225,8 +225,12 @@ accounts through the real magic-link contract and creates a Turkey golf-tour
 event from the versioned `golf-tour` template:
 
 ```sh
-docker compose run --rm fixture-bootstrap
+docker compose run --no-deps --rm fixture-bootstrap
 ```
+
+`--no-deps` is intentional: the stack must already be healthy, and the fixture
+must not restart completed migration or runtime-grant services under live
+workers.
 
 The golf scenario resolves the five pinned Belek OpenStreetMap candidate IDs
 through gateway search before copying the approved names and coordinates into
@@ -251,7 +255,7 @@ The same client can create the non-travel team-event fixture without another
 service or seed path:
 
 ```sh
-docker compose run --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+docker compose run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
 ```
 
 That scenario creates a one-day event tree for arrival, two workshops, lunch,
