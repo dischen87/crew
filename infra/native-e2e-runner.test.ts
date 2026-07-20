@@ -91,6 +91,44 @@ describe("native E2E runner guards", () => {
 			deliveryBearer: "native-e2e-delivery-bearer-long-enough",
 		};
 		expect(assertNativeE2ERunnerConfig(valid)).toBe(valid);
+		expect(
+			assertNativeE2ERunnerConfig({
+				...valid,
+				attachments: {
+					publicEndpoint: "https://objects.example.test",
+					localEndpoint: "http://127.0.0.1:9002",
+					apiAccessKeyId: "crewapi",
+					apiSecretAccessKey: "api-secret-long-enough",
+					workerAccessKeyId: "crewworker",
+					workerSecretAccessKey: "worker-secret-long-enough",
+					grantKey: "attachment-grant-key-long-enough-2026",
+				},
+			}),
+		).toBeTruthy();
+		for (const attachments of [
+			{
+				publicEndpoint: "http://objects.example.test",
+				localEndpoint: "http://127.0.0.1:9002",
+			},
+			{
+				publicEndpoint: "https://objects.example.test",
+				localEndpoint: "http://object-store.internal:9002",
+			},
+		]) {
+			expect(() =>
+				assertNativeE2ERunnerConfig({
+					...valid,
+					attachments: {
+						...attachments,
+						apiAccessKeyId: "crewapi",
+						apiSecretAccessKey: "api-secret-long-enough",
+						workerAccessKeyId: "crewworker",
+						workerSecretAccessKey: "worker-secret-long-enough",
+						grantKey: "attachment-grant-key-long-enough-2026",
+					},
+				}),
+			).toThrow("Native E2E attachment configuration is unsafe");
+		}
 		for (const override of [
 			{
 				userDatabaseUrl: "postgres://crew:secret@db/crew_native_e2e_user_test",

@@ -7,8 +7,14 @@ import { loadConfig as loadGatewayConfig } from "../services/api-gateway/src/con
 import { RedisRateLimiter } from "../services/api-gateway/src/redis-rate-limit";
 import { migrate as migrateEvent } from "../services/event-service/scripts/migrate";
 import { createApp as createEventApp } from "../services/event-service/src/app";
+import { PostgresAttachmentJobRepository } from "../services/event-service/src/attachment-jobs";
+import { createAttachmentWorker } from "../services/event-service/src/attachment-worker";
 import { createJwtVerifier as createEventJwtVerifier } from "../services/event-service/src/auth";
 import { EventNotificationPayloadCodec } from "../services/event-service/src/event-notification-payload";
+import {
+	BunS3PrivateObjectStore,
+	UploadGrantCodec,
+} from "../services/event-service/src/object-store";
 import {
 	type PlaceSearchResult,
 	PlaceSearchService,
@@ -145,6 +151,15 @@ export type NativeE2ERunnerConfig = {
 	controlBearer: string;
 	fixtureBearer: string;
 	deliveryBearer: string;
+	attachments?: {
+		publicEndpoint: string;
+		localEndpoint: string;
+		apiAccessKeyId: string;
+		apiSecretAccessKey: string;
+		workerAccessKeyId: string;
+		workerSecretAccessKey: string;
+		grantKey: string;
+	};
 };
 
 export type NativeE2ETrace = {
@@ -253,6 +268,33 @@ export function assertNativeE2ERunnerConfig(config: NativeE2ERunnerConfig) {
 		throw new Error(
 			"Native E2E bearers must be distinct and at least 32 bytes",
 		);
+	}
+	if (config.attachments) {
+		const publicEndpoint = new URL(config.attachments.publicEndpoint);
+		const localEndpoint = new URL(config.attachments.localEndpoint);
+		if (
+			publicEndpoint.protocol !== "https:" ||
+			publicEndpoint.username !== "" ||
+			publicEndpoint.password !== "" ||
+			publicEndpoint.pathname !== "/" ||
+			publicEndpoint.search !== "" ||
+			publicEndpoint.hash !== "" ||
+			localEndpoint.protocol !== "http:" ||
+			!["127.0.0.1", "localhost", "::1"].includes(localEndpoint.hostname) ||
+			localEndpoint.username !== "" ||
+			localEndpoint.password !== "" ||
+			localEndpoint.pathname !== "/" ||
+			localEndpoint.search !== "" ||
+			localEndpoint.hash !== "" ||
+			config.attachments.apiAccessKeyId.length < 3 ||
+			config.attachments.apiSecretAccessKey.length < 16 ||
+			config.attachments.workerAccessKeyId.length < 3 ||
+			config.attachments.workerSecretAccessKey.length < 16 ||
+			config.attachments.grantKey.length < 32 ||
+			config.attachments.apiAccessKeyId === config.attachments.workerAccessKeyId
+		) {
+			throw new Error("Native E2E attachment configuration is unsafe");
+		}
 	}
 	return config;
 }
@@ -527,6 +569,8 @@ export async function startNativeE2ERunner(
 	let eventServer: ReturnType<typeof Bun.serve> | undefined;
 	let publicServer: ReturnType<typeof Bun.serve> | undefined;
 	let controlServer: ReturnType<typeof Bun.serve> | undefined;
+	let attachmentWorkerController: AbortController | undefined;
+	let attachmentWorkerRun: Promise<void> | undefined;
 	let fixtureSchemaReady = false;
 	let redisOwned = false;
 	let publicHandler = async (request: Request) =>
@@ -536,6 +580,14 @@ export async function startNativeE2ERunner(
 
 	const stop = createSharedStop(async () => {
 		const cleanupErrors: unknown[] = [];
+		attachmentWorkerController?.abort();
+		if (attachmentWorkerRun) {
+			try {
+				await attachmentWorkerRun;
+			} catch (error) {
+				cleanupErrors.push(error);
+			}
+		}
 		const serverStops = await stopRunnerServers([
 			publicServer,
 			controlServer,
@@ -682,6 +734,42 @@ export async function startNativeE2ERunner(
 		const userUrl = `http://127.0.0.1:${userServer.port}`;
 		const jwksUrl = `${userUrl}/.well-known/jwks.json`;
 
+		const apiObjectStore = config.attachments
+			? new BunS3PrivateObjectStore({
+					endpoint: config.attachments.publicEndpoint,
+					region: "us-east-1",
+					bucket: "crew-event-development",
+					accessKeyId: config.attachments.apiAccessKeyId,
+					secretAccessKey: config.attachments.apiSecretAccessKey,
+				})
+			: undefined;
+		if (config.attachments) {
+			const worker = createAttachmentWorker(
+				{
+					workerId: "native-e2e-attachment-worker",
+					pollIntervalMs: 100,
+					verifyLeaseSeconds: 10,
+					verifyMaxAttempts: 3,
+					verifyConcurrency: 1,
+					cleanupLeaseSeconds: 10,
+					cleanupRetentionSeconds: 3600,
+					objectIoTimeoutMs: 5_000,
+				},
+				new PostgresAttachmentJobRepository(eventSql),
+				new BunS3PrivateObjectStore(
+					{
+						endpoint: config.attachments.localEndpoint,
+						region: "us-east-1",
+						bucket: "crew-event-development",
+						accessKeyId: config.attachments.workerAccessKeyId,
+						secretAccessKey: config.attachments.workerSecretAccessKey,
+					},
+					1,
+				),
+			);
+			attachmentWorkerController = new AbortController();
+			attachmentWorkerRun = worker.run(attachmentWorkerController.signal);
+		}
 		const eventApp = createEventApp({
 			service: new EventService(
 				new PostgresEventRepository(
@@ -692,6 +780,17 @@ export async function startNativeE2ERunner(
 					}),
 				),
 				"native-e2e-invitation-key-with-at-least-32-characters",
+				apiObjectStore && config.attachments
+					? {
+							objectStore: apiObjectStore,
+							grantCodec: new UploadGrantCodec(
+								"native-e2e-attachment-v1",
+								config.attachments.grantKey,
+							),
+							uploadTtlSeconds: 600,
+							downloadTtlSeconds: 600,
+						}
+					: undefined,
 			),
 			placeSearch: new PlaceSearchService(
 				{
@@ -1390,6 +1489,33 @@ if (import.meta.main) {
 		if (!value) throw new Error(`${name} is required`);
 		return value;
 	};
+	const attachmentNames = [
+		"NATIVE_E2E_ATTACHMENT_PUBLIC_ENDPOINT",
+		"NATIVE_E2E_ATTACHMENT_LOCAL_ENDPOINT",
+		"NATIVE_E2E_ATTACHMENT_API_ACCESS_KEY_ID",
+		"NATIVE_E2E_ATTACHMENT_API_SECRET_ACCESS_KEY",
+		"NATIVE_E2E_ATTACHMENT_WORKER_ACCESS_KEY_ID",
+		"NATIVE_E2E_ATTACHMENT_WORKER_SECRET_ACCESS_KEY",
+		"NATIVE_E2E_ATTACHMENT_GRANT_KEY",
+	] as const;
+	const attachmentValues = attachmentNames.map((name) => Bun.env[name]);
+	if (
+		attachmentValues.some(Boolean) &&
+		!attachmentValues.every((value) => Boolean(value))
+	) {
+		throw new Error("Native E2E attachment configuration must be complete");
+	}
+	const attachments = attachmentValues.every((value) => Boolean(value))
+		? {
+				publicEndpoint: required(attachmentNames[0]),
+				localEndpoint: required(attachmentNames[1]),
+				apiAccessKeyId: required(attachmentNames[2]),
+				apiSecretAccessKey: required(attachmentNames[3]),
+				workerAccessKeyId: required(attachmentNames[4]),
+				workerSecretAccessKey: required(attachmentNames[5]),
+				grantKey: required(attachmentNames[6]),
+			}
+		: undefined;
 	const runner = await startNativeE2ERunner({
 		userDatabaseUrl: required("NATIVE_E2E_USER_DATABASE_URL"),
 		eventDatabaseUrl: required("NATIVE_E2E_EVENT_DATABASE_URL"),
@@ -1398,6 +1524,7 @@ if (import.meta.main) {
 		controlBearer: required("NATIVE_E2E_CONTROL_BEARER"),
 		fixtureBearer: required("NATIVE_E2E_FIXTURE_BEARER"),
 		deliveryBearer: required("NATIVE_E2E_DELIVERY_BEARER"),
+		...(attachments ? { attachments } : {}),
 	});
 	for (const signal of ["SIGINT", "SIGTERM"] as const) {
 		process.on(signal, () => {
