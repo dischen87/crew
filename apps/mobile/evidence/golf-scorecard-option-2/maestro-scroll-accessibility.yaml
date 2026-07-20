@@ -1,0 +1,16 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- swipe:
+    start: 50%,82%
+    end: 50%,50%
+    duration: 1500
+- swipe:
+    start: 50%,82%
+    end: 50%,50%
+    duration: 1500
+- swipe:
+    start: 50%,82%
+    end: 50%,50%
+    duration: 1500

@@ -1,0 +1,11 @@
+appId: app.crew.next
+---
+- assertVisible: "Bei Crew anmelden"
+- tapOn: "E-Mail-Adresse"
+- eraseText
+- inputText: "crew-evidence@example.test"
+- hideKeyboard
+- tapOn: "Link senden"
+- extendedWaitUntil:
+    visible: "Falls die Adresse verwendet werden kann, ist der Link unterwegs."
+    timeout: 10000

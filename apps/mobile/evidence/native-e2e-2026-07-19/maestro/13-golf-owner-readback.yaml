@@ -1,0 +1,43 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- tapOn:
+    id: event-evt_local_turkey_golf_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- tapOn:
+    id: event-hub-sync-button
+- extendedWaitUntil:
+    visible: .*synchronisiert.*
+    timeout: 20000
+- tapOn:
+    id: event-hub-date-2026-10-05
+- scrollUntilVisible:
+    element: 'Golf round: Carya Golf Club'
+    direction: DOWN
+- tapOn: 'Golf round: Carya Golf Club'
+- extendedWaitUntil:
+    visible:
+      id: golf-scorecard-view
+    timeout: 20000
+- extendedWaitUntil:
+    visible: Alle Score-Daten synchronisiert
+    timeout: 20000
+- assertVisible: LIVE-RANGLISTE
+- assertVisible: OWNER
+- assertVisible: Live mitfiebern
+- scrollUntilVisible:
+    element:
+      id: golf-leaderboard-row-1
+    direction: DOWN
+- assertVisible: 3 Spieler
+- assertVisible:
+    id: golf-leaderboard-row-1
+- assertVisible: .*2 Stableford-Punkte.*1 von 18 Löchern.*

@@ -1,0 +1,4 @@
+appId: app.crew.next
+---
+- assertVisible: Sanitized Release crypto proof
+- assertVisible: .*randomUuidAbsent.*true.*secureRandomPresent.*true.*subtleAbsent.*true.*

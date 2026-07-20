@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- assertVisible: LOKAL GESPEICHERT
+- assertVisible:
+    id: golf-strokes-input
+- assertVisible:
+    id: golf-putts-input

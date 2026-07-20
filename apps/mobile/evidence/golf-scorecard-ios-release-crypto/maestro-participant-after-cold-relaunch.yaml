@@ -1,0 +1,27 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- tapOn: .*Turkey Golf Tour 2026.*
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- tapOn:
+    id: event-hub-date-2026-10-05
+- scrollUntilVisible:
+    element: '.*Golf round: Carya Golf Club.*'
+    direction: DOWN
+- tapOn: '.*Golf round: Carya Golf Club.*'
+- extendedWaitUntil:
+    visible:
+      id: golf-scorecard-view
+    timeout: 20000
+- assertVisible: LOKAL GESPEICHERT
+- assertVisible: Offline gespeichert.*|1 Änderung lokal gespeichert
+- assertVisible:
+    id: golf-strokes-input
+- assertVisible:
+    id: golf-putts-input

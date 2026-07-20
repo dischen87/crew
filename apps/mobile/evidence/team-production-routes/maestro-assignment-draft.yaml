@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Teams einteilen
+- tapOn:
+    id: move-usr_11111111111111111111111111111111
+- assertVisible: Änderungen offen · noch nicht veröffentlicht
+- assertVisible: Einteilung veröffentlichen

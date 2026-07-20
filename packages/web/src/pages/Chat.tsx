@@ -10,7 +10,11 @@ import GiphyPicker from "../components/GiphyPicker";
 
 function isGifUrl(text: string): boolean {
   if (!text) return false;
-  return /\.(gif)(\?|$)/i.test(text) || /giphy\.com\/media/i.test(text) || /media\d*\.giphy\.com/i.test(text);
+  return (
+    /\.(gif)(\?|$)/i.test(text) ||
+    /giphy\.com\/media/i.test(text) ||
+    /media\d*\.giphy\.com/i.test(text)
+  );
 }
 
 export default function Chat() {
@@ -23,7 +27,7 @@ export default function Chat() {
   const [showGiphy, setShowGiphy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const prevCountRef = useRef(0);
 
   const loadMessages = useCallback(async () => {
@@ -36,7 +40,10 @@ export default function Chat() {
       if (msgs.length !== prevCountRef.current) {
         prevCountRef.current = msgs.length;
         setTimeout(() => {
-          scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+          scrollRef.current?.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: "smooth",
+          });
         }, 100);
       }
     } catch (err) {
@@ -48,7 +55,9 @@ export default function Chat() {
   useEffect(() => {
     loadMessages();
     pollRef.current = setInterval(loadMessages, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [loadMessages]);
 
   if (!auth) return null;
@@ -83,7 +92,10 @@ export default function Chat() {
   };
 
   const formatTime = (d: string) =>
-    new Date(d).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    new Date(d).toLocaleTimeString("de-CH", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   const formatDateHeader = (d: string) => {
     const date = new Date(d);
@@ -92,18 +104,27 @@ export default function Chat() {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     if (date.toDateString() === yesterday.toDateString()) return "Gestern";
-    return date.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" });
+    return date.toLocaleDateString("de-CH", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+    });
   };
 
   let lastDate = "";
 
   return (
-    <div className="flex flex-col -mx-5 -mt-6 -mb-28" style={{ height: 'calc(100vh - 110px)' }}>
+    <div
+      className="flex flex-col -mx-5 -mt-6 -mb-28"
+      style={{ height: "calc(100vh - 110px)" }}
+    >
       {/* Chat Header */}
       <div className="shrink-0 bg-white border-b-3 border-dark px-4 py-2.5">
         <div className="flex items-center gap-3">
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-extrabold tracking-tight leading-tight">Chat</h2>
+            <h2 className="text-lg font-extrabold tracking-tight leading-tight">
+              Chat
+            </h2>
             <p className="text-[10px] text-dark/40 font-bold uppercase tracking-wider">
               {auth.group.name} · {messages.length} Nachrichten
             </p>
@@ -112,13 +133,20 @@ export default function Chat() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 min-h-0 overscroll-none bg-surface-0">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-4 min-h-0 overscroll-none bg-surface-0"
+      >
         {loading ? (
-          <div className="flex justify-center py-20"><Spinner /></div>
+          <div className="flex justify-center py-20">
+            <Spinner />
+          </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <span className="text-4xl mb-3">💬</span>
-            <p className="text-sm text-dark/40 font-bold">Noch keine Nachrichten</p>
+            <p className="text-sm text-dark/40 font-bold">
+              Noch keine Nachrichten
+            </p>
             <p className="text-xs text-dark/25 mt-1">Schreib die erste!</p>
           </div>
         ) : (
@@ -148,27 +176,47 @@ export default function Chat() {
                     <div className="flex justify-center mb-2">
                       <div className="max-w-[85%] px-4 py-2 bg-accent-mint/30 border border-dark/10 rounded-2xl text-center">
                         <p className="text-[10px] font-bold text-dark/50 mb-0.5">
-                          <Emoji emoji={msg.sender_emoji || "👤"} size={12} className="mr-1" />
+                          <Emoji
+                            emoji={msg.sender_emoji || "👤"}
+                            size={12}
+                            className="mr-1"
+                          />
                           {msg.sender_name}
                         </p>
-                        <p className="text-[13px] font-semibold leading-snug">{msg.content}</p>
-                        <p className="text-[10px] text-dark/30 mt-1">{formatTime(msg.created_at)}</p>
+                        <p className="text-[13px] font-semibold leading-snug">
+                          {msg.content}
+                        </p>
+                        <p className="text-[10px] text-dark/30 mt-1">
+                          {formatTime(msg.created_at)}
+                        </p>
                       </div>
                     </div>
                   ) : (
-                    <div className={`flex ${isMe ? "justify-end" : "justify-start"} mb-1.5`}>
+                    <div
+                      className={`flex ${
+                        isMe ? "justify-end" : "justify-start"
+                      } mb-1.5`}
+                    >
                       {!isMe && (
                         <span className="w-7 h-7 bg-white border-2 border-dark rounded-full flex items-center justify-center shrink-0 mr-2 mt-1">
                           <Emoji emoji={msg.sender_emoji || "👤"} size={14} />
                         </span>
                       )}
-                      <div className={`max-w-[78%] ${isGif ? "" : "px-4 py-2.5"} border-2 border-dark rounded-2xl overflow-hidden ${
-                        isMe
-                          ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
-                          : "bg-white rounded-bl-md shadow-brutal-xs"
-                      }`}>
+                      <div
+                        className={`max-w-[78%] ${
+                          isGif ? "" : "px-4 py-2.5"
+                        } border-2 border-dark rounded-2xl overflow-hidden ${
+                          isMe
+                            ? "bg-gold-400 rounded-br-md shadow-brutal-xs"
+                            : "bg-white rounded-bl-md shadow-brutal-xs"
+                        }`}
+                      >
                         {!isMe && (
-                          <p className={`text-[10px] font-bold text-dark/50 mb-1 ${isGif ? "px-3 pt-2" : ""}`}>
+                          <p
+                            className={`text-[10px] font-bold text-dark/50 mb-1 ${
+                              isGif ? "px-3 pt-2" : ""
+                            }`}
+                          >
                             {msg.sender_name || "Unbekannt"}
                           </p>
                         )}
@@ -181,22 +229,46 @@ export default function Chat() {
                             loading="lazy"
                           />
                         ) : (
-                          <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                          <p className="text-[14px] whitespace-pre-wrap break-words leading-relaxed">
+                            {msg.content}
+                          </p>
                         )}
 
                         {msg.link_preview && !isGif && (
-                          <a href={msg.link_preview.url} target="_blank" rel="noopener noreferrer" className="block mt-2 bg-surface-0 border border-dark/10 rounded-xl overflow-hidden no-underline">
+                          <a
+                            href={msg.link_preview.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block mt-2 bg-surface-0 border border-dark/10 rounded-xl overflow-hidden no-underline"
+                          >
                             {msg.link_preview.image_url && (
-                              <img src={msg.link_preview.image_url} alt="" className="w-full h-24 object-cover" loading="lazy" />
+                              <img
+                                src={msg.link_preview.image_url}
+                                alt=""
+                                className="w-full h-24 object-cover"
+                                loading="lazy"
+                              />
                             )}
                             <div className="p-2">
-                              {msg.link_preview.title && <p className="text-[11px] font-bold text-dark truncate">{msg.link_preview.title}</p>}
-                              {msg.link_preview.description && <p className="text-[10px] text-dark/50 line-clamp-2 mt-0.5">{msg.link_preview.description}</p>}
+                              {msg.link_preview.title && (
+                                <p className="text-[11px] font-bold text-dark truncate">
+                                  {msg.link_preview.title}
+                                </p>
+                              )}
+                              {msg.link_preview.description && (
+                                <p className="text-[10px] text-dark/50 line-clamp-2 mt-0.5">
+                                  {msg.link_preview.description}
+                                </p>
+                              )}
                             </div>
                           </a>
                         )}
 
-                        <p className={`text-[10px] mt-1 ${isGif ? "px-3 pb-1.5" : ""} ${isMe ? "text-dark/30" : "text-dark/25"}`}>
+                        <p
+                          className={`text-[10px] mt-1 ${
+                            isGif ? "px-3 pb-1.5" : ""
+                          } ${isMe ? "text-dark/30" : "text-dark/25"}`}
+                        >
                           {formatTime(msg.created_at)}
                         </p>
                       </div>
@@ -246,7 +318,10 @@ export default function Chat() {
       {/* Giphy Fullscreen Overlay */}
       <AnimatePresence>
         {showGiphy && (
-          <GiphyPicker onSelect={handleGifSelect} onClose={() => setShowGiphy(false)} />
+          <GiphyPicker
+            onSelect={handleGifSelect}
+            onClose={() => setShowGiphy(false)}
+          />
         )}
       </AnimatePresence>
     </div>

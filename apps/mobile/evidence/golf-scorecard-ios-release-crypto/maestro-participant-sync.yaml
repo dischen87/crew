@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action

@@ -1,0 +1,110 @@
+{
+  "evidenceId": "recap-external-consent-option-2-ios-release-2026-07-20",
+  "capturedAt": "2026-07-20",
+  "result": "passed",
+  "capture": {
+    "platform": "ios-simulator",
+    "runtime": "iOS 26.2 (23C54)",
+    "device": "iPhone 16e",
+    "deviceUdid": "844AF256-9597-4E09-A189-A801AB67C4EA",
+    "physicalPixels": "1170x2532",
+    "logicalPixels": "390x844",
+    "appearance": "light",
+    "contentSize": "medium",
+    "statusBarOverride": "09:41, charged 100%, Wi-Fi 3, cellular 4"
+  },
+  "build": {
+    "configurationBoundary": "copied Release simulator shell with a freshly bundled deterministic visual entry",
+    "bundleId": "app.crew.next.recapconsent.evidence",
+    "signature": "ad-hoc simulator only",
+    "architectures": ["arm64", "x86_64"],
+    "entry": "apps/mobile/evidence/recap-consent-option-2-entry.js",
+    "entrySha256": "48d69d40fbea6b16af875fd098eb5ea6f32ea66e0988de55cc1b044184aecf8e",
+    "mainJsBundleSha256": "9b7ee262899be6deea44eb695c26b73a87267f86016e742f608e614fb20dd0d0",
+    "productionView": "apps/mobile/src/screens/RecapView.tsx"
+  },
+  "frozenSourceSha256": {
+    "packages/mobile-data/src/recap.ts": "57eb333d6088fa857f7a8da1e476eab6e50c93d3cb6eb76f18f241d59c8321a0",
+    "packages/mobile-data/test/recap.test.ts": "739b0ee11bdaf7f75f0a4f5f5ccc7ce8f2fb90eabd47af5d3382a3953829c010",
+    "apps/mobile/src/screens/RecapScreen.tsx": "c6fae4c10c315b9d4853a3399522712cdef4fbdef1a48298766c5048d5cdc459",
+    "apps/mobile/src/screens/RecapView.tsx": "922c3676dc7ced0c27a5ee17fca04955874678673b954edcb924138976c54eea",
+    "apps/mobile/__tests__/RecapScreen.test.ts": "8f5dbb8c80b5c32df3a0461951d5f9bc2a747a128403110d6916914b8d97dcf1",
+    "apps/mobile/__tests__/RecapView.test.tsx": "c14b0c16d3c90f6570e445f3017f2a67e0a59e97e8d2c61fba7bb03011fa9d76"
+  },
+  "matrix": [
+    {
+      "state": "manager-grant",
+      "role": "organizer",
+      "online": true,
+      "actorCanDecide": ["manager"],
+      "evidence": [
+        "manager-grant-top-390x844.png",
+        "manager-grant-actions-390x844.png"
+      ]
+    },
+    {
+      "state": "manager-withdraw",
+      "role": "organizer",
+      "online": true,
+      "actorCanDecide": ["manager"],
+      "evidence": ["manager-withdraw-feed-390x844.png"]
+    },
+    {
+      "state": "feed-author",
+      "role": "participant",
+      "online": true,
+      "actorCanDecide": ["author"],
+      "evidence": ["feed-author-actions-390x844.png"]
+    },
+    {
+      "state": "participant",
+      "role": "participant-non-author",
+      "online": true,
+      "actorCanDecide": [],
+      "evidence": [
+        "participant-top-390x844.png",
+        "participant-feed-390x844.png"
+      ]
+    },
+    {
+      "state": "viewer",
+      "role": "viewer",
+      "online": true,
+      "actorCanDecide": [],
+      "evidence": ["viewer-top-390x844.png", "viewer-feed-390x844.png"]
+    },
+    {
+      "state": "drift-offline",
+      "role": "organizer",
+      "online": false,
+      "actorCanDecide": [],
+      "decisions": "fail-closed unknown",
+      "evidence": ["drift-offline-top-390x844.png"]
+    }
+  ],
+  "behaviorGates": {
+    "focusedMobileData": "9 tests, 72 assertions passed",
+    "focusedMobileScreenAndView": "19 tests across 2 suites passed",
+    "fullMobileData": "142 tests, 998 assertions passed",
+    "lint": "mobile-data and mobile passed",
+    "typescript": "mobile-data and mobile passed"
+  },
+  "visualReview": {
+    "bindingSource": "apps/mobile/evidence/event-hub-option-2/reference-390x844.png",
+    "bindingSourceSha256": "f6ebd9866cd86ed7878865871b0140312dddfc464ab2512d03095bccc4f18a9c",
+    "sameViewportCombinedInputReviewed": true,
+    "p0": [],
+    "p1": [],
+    "p2": []
+  },
+  "boundary": {
+    "fixtureEvidence": true,
+    "productionDeployment": false,
+    "liveBackendMutation": false,
+    "gatewayInitialized": false,
+    "databaseInitialized": false,
+    "keychainInitialized": false,
+    "sharedSimulatorTouched": false,
+    "isolatedSimulatorDeletedAfterCapture": true
+  }
+}

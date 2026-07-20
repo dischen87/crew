@@ -1,0 +1,12 @@
+appId: app.crew.next.evidence
+---
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action
+- extendedWaitUntil:
+    visible: Offline-Kopie aktiv. Crew versucht die Synchronisierung später erneut.
+    timeout: 15000
+- assertVisible: LOKAL GESPEICHERT

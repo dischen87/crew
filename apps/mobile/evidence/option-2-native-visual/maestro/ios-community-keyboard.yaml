@@ -1,0 +1,15 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      id: community-feedback-query
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: community-feedback-query
+- extendedWaitUntil:
+    visible:
+      id: crew-evidence-capture-complete
+    timeout: 30000

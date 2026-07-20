@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-create-submit
+- scrollUntilVisible:
+    element:
+      text: Event-Details
+    direction: UP
+- assertVisible: Event-Details

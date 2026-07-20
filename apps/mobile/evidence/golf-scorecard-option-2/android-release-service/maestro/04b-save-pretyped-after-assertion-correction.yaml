@@ -1,0 +1,9 @@
+appId: app.crew.next.evidence
+---
+- assertVisible: 'Lokale Vorschau: Netto 4, 2 Stableford-Punkte'
+- tapOn:
+    id: golf-save-action
+- extendedWaitUntil:
+    visible: LOKAL GESPEICHERT
+    timeout: 15000
+- assertVisible: 1 Änderung lokal gespeichert

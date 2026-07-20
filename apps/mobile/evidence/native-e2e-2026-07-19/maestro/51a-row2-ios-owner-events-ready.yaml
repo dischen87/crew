@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- assertVisible: Events
+- assertVisible:
+    id: event-evt_local_turkey_golf_2026

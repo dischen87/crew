@@ -1,0 +1,107 @@
+{
+  "beads": {
+    "crew-paq.3.12": "accepted-ios",
+    "crew-paq.3.13": "accepted-ios",
+    "crew-paq.3.14": "accepted-ios"
+  },
+  "device": {
+    "appearance": "light",
+    "contentSizes": ["medium", "accessibility-large"],
+    "model": "iPhone 16e",
+    "os": "iOS 26.2",
+    "pointViewport": {
+      "height": 844,
+      "width": 390
+    },
+    "rawPixels": {
+      "height": 2532,
+      "width": 1170
+    },
+    "topSafeAreaPoints": 47,
+    "udid": "F3FF7E09-1860-43BA-BE9B-E897E1DE4FA3"
+  },
+  "captureBoundary": {
+    "debugAppBundleOrProtectedUserDataMutated": false,
+    "debugRestoration": {
+      "appBundleByteIdentical": true,
+      "appearance": "light",
+      "contentSize": "medium",
+      "crewEvidenceState": "capability",
+      "crewSQLiteFilesByteIdentical": true,
+      "evidenceBundleRemoved": true,
+      "preferencesByteIdentical": true,
+      "signedOutScreenByteIdentical": true,
+      "volatileOsCachesByteIdentical": false,
+      "volatileOsCacheDifference": [
+        "Library/HTTPStorages app-owned WAL/SHM runtime files",
+        "Library/SplashBoard foreground/background snapshots"
+      ],
+      "volatileOsCachesContainProtectedCrewUserData": false
+    },
+    "evidenceBundleId": "app.crew.next.frozenbugs.evidence",
+    "isolatedReleaseShellExecutableSha256": "841b4de9e85431c5d2b7c219426934db08675e71c4e5c2a78d3c133d1a786b95",
+    "isolatedReleaseShellInfoPlistSha256": "e23987beb94d01e1663b8382d175ca93c88650a4175af150265f83a0622849a5",
+    "javascriptBundleSha256": {
+      "auth": "91fa6b1aaa07a66019a359fd080d6d461bf62535698a19fc99d2b1375d37c423",
+      "eventHub": "cdf2e81b37157f831d9751680d00c1df5984fbb04e846228241979878768d9c0",
+      "recap": "cdf1a25757e57ecd9e587779fd20b6df7cb56a7e40f5c35c7f30885516e8f3a8"
+    },
+    "maximumTemporaryStorageKiB": 70112,
+    "productionServicesInitialized": false,
+    "statusBarOverrideUsed": false
+  },
+  "safeArea": {
+    "eventHub": {
+      "accessibilityLargeScrolledContentEnteredTopSafeArea": false,
+      "accessibilityLargeTopHadDoubleInset": false,
+      "normalScrolledContentEnteredTopSafeArea": false,
+      "normalTopHadDoubleInset": false,
+      "primaryActionReachableAtAccessibilityLarge": true,
+      "updateAndFixedNavigationReachableAtAccessibilityLarge": true
+    },
+    "recap": {
+      "accessibilityLargeScrolledContentEnteredTopSafeArea": false,
+      "accessibilityLargeTopHadDoubleInset": false,
+      "lavenderMomentReachableAtAccessibilityLarge": true,
+      "normalScrolledContentEnteredTopSafeArea": false,
+      "normalTopHadDoubleInset": false,
+      "privacyExplanationReachableAtAccessibilityLarge": true
+    }
+  },
+  "recapContrast": {
+    "backgroundToken": "colors.surfaceAccent",
+    "backgroundValue": "#D5C2E8",
+    "bodyAndOverlineToken": "colors.text",
+    "bodyAndOverlineValue": "#2D2D2D",
+    "contrastRatio": 8.336159984903418,
+    "meetsNormalTextThreshold": true,
+    "normalTextThreshold": 4.5,
+    "semanticStatesUseTextOrIconsInAdditionToColor": true
+  },
+  "authCopyJobs": {
+    "action": "Zu Events",
+    "description": "Gehe zurück zu deinen Events und wähle dort einen verfügbaren Inhalt.",
+    "eyebrow": "GESCHÜTZTER INHALT",
+    "exactTitlePhraseOccurrences": 1,
+    "forbiddenProtectedDetailVisible": false,
+    "privacyConsequence": "Es werden keine Angaben zum geschützten Ziel bestätigt.",
+    "status": "ZUGRIFF NICHT VERFÜGBAR",
+    "title": "Inhalt nicht verfügbar"
+  },
+  "sourceFreeze": {
+    "AuthSurfaces.test.tsx": "08f8b17656e3c1c37d7b8455fd1c964caae3a243ba72190e8efb7f027a338753",
+    "EventHubView.test.tsx": "e472100589f6bfd7a60675af39e8d5e2c6aadc27a883ba53c1308503cb6a1d3e",
+    "EventHubView.tsx": "3714faacc35b4fe79c2befa44808fd6de8e13661b822bf74df59b8e28fb24ecb",
+    "RecapView.test.tsx": "b139e4d5a164a13c4eb82847ede962f42623f9f8d18da5d279a43c1f20fd7df2",
+    "RecapView.tsx": "0b92f91672e543247b2e22fda845b99dd3ad65576d1c88b071f3e790003d945c",
+    "RootNavigator.test.tsx": "6059e91330c57864a33968366c3c00de7a92ff3c01a842ea8cdb437827ee16ec",
+    "UnavailableScreen.tsx": "543974f94640b346df6295d717d79053124a3ff797bc567ee49f9ba8cb734b68"
+  },
+  "visualReview": {
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "reviewedComparisonCount": 6,
+    "reviewedCurrentStateCount": 11
+  }
+}

@@ -1,0 +1,17 @@
+appId: app.crew.next.evidence
+---
+- tapOn:
+    id: golf-strokes-input
+- inputText: '5'
+- hideKeyboard
+- tapOn:
+    id: golf-putts-input
+- inputText: '2'
+- hideKeyboard
+- assertVisible: 'Lokale Vorschau: Netto 4, 2 Stableford-Punkte'
+- tapOn:
+    id: golf-save-action
+- extendedWaitUntil:
+    visible: LOKAL GESPEICHERT
+    timeout: 15000
+- assertVisible: 1 Änderung lokal gespeichert

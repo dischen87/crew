@@ -2,22 +2,38 @@
 interface Props {
   title: string;
   description?: string;
+  canonical?: string;
+  favicon?: string;
+  lang?: string;
+  robots?: string;
 }
 
-const { title, description = "Dein Trip. Deine Crew. Eine App." } = Astro.props;
+const {
+  title,
+  description = "Crew Next wird für Golfreisen und Team-Events entwickelt.",
+  canonical,
+  favicon = "/favicon.svg",
+  lang = "de-CH",
+  robots,
+} = Astro.props;
 ---
 
 <!doctype html>
-<html lang="de">
+<html lang={lang}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    {robots && <meta name="robots" content={robots} />}
+    {canonical && <link rel="canonical" href={canonical} />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://crew-haus.com" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:locale" content="de_CH" />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta name="theme-color" content="#F0DDF5" />
+    <link rel="icon" type={favicon.endsWith('.svg') ? 'image/svg+xml' : 'image/png'} href={favicon} />
+    <slot name="head" />
     <title>{title}</title>
   </head>
   <body>
@@ -26,19 +42,13 @@ const { title, description = "Dein Trip. Deine Crew. Eine App." } = Astro.props;
 </html>
 
 <style is:global>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
   :root {
-    --navy: #222432;
-    --navy-light: #3A3C50;
-    --cream: #FBF7F4;
-    --cream-dark: #F5EDE8;
-    --coral: #FFC7B9;
-    --coral-dark: #F5A897;
-    --white: #FFFFFF;
-    --text-secondary: #6B6D7B;
-    --text-muted: #9B9DAA;
-    --border: #E8E0DB;
+    --canvas: #f0ddf5;
+    --paper: #ffffff;
+    --ink: #2d2d2d;
+    --gold: #f5d565;
+    --mint: #c2e8d5;
+    --purple: #685898;
   }
 
   * {
@@ -52,9 +62,15 @@ const { title, description = "Dein Trip. Deine Crew. Eine App." } = Astro.props;
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--cream);
-    color: var(--navy);
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--canvas);
+    color: var(--ink);
     line-height: 1.6;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 </style>

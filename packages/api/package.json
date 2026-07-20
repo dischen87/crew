@@ -10,6 +10,7 @@
     "test": "bun test src/__tests__/"
   },
   "dependencies": {
+    "@crew/shared": "workspace:*",
     "hono": "^4.4.0",
     "postgres": "^3.4.4",
     "ioredis": "^5.4.1"

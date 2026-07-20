@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- assertVisible: Crew-Wochenende Zürich
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-primary-action
+- assertNotVisible:
+    id: event-create-submit

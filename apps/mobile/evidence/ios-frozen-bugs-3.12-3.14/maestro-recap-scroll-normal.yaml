@@ -1,0 +1,14 @@
+appId: app.crew.next.frozenbugs.evidence
+---
+- assertVisible:
+    id: recap-view
+- scrollUntilVisible:
+    element:
+      text: 'Moment 2, Auftakt auf dem Carya Golf Course, Die erste Runde führte die Crew über den Carya Golf Course.'
+    direction: DOWN
+    timeout: 30000
+- swipe:
+    start: 50%, 70%
+    end: 50%, 55%
+    duration: 500
+- assertVisible: 'Moment 2, Auftakt auf dem Carya Golf Course, Die erste Runde führte die Crew über den Carya Golf Course.'

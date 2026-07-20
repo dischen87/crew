@@ -1,0 +1,33 @@
+{
+  "device": {
+    "model": "iPhone 16e",
+    "os": "iOS 26.2",
+    "udid": "F3FF7E09-1860-43BA-BE9B-E897E1DE4FA3"
+  },
+  "proofs": [
+    {
+      "phase": "offline-enqueue",
+      "bodySha256": "47385497c84c705fc035c7aa3676cd179d9f1ca8972fcbb8e6deb945e6837a6b",
+      "idempotencyKeySha256": "52c57143bd345af2512a20838ca52aa67d9f62e99de07bd8a58d70c1e4f47408",
+      "releaseCryptoShape": {
+        "randomUuidAbsent": true,
+        "secureRandomPresent": true,
+        "subtleAbsent": true
+      },
+      "secureIds": true
+    },
+    {
+      "phase": "process-restart-replay",
+      "bodySha256": "47385497c84c705fc035c7aa3676cd179d9f1ca8972fcbb8e6deb945e6837a6b",
+      "idempotencyKeySha256": "52c57143bd345af2512a20838ca52aa67d9f62e99de07bd8a58d70c1e4f47408",
+      "releaseCryptoShape": {
+        "randomUuidAbsent": true,
+        "secureRandomPresent": true,
+        "subtleAbsent": true
+      },
+      "secureIds": true
+    }
+  ],
+  "rawEventIdentifiersRetained": false,
+  "rawPayloadRetained": false
+}

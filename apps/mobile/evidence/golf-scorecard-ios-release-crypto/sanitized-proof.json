@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "platform": "iOS Simulator",
+    "configuration": "Release",
+    "composition": "current production app composition with local service-backed fixture",
+    "productionDeployment": false,
+    "rejectedDiagnosticRunExcluded": true,
+    "cryptoProofCapturedFromSameSignedArtifactBeforeFreshDataRun": true
+  },
+  "device": {
+    "model": "iPhone 16e",
+    "viewport": "390x844",
+    "appearance": "light",
+    "contentSize": "medium"
+  },
+  "releaseArtifact": {
+    "executableSha256": "868e74955de934c576543a526d89cbdfcfdcd264a9796e9aaedccc10dcb05489",
+    "javascriptBundleSha256": "be16ebd845ee65b8232333263ddf5e4e9e6c59bba0323641511dd572d9e46770",
+    "infoPlistSha256": "2e21e15405ad7bc25a8babcfe36c0e0d4e3820562bd5164dbb4528ea0266ea54",
+    "codeResourcesSha256": "af8a6493ceb5966427cb80997ae89b56fa671854b3f3d61198f6f928fe0c0f6b",
+    "codeSignatureVerified": true,
+    "debugOrPreviewDylibsAbsent": true,
+    "nativeInputHashesExact": 17,
+    "sourceFilesNewerThanBundle": 0
+  },
+  "cryptoRuntime": {
+    "randomUuidAbsent": true,
+    "secureRandomPresent": true,
+    "subtleAbsent": true,
+    "uuidAndShaProviderOverrides": false
+  },
+  "freshRunPrecondition": {
+    "releaseDataContainerAbsentBeforeInstall": true,
+    "localPendingMutations": 0,
+    "configuredRounds": 1,
+    "immutableFixtureBaseline": [
+      {
+        "role": "owner",
+        "entityType": "golfRound",
+        "outcome": "applied",
+        "receipts": 1,
+        "minimumSequence": 1,
+        "maximumSequence": 1
+      }
+    ],
+    "participantGolfScoreReceipts": 0,
+    "scoreRows": 0
+  },
+  "participantMutation": {
+    "mutationsCreated": 1,
+    "hole": 1,
+    "strokes": 5,
+    "putts": 2,
+    "stablefordPoints": 2,
+    "pendingAfterSave": 1,
+    "retainedAfterColdRelaunch": true,
+    "retainedAfterCommitted503": true,
+    "pendingAfterConvergence": 0
+  },
+  "processLifecycle": {
+    "releasePidBeforeCut": 40699,
+    "releasePidBeforeCutAbsentAfterTermination": true,
+    "releasePidAfterColdLaunch": 46041,
+    "releasePidAfterColdLaunchAbsentAfterTermination": true,
+    "metroArgumentsAbsent": true
+  },
+  "transportTraces": [
+    {
+      "sequence": 1,
+      "requestChannel": "ios",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false,
+      "bodyFingerprint": "sha256:430e36c3548d552aa8185249ef83cb79c1fb44e5832157ec68dea177c231b710",
+      "idempotencyFingerprint": "sha256:fc366246a468d2299d96139bdb27106ef771f54da51468f709bde4e4b57b8a99"
+    },
+    {
+      "sequence": 2,
+      "requestChannel": "ios",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false,
+      "bodyFingerprint": "sha256:430e36c3548d552aa8185249ef83cb79c1fb44e5832157ec68dea177c231b710",
+      "idempotencyFingerprint": "sha256:fc366246a468d2299d96139bdb27106ef771f54da51468f709bde4e4b57b8a99"
+    },
+    {
+      "sequence": 3,
+      "requestChannel": "ios",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false,
+      "bodyFingerprint": "sha256:430e36c3548d552aa8185249ef83cb79c1fb44e5832157ec68dea177c231b710",
+      "idempotencyFingerprint": "sha256:fc366246a468d2299d96139bdb27106ef771f54da51468f709bde4e4b57b8a99"
+    },
+    {
+      "sequence": 4,
+      "requestChannel": "ios",
+      "outcome": "success-suppressed",
+      "downstreamStatus": 200,
+      "facadeStatus": 503,
+      "replayed": false,
+      "bodyFingerprint": "sha256:430e36c3548d552aa8185249ef83cb79c1fb44e5832157ec68dea177c231b710",
+      "idempotencyFingerprint": "sha256:fc366246a468d2299d96139bdb27106ef771f54da51468f709bde4e4b57b8a99"
+    },
+    {
+      "sequence": 5,
+      "requestChannel": "ios",
+      "outcome": "forwarded",
+      "downstreamStatus": 200,
+      "facadeStatus": 200,
+      "replayed": true,
+      "bodyFingerprint": "sha256:430e36c3548d552aa8185249ef83cb79c1fb44e5832157ec68dea177c231b710",
+      "idempotencyFingerprint": "sha256:fc366246a468d2299d96139bdb27106ef771f54da51468f709bde4e4b57b8a99"
+    }
+  ],
+  "serverFinal": {
+    "mutationReceipts": [
+      {
+        "role": "owner",
+        "entityType": "golfRound",
+        "outcome": "applied",
+        "receipts": 1,
+        "minimumSequence": 1,
+        "maximumSequence": 1
+      },
+      {
+        "role": "participant",
+        "entityType": "golfScore",
+        "outcome": "applied",
+        "receipts": 1,
+        "minimumSequence": 1,
+        "maximumSequence": 1
+      }
+    ],
+    "syncIdempotency": [
+      { "role": "owner", "records": 1, "completeRecords": 1 },
+      { "role": "participant", "records": 1, "completeRecords": 1 }
+    ],
+    "score": {
+      "rows": 1,
+      "hole": 1,
+      "strokes": 5,
+      "putts": 2,
+      "stablefordPoints": 2,
+      "minimumVersion": 1,
+      "maximumVersion": 1
+    },
+    "participantDeltaReceipts": 1,
+    "ownerFixtureBaselineUnchanged": true
+  },
+  "ownerReadback": {
+    "freshAuthentication": true,
+    "readOnlyScorecard": true,
+    "scoreRowsVisible": 1,
+    "stablefordPointsVisible": 2,
+    "synchronized": true
+  },
+  "debugRestoration": {
+    "prelaunchAppFilesExact": 51,
+    "prelaunchDataFilesExact": 30,
+    "restoredScreenshotSha256": "9e671a6d3d7854f4e313bf49d28ed2a65bde747597e88a2d4361b9db1cd01b53",
+    "baselineScreenshotSha256": "9e671a6d3d7854f4e313bf49d28ed2a65bde747597e88a2d4361b9db1cd01b53",
+    "restoredDebugPid": 53410,
+    "restoredDebugArguments": "-RCT_jsLocation localhost:8082",
+    "metro8081PidUnchanged": 45252,
+    "metro8082PidUnchanged": 70661,
+    "otherSimulatorPidUnchanged": 52658,
+    "appearanceRestored": true,
+    "contentSizeRestored": true,
+    "evidenceStateRestored": true
+  },
+  "gates": {
+    "mobileTypecheck": "pass",
+    "mobileLintWarnings": 0,
+    "mobileJestSuites": 63,
+    "mobileJestTests": 504,
+    "mobileDataTests": 951,
+    "mobileClientTests": 327,
+    "runnerExpectations": 150,
+    "runnerDatabaseIntegrationSkipExpected": 1,
+    "maestroFlowsSyntaxChecked": 12
+  }
+}

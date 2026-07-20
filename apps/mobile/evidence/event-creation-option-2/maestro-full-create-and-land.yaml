@@ -1,0 +1,43 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen
+- tapOn:
+    id: event-create-option-team-event
+- scrollUntilVisible:
+    element:
+      id: event-create-use-option
+    direction: DOWN
+- tapOn:
+    id: event-create-use-option
+- assertVisible: Event-Details
+- tapOn:
+    id: event-create-title
+- inputText: Crew-Wochenende Zürich
+- hideKeyboard
+- tapOn:
+    id: event-create-description
+- tapOn:
+    point: 50%,71%
+- inputText: Planung für unser Team.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-create-submit
+    direction: DOWN
+- tapOn:
+    id: event-create-submit
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 15000
+- assertVisible: Crew-Wochenende Zürich
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-primary-action
+- assertNotVisible:
+    id: event-create-submit

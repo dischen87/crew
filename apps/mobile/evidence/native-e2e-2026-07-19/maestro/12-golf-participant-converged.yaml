@@ -1,0 +1,23 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action
+- swipe:
+    start: 50%,35%
+    end: 50%,85%
+    duration: 1000
+- swipe:
+    start: 50%,35%
+    end: 50%,85%
+    duration: 1000
+- extendedWaitUntil:
+    visible: Alle Score-Daten synchronisiert
+    timeout: 20000
+- assertVisible: SYNCHRON
+

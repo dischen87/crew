@@ -1,0 +1,11 @@
+1e262c66927752b9e22d1660a12877fbb72b7519c5980d58a31260ce50af4239  ./README.md
+7d492d9c673b40e4021ae032d985f6b9909e20d3254a82ef7f85bd721f82678a  ./apk-signature-verification.txt
+7163b607fff6971b796515451941a4f176627899310e0bec9c03e47499f1e9de  ./sanitized-proof.json
+efbe17eef26535e25e4fdbc52881e8d3d8845ef945c899be45dfa95b58bdf40a  ./screenshots/logical/fifth-cold-launch-events-412x915.png
+fd55b8e880a3b128536fa44c596af899891eff4ab6b919d8a512a6e2f6cad0ca  ./screenshots/logical/release-crypto-proof-412x915.png
+5d2968475cc44dc6dce3d747ffb2b48c6f3e28e15ce2ff589988ff048735ce13  ./screenshots/raw/fifth-cold-launch-events-1080x2400.png
+cf5636a915160df33c2ef8cf600cd1f6b3d319ebc05c2791f401d568b5cb5b7f  ./screenshots/raw/release-crypto-proof-1080x2400.png
+c3ef1f628afc2c235441a77ded63998d3eed15dbcf0894e61a9d9688624e973f  ./semantics/fifth-cold-launch.xml
+b2dc063956a36307b4ab4875041d8a04bad9cee3dc7a497b9d8b4f521388c748  ./semantics/release-crypto-proof.xml
+ebc479131e07408c67f201f4f6324ee8b15ba35abb1052cdbf7d5e5d31529b34  ./source-manifest.sha256
+bdfd6f6501e6fc4c943bd72462b9a0ea51cf4771d36f56c0b4d7a89e6e757b50  ./visual-qa.md

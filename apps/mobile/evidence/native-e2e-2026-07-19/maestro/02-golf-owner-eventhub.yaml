@@ -1,0 +1,20 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- assertVisible: Turkey Golf Tour 2026
+- tapOn:
+    id: event-evt_local_turkey_golf_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- assertVisible: Turkey Golf Tour 2026
+- assertVisible:
+    id: event-hub-sync-button
+- assertVisible:
+    id: event-hub-tab-plan

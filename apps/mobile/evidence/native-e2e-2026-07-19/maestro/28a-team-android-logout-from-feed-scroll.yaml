@@ -1,0 +1,36 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: team-feed-view
+- scrollUntilVisible:
+    element:
+      id: team-feed-back
+    direction: DOWN
+- tapOn:
+    id: team-feed-back
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 15000
+- back
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: events-logout
+    direction: DOWN
+- tapOn:
+    id: events-logout
+- extendedWaitUntil:
+    visible: Abmelden?
+    timeout: 10000
+- tapOn: Abmelden
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 20000
+- assertVisible: Bitte anmelden
+- assertVisible:
+    id: private-access-sign-in

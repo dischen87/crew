@@ -1,0 +1,13 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: SCREENSHOT NICHT VERFÜGBAR
+    direction: DOWN
+    timeout: 30000
+- swipe:
+    start: 50%, 72%
+    end: 50%, 45%
+    duration: 450

@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- launchApp
+- assertVisible: Teams einteilen
+- tapOn: Einteilung veröffentlichen
+- assertVisible: Entscheidung
+- assertVisible: Geschlossen
+- assertVisible: Aktion erforderlich.*Auswahl lokal erhalten
+- assertVisible: Outdoor Challenge

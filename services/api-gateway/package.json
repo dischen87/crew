@@ -1,0 +1,32 @@
+{
+	"name": "@crew/api-gateway",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"lint": "biome check src/*.ts scripts",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"contract:export": "bun run client:check && bun scripts/contract.ts",
+		"contract:check": "bun run client:check && bun scripts/contract.ts --check",
+		"client:generate": "bun scripts/client.ts",
+		"client:check": "bun scripts/client.ts --check"
+	},
+	"dependencies": {
+		"@hono/zod-openapi": "^0.18.4",
+		"@scalar/hono-api-reference": "^0.10.5",
+		"ajv": "8.20.0",
+		"ajv-formats": "3.0.1",
+		"hono": "^4.7.0",
+		"jose": "^6.1.3",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.0",
+		"@types/bun": "latest",
+		"openapi-typescript": "7.13.0",
+		"typescript": "^5.7.0"
+	}
+}

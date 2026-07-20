@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: private-access-unavailable
+    timeout: 10000
+- assertVisible: Private Daten nicht verfügbar
+- assertVisible: PRIVATE DATEN GESPERRT

@@ -1,0 +1,18 @@
+appId: app.crew.next
+---
+- scrollUntilVisible:
+    element:
+      id: event-create-submit
+    direction: DOWN
+- tapOn:
+    id: event-create-submit
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 15000
+- assertVisible: Crew-Wochenende Zürich
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-primary-action
+- assertNotVisible:
+    id: event-create-submit

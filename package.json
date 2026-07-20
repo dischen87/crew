@@ -1,7 +1,10 @@
 {
   "name": "crew",
   "private": true,
-  "workspaces": ["packages/*"],
+  "op-sqlite": {
+    "sqlcipher": true
+  },
+  "workspaces": ["apps/mobile", "packages/*", "services/*"],
   "scripts": {
     "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\"",
     "dev:api": "cd packages/api && bun run dev",
@@ -9,6 +12,9 @@
     "db:setup": "cd packages/api && bun run db:setup",
     "db:seed": "cd packages/api && bun run db:seed",
     "db:seed-belek": "cd packages/api && bun run db:seed-belek",
+    "check:mobile-client": "cd packages/mobile-client && bun run generate:check && bun run lint && bun run typecheck && bun test",
+    "check:mobile-app": "cd apps/mobile && bun run lint && bun run typecheck && bun run test --runInBand",
+    "check:product-contracts": "bun scripts/check-figma-api-inventory.ts && bun test scripts/check-figma-api-inventory.test.ts",
     "staging:up": "docker compose up -d && sleep 2 && bun run db:setup && bun run db:seed && bun run dev"
   },
   "devDependencies": {

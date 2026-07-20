@@ -1,0 +1,43 @@
+{
+  "device": {
+    "android": 16,
+    "apiLevel": 36,
+    "model": "sdk_gphone64_arm64",
+    "serial": "emulator-5554"
+  },
+  "proofs": [
+    {
+      "phase": "offline-enqueue",
+      "bodySha256": "683d340816270b23a9645a2cdd3ad82e883e17a7eafc058c1e5daf6c615c4b0b",
+      "idempotencyKeySha256": "4a33aac18d714c53b47fe6498ec5687f64b1c090d94ed52568a4f5639e5448f8",
+      "releaseCryptoShape": {
+        "randomUuidAbsent": true,
+        "secureRandomPresent": true,
+        "subtleAbsent": true
+      },
+      "secureIds": true
+    },
+    {
+      "phase": "process-restart-replay",
+      "bodySha256": "683d340816270b23a9645a2cdd3ad82e883e17a7eafc058c1e5daf6c615c4b0b",
+      "idempotencyKeySha256": "4a33aac18d714c53b47fe6498ec5687f64b1c090d94ed52568a4f5639e5448f8",
+      "releaseCryptoShape": {
+        "randomUuidAbsent": true,
+        "secureRandomPresent": true,
+        "subtleAbsent": true
+      },
+      "secureIds": true
+    }
+  ],
+  "processRestart": {
+    "afterPid": 3616,
+    "beforePid": 2701,
+    "pidAbsentBetween": true,
+    "pidChanged": true
+  },
+  "bodyStableAcrossRestart": true,
+  "idempotencyStableAcrossRestart": true,
+  "rawEventIdentifiersRetained": false,
+  "rawPayloadRetained": false,
+  "rawSessionMaterialRetained": false
+}

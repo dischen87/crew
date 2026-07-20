@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: Ähnliche öffentliche Meldungen werden gesucht
+    direction: DOWN
+    timeout: 30000

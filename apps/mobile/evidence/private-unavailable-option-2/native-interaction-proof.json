@@ -1,0 +1,86 @@
+{
+  "device": {
+    "model": "iPhone 16e",
+    "os": "iOS 26.2",
+    "udid": "F3FF7E09-1860-43BA-BE9B-E897E1DE4FA3"
+  },
+  "nativeConfirmationDoubleTapCount": 2,
+  "cancelCheckpoints": [
+    {
+      "contentSize": "medium",
+      "proofCountBefore": 1,
+      "proofCountAfter": 1,
+      "screenRemainedUnavailable": true
+    },
+    {
+      "contentSize": "accessibility-large",
+      "proofCountBefore": 2,
+      "proofCountAfter": 2,
+      "screenRemainedUnavailable": true
+    }
+  ],
+  "proofs": [
+    {
+      "accountScopedClearCalls": 0,
+      "accountScopedClearGuardMatched": null,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 0,
+      "databaseKeyReads": 2,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": null,
+      "migrationCalls": 0,
+      "sessionReads": 2,
+      "sessionReplacementWasNull": null,
+      "mode": "known-private-data",
+      "phase": "retry",
+      "reason": "privateData",
+      "signedOut": false
+    },
+    {
+      "accountScopedClearCalls": 1,
+      "accountScopedClearGuardMatched": true,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 1,
+      "databaseKeyReads": 2,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": true,
+      "migrationCalls": 0,
+      "sessionReads": 3,
+      "sessionReplacementWasNull": true,
+      "mode": "known-private-data",
+      "phase": "signedOut",
+      "reason": "privateData",
+      "signedOut": true
+    },
+    {
+      "accountScopedClearCalls": 0,
+      "accountScopedClearGuardMatched": null,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 0,
+      "databaseKeyReads": 0,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": null,
+      "migrationCalls": 0,
+      "sessionReads": 1,
+      "sessionReplacementWasNull": null,
+      "mode": "unknown-secure-storage",
+      "phase": "signedOut",
+      "reason": "secureStorage",
+      "signedOut": true
+    }
+  ],
+  "rawAccountIdentifiersRetained": false,
+  "rawSessionValuesRetained": false
+}

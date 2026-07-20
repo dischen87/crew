@@ -1,0 +1,13 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: native-e2e-evidence
+- scrollUntilVisible:
+    element:
+      id: native-e2e-evidence-refresh
+    direction: DOWN
+- assertVisible: Body · SHA-256
+- assertVisible: Request-Body · SHA-256
+- assertVisible: Idempotency-Key · SHA-256
+- assertVisible:
+    id: native-e2e-evidence-refresh

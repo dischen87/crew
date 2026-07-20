@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-20",
+  "runtime": {
+    "platform": "android",
+    "apiLevel": 36,
+    "variant": "releaseEvidence",
+    "package": "app.crew.next.evidence",
+    "freshCurrentSourceBuild": true,
+    "hermesBundle": true,
+    "debuggable": false,
+    "runAsRejected": true,
+    "distributionArtifact": false,
+    "localSigningCertificate": "repository-debug-only",
+    "signatureSchemes": ["v2", "v3"],
+    "apkSha256": "cabce0c2555f611d8dd061c4413b9b16e86c8e70676e5d4a0fcd2a8b1c2b0910",
+    "embeddedBundleSha256": "86fa7a53559fe6125cbd878d72b51bf1de701e258d4352f4633c14fa0c1d8c70"
+  },
+  "cryptoShape": {
+    "randomUuidAbsent": true,
+    "secureRandomPresent": true,
+    "subtleDigestAbsent": true,
+    "secureDeviceUuidCreated": true,
+    "injectedUuidProvider": false,
+    "injectedSha256Provider": false
+  },
+  "transportHarness": {
+    "gateway": "isolated-device-loopback",
+    "requestId": "fixed-allow-listed-native-e2e",
+    "fixtureSecretLinkBootstrap": true,
+    "cleartextBaseDenied": true,
+    "cleartextAllowedHosts": ["127.0.0.1", "localhost"],
+    "shippingReleaseChanged": false,
+    "feedbackRuntimeReplaced": false,
+    "feedbackControllerReplaced": false,
+    "serviceImplementationReplaced": false
+  },
+  "lifecycle": {
+    "processDeathsBeforeReplay": 3,
+    "firstFailurePersistedBeforeDeath": true,
+    "secondFailurePersistedBeforeDeath": true,
+    "suppressedSuccessPersistedBeforeDeath": true,
+    "fifthColdLaunchWaitSeconds": 5,
+    "fifthColdLaunchTraceCount": 4
+  },
+  "trace": {
+    "count": 4,
+    "outcomes": [
+      "transport-detached",
+      "transport-detached",
+      "success-suppressed",
+      "forwarded"
+    ],
+    "facadeStatuses": [503, 503, 503, 201],
+    "downstreamStatuses": [null, null, 201, 201],
+    "replayed": [false, false, false, true],
+    "requestSha256": "2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+    "bodySha256": "54e4adc6a5bb068026c2b7c49bba5758e008b232337ab9939909cd017c877ab6",
+    "feedbackSha256": "f07c87e21369a0fe548e0fd4899c5ef276b50355d40dddeb7efe6b7a5a3d1001",
+    "idempotencySha256": "d18cb4f307eff02b15b57acf03c05013a3f359bca43e281174243906d60cf1b3"
+  },
+  "database": {
+    "feedbackRows": 1,
+    "statusHistoryRows": 1,
+    "attachmentRows": 0,
+    "diagnosticsRows": 0,
+    "complete201FeedbackIdempotencyRows": 1
+  },
+  "privacy": {
+    "rawUserOrSubmissionIdentifiersRetained": false,
+    "deterministicFixtureRouteSelectorRetained": true,
+    "rawPayloadRetained": false,
+    "tokensOrLinksRetained": false,
+    "bearersOrSessionsRetained": false,
+    "postInputScreenshotsRetained": false
+  },
+  "isolation": {
+    "disposableEmulatorSerial": "emulator-5560",
+    "originalEmulatorUntouched": true,
+    "existingMetroProcessesUnchanged": true,
+    "isolatedPostgresDatabases": true,
+    "isolatedRedisDatabase": 9,
+    "isolatedControlPort": 39117
+  },
+  "gates": {
+    "releaseEvidenceAssemble": "pass",
+    "mobileJestSuites": 63,
+    "mobileJestTests": 514,
+    "mobileDataTests": 142,
+    "mobileDataAssertions": 998,
+    "runnerTestsPassed": 14,
+    "runnerTestsSkippedWithoutDatabaseEnvironment": 1,
+    "runnerAssertions": 177,
+    "appTypecheckAndLint": "pass",
+    "mobileDataTypecheckAndLint": "pass",
+    "sourceManifest": "pass"
+  },
+  "cleanup": {
+    "evidencePackageRemoved": true,
+    "reverseMappingsRemoved": true,
+    "temporaryEmulatorStopped": true,
+    "temporaryAvdDeleted": true,
+    "runnerStopped": true,
+    "isolatedRedisStopped": true,
+    "temporaryDatabasesDropped": true,
+    "transientPayloadAndCredentialFilesRemoved": true,
+    "originalEmulatorStillRunning": true,
+    "existingMetroProcessesStillRunning": true
+  }
+}

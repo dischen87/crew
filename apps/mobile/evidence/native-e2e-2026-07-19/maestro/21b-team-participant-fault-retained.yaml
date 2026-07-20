@@ -1,0 +1,15 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: team-feed-view
+- scrollUntilVisible:
+    element:
+      id: team-feed-refresh
+    direction: DOWN
+- tapOn:
+    id: team-feed-refresh
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-queued
+    timeout: 20000
+- assertVisible: LOKAL GESPEICHERT

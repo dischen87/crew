@@ -1,0 +1,8 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- assertVisible:
+    id: event-evt_local_team_day_2026

@@ -1,0 +1,8 @@
+appId: app.crew.next
+---
+- tapOn:
+    id: ${TARGET}
+- extendedWaitUntil:
+    visible:
+      id: ${TARGET}
+    timeout: 30000

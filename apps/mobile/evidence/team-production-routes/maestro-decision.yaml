@@ -1,0 +1,7 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Teams einteilen
+- tapOn: Zurück
+- assertVisible: Entscheidung

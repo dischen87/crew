@@ -1,0 +1,9 @@
+appId: app.crew.next.recapconsent.evidence
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: 'RÜCKBLICK'
+    direction: UP
+    timeout: 20000

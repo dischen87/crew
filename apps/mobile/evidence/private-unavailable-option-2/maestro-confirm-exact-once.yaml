@@ -1,0 +1,19 @@
+appId: app.crew.next
+---
+- scrollUntilVisible:
+    element:
+      id: private-access-safe-exit
+    direction: DOWN
+- tapOn:
+    id: private-access-safe-exit
+- assertVisible: Zur Anmeldung wechseln?
+- tapOn:
+    text: Zur Anmeldung
+    repeat: 2
+    delay: 10
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 10000
+- assertVisible: Bitte anmelden
+- assertVisible: Mit E-Mail anmelden

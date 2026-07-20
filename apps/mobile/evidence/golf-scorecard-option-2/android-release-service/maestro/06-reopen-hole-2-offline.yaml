@@ -1,0 +1,30 @@
+appId: app.crew.next.evidence
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- tapOn:
+    id: event-evt_local_turkey_golf_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- tapOn:
+    id: event-hub-date-2026-10-05
+- scrollUntilVisible:
+    element: 'Golf round: Carya Golf Club'
+    direction: DOWN
+- tapOn: 'Golf round: Carya Golf Club'
+- extendedWaitUntil:
+    visible:
+      id: golf-scorecard-view
+    timeout: 20000
+- tapOn:
+    id: golf-hole-2
+- assertVisible: Loch 2 von 18
+- assertVisible: LOKAL GESPEICHERT
+- assertVisible: '5'
+- assertVisible: '2'

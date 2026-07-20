@@ -1,0 +1,22 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- tapOn:
+    id: event-evt_local_team_day_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- assertVisible: Crew Team Day 2026
+- tapOn:
+    id: event-hub-tab-feed
+- extendedWaitUntil:
+    visible:
+      id: team-feed-view
+    timeout: 20000
+- assertVisible: SYNCHRONISIERT
+- assertVisible:
+    id: team-feed-input

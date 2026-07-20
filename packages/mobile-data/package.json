@@ -1,0 +1,21 @@
+{
+	"name": "@crew/mobile-data",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": "./src/index.ts",
+	"scripts": {
+		"lint": "biome check src test",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@crew/mobile-client": "workspace:*",
+		"@crew/shared": "workspace:*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.0",
+		"@types/bun": "latest",
+		"typescript": "^5.7.0"
+	}
+}

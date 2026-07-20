@@ -1,0 +1,13 @@
+appId: app.crew.next
+---
+- tapOn: OK
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- assertVisible: Android Release Crypto Replay
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-primary-action
+- assertNotVisible:
+    id: event-create-submit

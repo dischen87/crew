@@ -1,0 +1,14 @@
+appId: app.crew.next.evidence
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: private-access-unavailable
+    timeout: 10000
+- assertVisible: GERÄTESCHUTZ NICHT ERREICHBAR
+- assertVisible: Crew kann den geschützten Gerätespeicher gerade nicht sicher lesen.
+- assertVisible:
+    id: private-access-retry
+- assertVisible:
+    id: private-access-safe-exit

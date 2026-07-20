@@ -1,0 +1,11 @@
+appId: app.crew.next
+---
+- assertVisible: "Einladung nicht verfügbar"
+- tapOn: "Erneut versuchen"
+- extendedWaitUntil:
+    visible: "Du wurdest eingeladen"
+    timeout: 10000
+- tapOn: "Einladung annehmen"
+- extendedWaitUntil:
+    visible: "Dieses Event ist für dein aktuelles Konto verfügbar."
+    timeout: 15000

@@ -1,0 +1,9 @@
+appId: app.crew.next.frozenbugs.evidence
+---
+- pressKey: HOME
+- launchApp:
+    clearState: false
+    stopApp: true
+- assertVisible:
+    id: event-hub
+- assertVisible: Turkey Golf Tour

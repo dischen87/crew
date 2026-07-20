@@ -13,6 +13,10 @@ export function buildDeepLink(inviteCode: string): string {
   return `${CREW_APP_SCHEME}://join/${inviteCode}`;
 }
 
+export function buildRecapShareUrl(token: string): string {
+  return `${CREW_WEB_URL}/recap/${encodeURIComponent(token)}`;
+}
+
 // ─── Design Tokens (shared between web + mobile) ───────────
 export const brandColors = {
   navy: "#222432",

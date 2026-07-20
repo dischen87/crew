@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- tapOn:
+    id: event-hub-primary-action
+- assertVisible: Privater Entwurf
+- assertVisible: OK
+- assertNotVisible:
+    id: event-create-submit

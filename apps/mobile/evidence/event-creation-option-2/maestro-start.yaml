@@ -1,0 +1,8 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen

@@ -1,0 +1,157 @@
+{
+  "device": {
+    "model": "sdk_gphone64_arm64",
+    "os": "Android 16",
+    "sdk": 36,
+    "serial": "emulator-5554",
+    "viewportPixels": "1080x2400",
+    "densityDpi": 420
+  },
+  "textScales": {
+    "normal": 1,
+    "accessibilityLarge": 1.3
+  },
+  "evidenceApp": {
+    "applicationId": "app.crew.next.evidence",
+    "debuggable": false,
+    "separateFromDebugPackage": true,
+    "signingBoundary": "Repository debug certificate used only for local emulator evidence; no distribution-signing claim."
+  },
+  "builds": {
+    "knownPrivateData": {
+      "selectorSha256": "3da16e236fa8119df7008018c601607c5634f5ac94e2daa561f5d2bdd6830865",
+      "harnessSha256": "cde22f259868bf3c47e51ac0bedf5d3ad5c8c4442a32714598fb86e1d3c68245",
+      "hermesBundleSha256": "ac03b96a0391efaafc321f314608cff8503015c788133fc6655bb4d89859d678",
+      "unsignedApkSha256": "66e9503a919380f727b5ce0a16d4034bf50508b459a99ac787ed998f163f68df",
+      "installedSignedApkSha256": "982a5b382d2b67697508b3ee3d254e99cc993cc17c9ee3fc912e9c1f8f57da22"
+    },
+    "unknownSecureStorage": {
+      "selectorSha256": "f44d06348380ed277947e35b8616eb5d6026402e865a63b9d52588a95669a2ec",
+      "harnessSha256": "cde22f259868bf3c47e51ac0bedf5d3ad5c8c4442a32714598fb86e1d3c68245",
+      "hermesBundleSha256": "6bada0232bb0cc3ad9bcf83ea8cfe4594456c7bf8d3209546b7db9fa29913b76",
+      "unsignedApkSha256": "95d417a0117796bbc314cdaa6bb2771c53a65b89539b363c93db7c06420b2986",
+      "installedSignedApkSha256": "0658a6f8a8e789a20f7ff0522212ed8e1d001ae8e00af2fd3406f374e4b6fde0"
+    }
+  },
+  "nativeConfirmationDoubleTapCount": {
+    "knownPrivateData": 2,
+    "unknownSecureStorage": 2
+  },
+  "cancelCheckpoints": [
+    {
+      "textScale": 1,
+      "proofCountBefore": 1,
+      "proofCountAfter": 1,
+      "screenRemainedUnavailable": true
+    },
+    {
+      "textScale": 1.3,
+      "proofCountBefore": 2,
+      "proofCountAfter": 2,
+      "screenRemainedUnavailable": true
+    }
+  ],
+  "scenarioOrder": [
+    "normal-retry",
+    "known-private-data-double-confirm",
+    "accessibility-large-retry",
+    "unknown-secure-storage-double-confirm"
+  ],
+  "proofSinkCount": 4,
+  "proofs": [
+    {
+      "accountScopedClearCalls": 0,
+      "accountScopedClearGuardMatched": null,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 0,
+      "databaseKeyReads": 2,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": null,
+      "migrationCalls": 0,
+      "sessionReads": 2,
+      "sessionReplacementWasNull": null,
+      "mode": "known-private-data",
+      "phase": "retry",
+      "reason": "privateData",
+      "signedOut": false
+    },
+    {
+      "accountScopedClearCalls": 1,
+      "accountScopedClearGuardMatched": true,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 1,
+      "databaseKeyReads": 2,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": true,
+      "migrationCalls": 0,
+      "sessionReads": 3,
+      "sessionReplacementWasNull": true,
+      "mode": "known-private-data",
+      "phase": "signedOut",
+      "reason": "privateData",
+      "signedOut": true
+    },
+    {
+      "accountScopedClearCalls": 0,
+      "accountScopedClearGuardMatched": null,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 0,
+      "databaseKeyReads": 2,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": null,
+      "migrationCalls": 0,
+      "sessionReads": 2,
+      "sessionReplacementWasNull": null,
+      "mode": "known-private-data",
+      "phase": "retry",
+      "reason": "privateData",
+      "signedOut": false
+    },
+    {
+      "accountScopedClearCalls": 0,
+      "accountScopedClearGuardMatched": null,
+      "attachmentReconciliationCalls": 0,
+      "compareAndSetCalls": 0,
+      "databaseKeyReads": 0,
+      "databaseOpenCalls": 0,
+      "deniedRootPurgeCalls": 0,
+      "feedbackFileListCalls": 0,
+      "feedbackFilePurgeCalls": 0,
+      "feedbackSubmissionPurgeCalls": 0,
+      "guardedCasMatched": null,
+      "migrationCalls": 0,
+      "sessionReads": 1,
+      "sessionReplacementWasNull": null,
+      "mode": "unknown-secure-storage",
+      "phase": "signedOut",
+      "reason": "secureStorage",
+      "signedOut": true
+    }
+  ],
+  "boundary": {
+    "syntheticFailureOccursBeforeRealStorage": true,
+    "realSessionStoreCalled": false,
+    "realKeychainCalled": false,
+    "realDatabaseCalled": false,
+    "realGatewayCalled": false,
+    "rawAccountIdentifiersRetained": false,
+    "rawSessionValuesRetained": false
+  },
+  "accessibility": {
+    "readOnlyNativeSemanticsCaptured": true,
+    "talkBackRuntimeEnabled": false,
+    "talkBackSpokenOutputClaimed": false
+  }
+}

@@ -1,0 +1,14 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- scrollUntilVisible:
+    element:
+      text: 'Marco hat den Transfer aktualisiert, vor 28 Min.'
+    direction: DOWN
+    timeout: 30000
+- swipe:
+    start: 50%, 70%
+    end: 50%, 55%
+    duration: 500
+- assertVisible: 'Marco hat den Transfer aktualisiert, vor 28 Min.'

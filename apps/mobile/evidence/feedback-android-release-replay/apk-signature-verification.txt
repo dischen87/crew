@@ -1,0 +1,8 @@
+Artifact: locally signed releaseEvidence APK (not retained)
+SHA-256: cabce0c2555f611d8dd061c4413b9b16e86c8e70676e5d4a0fcd2a8b1c2b0910
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false

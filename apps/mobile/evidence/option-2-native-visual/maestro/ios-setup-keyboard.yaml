@@ -1,0 +1,11 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- tapOn:
+    id: event-setup-place-query
+- extendedWaitUntil:
+    visible:
+      id: crew-evidence-capture-complete
+    timeout: 30000
+

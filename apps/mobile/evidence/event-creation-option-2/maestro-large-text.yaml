@@ -1,0 +1,21 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen
+- scrollUntilVisible:
+    element:
+      id: event-create-option-team-event
+    direction: DOWN
+- tapOn:
+    id: event-create-option-team-event
+- scrollUntilVisible:
+    element:
+      id: event-create-use-option
+    direction: DOWN
+- assertVisible:
+    id: event-create-use-option
+- assertVisible: Dieses Setup verwenden

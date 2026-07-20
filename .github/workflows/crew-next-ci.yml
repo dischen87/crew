@@ -1,0 +1,253 @@
+name: Crew Next CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crew-next-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crew-next:
+    name: Crew Next quality and contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_USER: crew_ci
+          POSTGRES_PASSWORD: crew_ci_password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U crew_ci -d postgres"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: crew_ci
+      PGPASSWORD: crew_ci_password
+      USER_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_user_ci
+      EVENT_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_event_ci
+      EVENT_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_event_ci
+      # Suite aliases remain inside the same fresh Event-owned database.
+      EVENT_ROOT_LIST_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_event_ci
+      EVENT_INVITATION_LIST_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_event_ci
+      PLACE_CANDIDATE_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_place_ci
+      # Place-only suites share one fresh Event-owned catalog database.
+      PLACE_ENRICHMENT_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_place_ci
+      PLACE_ENRICHMENT_API_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_place_ci
+      GOLF_DISCOVERY_TEST_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_place_ci
+      SECURITY_USER_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_security_user_ci
+      SECURITY_EVENT_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_next_security_event_ci
+      EVENT_USER_COMPOSITION_USER_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_event_user_composition_user_test
+      EVENT_USER_COMPOSITION_EVENT_DATABASE_URL: postgres://crew_ci:crew_ci_password@127.0.0.1:5432/crew_event_user_composition_event_test
+      GATEWAY_RATE_LIMIT_TEST_REDIS_URL: redis://127.0.0.1:6379/14
+      USER_RATE_LIMIT_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      REDIS_RATE_LIMIT_BOUNDARY_TEST_ADMIN_URL: redis://127.0.0.1:6379/13
+      REDIS_AOF_TEST_URL: redis://127.0.0.1:6379/12
+      REDIS_TEST_IMAGE: redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+      MINIO_TEST_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+      MINIO_MC_TEST_IMAGE: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+      MINIO_TEST_ROOT_USER: crew_ci_minio_root
+      MINIO_TEST_ROOT_PASSWORD: crew_ci_minio_root_password_2026
+      MINIO_PROVIDER_TEST_ENDPOINT: http://127.0.0.1:9000
+      MINIO_PROVIDER_TEST_BUCKET: crew-event-development
+      MINIO_PROVIDER_TEST_ACCESS_KEY_ID: crew_ci_minio_api
+      MINIO_PROVIDER_TEST_SECRET_ACCESS_KEY: crew_ci_minio_api_secret_2026
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Bun 1.3.9
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.3.9"
+
+      - name: Start Redis rate-limit test store
+        run: |
+          set -euo pipefail
+          docker run --detach --name crew-rate-limit-test --publish 127.0.0.1:6379:6379 "$REDIS_TEST_IMAGE" redis-server --save "" --appendonly yes --appendfsync always --maxmemory-policy noeviction
+          for attempt in $(seq 1 50); do
+            if docker exec crew-rate-limit-test redis-cli ping | grep -qx PONG; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              docker logs crew-rate-limit-test
+              exit 1
+            fi
+            sleep 0.2
+          done
+
+      - name: Start pinned MinIO test store
+        run: |
+          set -euo pipefail
+          docker run --detach --name crew-minio-test --publish 127.0.0.1:9000:9000 --env MINIO_ROOT_USER="$MINIO_TEST_ROOT_USER" --env MINIO_ROOT_PASSWORD="$MINIO_TEST_ROOT_PASSWORD" --env MINIO_PROMETHEUS_AUTH_TYPE=jwt "$MINIO_TEST_IMAGE" server /data --address :9000 --console-address :9001
+          for attempt in $(seq 1 50); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              docker logs crew-minio-test
+              exit 1
+            fi
+            sleep 0.2
+          done
+
+      - name: Install frozen workspace
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+
+      - name: Validate Crew Next CI structure and migration prefixes
+        run: |
+          set -euo pipefail
+          bunx biome check .github/ci
+          bun test ./.github/ci
+
+      - name: Prove MinIO attachment ingress policy
+        run: |
+          set -euo pipefail
+          bunx biome check infra/minio-config.test.ts infra/minio-provider.integration.test.ts infra/minio
+          sh -n infra/minio/bootstrap.sh
+          docker run --rm --network container:crew-minio-test --volume "$PWD/infra/minio:/infra/minio:ro" --env MC_CONFIG_DIR=/tmp/mc --env MINIO_ENDPOINT=http://127.0.0.1:9000 --env MINIO_CONFIG_DIR=/infra/minio --env MINIO_ROOT_USER="$MINIO_TEST_ROOT_USER" --env MINIO_ROOT_PASSWORD="$MINIO_TEST_ROOT_PASSWORD" --env MINIO_API_ACCESS_KEY="$MINIO_PROVIDER_TEST_ACCESS_KEY_ID" --env MINIO_API_SECRET_KEY="$MINIO_PROVIDER_TEST_SECRET_ACCESS_KEY" --env MINIO_WORKER_ACCESS_KEY=crew_ci_minio_worker --env MINIO_WORKER_SECRET_KEY=crew_ci_minio_worker_secret_2026 --env MINIO_BUCKET_QUOTA=256MiB --entrypoint /bin/sh "$MINIO_MC_TEST_IMAGE" /infra/minio/bootstrap.sh
+          docker run --rm --network container:crew-minio-test --env MC_CONFIG_DIR=/tmp/mc --env MINIO_ENDPOINT=http://127.0.0.1:9000 --env MINIO_ROOT_USER="$MINIO_TEST_ROOT_USER" --env MINIO_ROOT_PASSWORD="$MINIO_TEST_ROOT_PASSWORD" --entrypoint /bin/sh "$MINIO_MC_TEST_IMAGE" -c 'set -eu; mc alias set local "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null; mc ilm rule ls --json local/crew-event-development | grep -q crew-quarantine-expiry-v1; mc quota info --json local/crew-event-development | grep -q 268435456'
+          metrics_token="$(docker run --rm --network container:crew-minio-test --env MC_CONFIG_DIR=/tmp/mc --env MINIO_ENDPOINT=http://127.0.0.1:9000 --env MINIO_ROOT_USER="$MINIO_TEST_ROOT_USER" --env MINIO_ROOT_PASSWORD="$MINIO_TEST_ROOT_PASSWORD" --entrypoint /bin/sh "$MINIO_MC_TEST_IMAGE" -c 'mc alias set local "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null; mc admin prometheus generate local api --bucket crew-event-development --api-version v3' | sed -n 's/^[[:space:]]*bearer_token: //p')"
+          test -n "$metrics_token"
+          MINIO_PROVIDER_TEST_METRICS_TOKEN="$metrics_token" bun test ./infra/minio-config.test.ts ./infra/minio-provider.integration.test.ts
+
+      - name: Create fresh Crew Next PostgreSQL databases
+        run: |
+          set -euo pipefail
+          createdb --maintenance-db=postgres crew_next_user_ci
+          createdb --maintenance-db=postgres crew_next_event_ci
+          createdb --maintenance-db=postgres crew_next_place_ci
+          createdb --maintenance-db=postgres crew_next_security_user_ci
+          createdb --maintenance-db=postgres crew_next_security_event_ci
+          createdb --maintenance-db=postgres crew_event_user_composition_user_test
+          createdb --maintenance-db=postgres crew_event_user_composition_event_test
+
+      - name: Verify database identities before migrations
+        run: |
+          set -euo pipefail
+          test "$(psql "$USER_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_user_ci
+          test "$(psql "$EVENT_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_event_ci
+          test "$(psql "$EVENT_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_event_ci
+          test "$(psql "$EVENT_ROOT_LIST_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_event_ci
+          test "$(psql "$EVENT_INVITATION_LIST_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_event_ci
+          test "$(psql "$PLACE_CANDIDATE_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_place_ci
+          test "$(psql "$PLACE_ENRICHMENT_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_place_ci
+          test "$(psql "$PLACE_ENRICHMENT_API_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_place_ci
+          test "$(psql "$GOLF_DISCOVERY_TEST_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_place_ci
+          test "$(psql "$SECURITY_USER_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_security_user_ci
+          test "$(psql "$SECURITY_EVENT_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_next_security_event_ci
+          test "$(psql "$EVENT_USER_COMPOSITION_USER_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_event_user_composition_user_test
+          test "$(psql "$EVENT_USER_COMPOSITION_EVENT_DATABASE_URL" -Atqc 'SELECT current_database()')" = crew_event_user_composition_event_test
+
+      - name: Migrate User service database
+        working-directory: services/user-service
+        run: |
+          set -euo pipefail
+          bun run db:migrate
+
+      - name: Migrate Event service database
+        working-directory: services/event-service
+        run: |
+          set -euo pipefail
+          bun run db:migrate
+
+      - name: Check User service
+        working-directory: services/user-service
+        run: |
+          set -euo pipefail
+          bun run lint
+          bun run typecheck
+          bun run contract:check
+          bun test
+
+      - name: Check Event service
+        working-directory: services/event-service
+        run: |
+          set -euo pipefail
+          bun run lint
+          bun run typecheck
+          bun run contract:check
+          bun test
+
+      - name: Check API gateway and aggregate contract
+        working-directory: services/api-gateway
+        run: |
+          set -euo pipefail
+          bun run lint
+          bun run typecheck
+          bun run client:check
+          bun run contract:check
+          bun test
+
+      - name: Check Redis rate-limit ownership boundary
+        run: |
+          set -euo pipefail
+          bunx biome check infra/redis-config.test.ts infra/redis-boundary.integration.test.ts infra/redis-aof-restart.integration.test.ts
+          bun test ./infra/redis-config.test.ts ./infra/redis-boundary.integration.test.ts
+
+      - name: Prove Redis AOF restart continuity
+        run: |
+          set -euo pipefail
+          REDIS_AOF_TEST_PHASE=seed bun test ./infra/redis-aof-restart.integration.test.ts
+          docker restart crew-rate-limit-test
+          for attempt in $(seq 1 50); do
+            if docker exec crew-rate-limit-test redis-cli ping | grep -qx PONG; then
+              break
+            fi
+            if [ "$attempt" -eq 50 ]; then
+              docker logs crew-rate-limit-test
+              exit 1
+            fi
+            sleep 0.2
+          done
+          REDIS_AOF_TEST_PHASE=verify bun test ./infra/redis-aof-restart.integration.test.ts
+
+      - name: Check product contract inventory
+        run: |
+          set -euo pipefail
+          bun run check:product-contracts
+
+      - name: Check mobile data
+        working-directory: packages/mobile-data
+        run: |
+          set -euo pipefail
+          bun run lint
+          bun run typecheck
+          bun test
+
+      - name: Check mobile client
+        working-directory: packages/mobile-client
+        run: |
+          set -euo pipefail
+          bun run generate:check
+          bun run lint
+          bun run typecheck
+          bun test
+
+      - name: Check React Native app
+        run: |
+          set -euo pipefail
+          bun run check:mobile-app
+
+      - name: Build Crew Next service images
+        run: |
+          set -euo pipefail
+          docker build --file services/api-gateway/Dockerfile --tag crew-next-api-gateway:${{ github.sha }} .
+          docker build --file services/user-service/Dockerfile --tag crew-next-user-service:${{ github.sha }} .
+          docker build --file services/event-service/Dockerfile --tag crew-next-event-service:${{ github.sha }} .
+          docker build --file infra/redis/Dockerfile --tag crew-next-rate-limit-redis:${{ github.sha }} .

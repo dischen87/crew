@@ -1,0 +1,16 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- extendedWaitUntil:
+    visible: Setups gerade nicht verfügbar
+    timeout: 10000
+- assertVisible:
+    id: event-create-option-blank
+- assertNotVisible:
+    id: event-create-option-team-event
+- assertVisible:
+    id: event-create-retry-templates

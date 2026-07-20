@@ -132,7 +132,7 @@ import {
   getCachedHoles,
   getCachedRound,
 } from "./offlineDb";
-import { computeScoreLocally } from "./stableford";
+import { computeScoreLocally } from "@crew/shared/stableford";
 import { requestSync } from "./syncEngine";
 
 // Golf

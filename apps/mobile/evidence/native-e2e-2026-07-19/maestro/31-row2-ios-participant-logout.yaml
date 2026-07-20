@@ -1,0 +1,40 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: native-e2e-evidence
+- tapOn:
+    id: native-e2e-evidence-back
+- extendedWaitUntil:
+    visible:
+      id: golf-scorecard-view
+    timeout: 15000
+- tapOn: Zurück zum Event
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 15000
+- swipe:
+    start: 2%, 50%
+    end: 82%, 50%
+    duration: 650
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: events-logout
+    direction: DOWN
+- tapOn:
+    id: events-logout
+- extendedWaitUntil:
+    visible: Abmelden?
+    timeout: 10000
+- tapOn: Abmelden
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 20000
+- assertVisible: Bitte anmelden
+- assertVisible:
+    id: private-access-sign-in

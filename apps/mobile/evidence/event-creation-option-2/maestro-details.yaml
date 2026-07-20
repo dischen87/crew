@@ -1,0 +1,36 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen
+- tapOn:
+    id: event-create-option-team-event
+- scrollUntilVisible:
+    element:
+      id: event-create-use-option
+    direction: DOWN
+- tapOn:
+    id: event-create-use-option
+- assertVisible: Event-Details
+- tapOn:
+    id: event-create-title
+- inputText: Crew-Wochenende Zürich
+- hideKeyboard
+- tapOn:
+    id: event-create-description
+- tapOn:
+    point: 50%,71%
+- inputText: Planung für unser Team.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-create-submit
+    direction: DOWN
+- assertVisible: Details speichern
+- swipe:
+    start: 50%,55%
+    end: 50%,47%
+    duration: 300

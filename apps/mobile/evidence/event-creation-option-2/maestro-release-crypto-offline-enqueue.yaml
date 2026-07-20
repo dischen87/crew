@@ -1,0 +1,34 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- assertVisible: Events
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen
+- tapOn:
+    id: event-create-option-golf-tour
+- scrollUntilVisible:
+    element:
+      id: event-create-use-option
+    direction: DOWN
+- tapOn:
+    id: event-create-use-option
+- assertVisible: Event-Details
+- tapOn:
+    id: event-create-title
+- inputText: Release Crypto Replay
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-create-submit
+    direction: DOWN
+- tapOn:
+    id: event-create-submit
+- extendedWaitUntil:
+    visible:
+      id: event-create-retry
+    timeout: 15000
+- assertVisible: Entwurf gespeichert
+- assertVisible: Release Crypto Replay
+- assertVisible: Entwurf lokal gespeichert. Wartet auf Verbindung.

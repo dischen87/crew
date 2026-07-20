@@ -1,0 +1,22 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: team-feed-view
+- assertVisible: 'iOS participant reconnect check: orientation B is ready.'
+- tapOn: Crew Team Day 2026
+- scrollUntilVisible:
+    element:
+      id: team-feed-submit
+    direction: DOWN
+- tapOn:
+    id: team-feed-submit
+- scrollUntilVisible:
+    element:
+      id: team-feed-entry-queued
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-queued
+    timeout: 15000
+- assertVisible: LOKAL GESPEICHERT
+- assertVisible: 'iOS participant reconnect check: orientation B is ready.'

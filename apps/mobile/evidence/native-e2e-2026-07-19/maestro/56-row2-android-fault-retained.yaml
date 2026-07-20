@@ -1,0 +1,14 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action
+- extendedWaitUntil:
+    visible: Offline gespeichert · nächster Versuch folgt
+    timeout: 20000
+- assertVisible: LOKAL GESPEICHERT

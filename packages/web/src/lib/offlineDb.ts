@@ -2,7 +2,7 @@
  * Vanilla IndexedDB module for offline score storage and data caching.
  * DB: "crew_offline", stores: pendingScores, courseHoleCache, roundCache
  *
- * IMPORTANT: Keep stableford logic in sync with packages/api/src/routes/golf.ts
+ * Stableford scoring lives in @crew/shared/stableford.
  */
 
 const DB_NAME = "crew_offline";

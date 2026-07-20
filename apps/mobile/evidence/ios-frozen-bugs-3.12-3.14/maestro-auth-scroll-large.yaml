@@ -1,0 +1,11 @@
+appId: app.crew.next.frozenbugs.evidence
+---
+- assertVisible:
+    id: unavailable-view
+- scrollUntilVisible:
+    element:
+      id: unavailable-events
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: unavailable-events

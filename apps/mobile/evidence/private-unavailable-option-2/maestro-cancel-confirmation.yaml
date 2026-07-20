@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- assertVisible: Zur Anmeldung wechseln?
+- tapOn: Abbrechen
+- extendedWaitUntil:
+    visible:
+      id: private-access-unavailable
+    timeout: 5000
+- assertVisible:
+    id: private-access-retry
+- assertVisible:
+    id: private-access-safe-exit

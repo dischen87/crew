@@ -1,0 +1,32 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible: Events
+    timeout: 15000
+- tapOn:
+    id: events-create
+- assertVisible: Start wählen
+- tapOn:
+    id: event-create-option-golf-tour
+- scrollUntilVisible:
+    element:
+      id: event-create-use-option
+    direction: DOWN
+- tapOn:
+    id: event-create-use-option
+- assertVisible: Event-Details
+- tapOn:
+    id: event-create-title
+- inputText: Android Release Crypto Replay
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-create-submit
+    direction: DOWN
+- tapOn:
+    id: event-create-submit
+- extendedWaitUntil:
+    visible: Sanitized Release crypto proof
+    timeout: 15000
+- assertVisible:
+    id: android:id/message

@@ -1,0 +1,9 @@
+appId: app.crew.next.frozenbugs.evidence
+---
+- pressKey: HOME
+- launchApp:
+    clearState: false
+    stopApp: true
+- assertVisible:
+    id: recap-view
+- assertVisible: Eure Momente

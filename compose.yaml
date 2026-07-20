@@ -1,0 +1,539 @@
+name: crew-new
+
+x-bun-runtime: &bun-runtime
+  image: crew-local-platform:bun-1.3.9
+  build:
+    context: .
+    dockerfile: infra/Dockerfile
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-user-payload-env: &user-payload-env
+  DELIVERY_PAYLOAD_CURRENT_KEY_ID: local-delivery-v1
+  DELIVERY_PAYLOAD_CURRENT_KEY: ${DELIVERY_PAYLOAD_CURRENT_KEY:-eKOfuEuHFGQeOZltcgU4hlzp3jYpRNrp3xvjzwjJkSE}
+  PUSH_PAYLOAD_CURRENT_KEY_ID: local-push-v1
+  PUSH_PAYLOAD_CURRENT_KEY: ${PUSH_PAYLOAD_CURRENT_KEY:-TxsYmFtlYMVPT1UZKmSGicjfoc8lhZ0kGQ3FgIZavhs}
+
+x-event-notification-env: &event-notification-env
+  EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY_ID: local-notification-v1
+  EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY: ${EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY:-AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE}
+
+x-event-service-auth-env: &event-service-auth-env
+  EVENT_NOTIFICATION_SERVICE_ISSUER: crew-event-service
+  EVENT_NOTIFICATION_SERVICE_AUDIENCE: crew-user-service
+  EVENT_NOTIFICATION_SERVICE_CURRENT_KEY_ID: local-event-service-v1
+  EVENT_NOTIFICATION_SERVICE_CURRENT_KEY: ${EVENT_NOTIFICATION_SERVICE_CURRENT_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+
+x-member-directory-service-auth-env: &member-directory-service-auth-env
+  MEMBER_DIRECTORY_SERVICE_ISSUER: crew-api-gateway
+  MEMBER_DIRECTORY_SERVICE_AUDIENCE: crew-user-service
+  MEMBER_DIRECTORY_SERVICE_CURRENT_KEY_ID: local-gateway-v1
+  MEMBER_DIRECTORY_SERVICE_CURRENT_KEY: ${MEMBER_DIRECTORY_SERVICE_CURRENT_KEY:-AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI}
+
+services:
+  postgres:
+    image: postgres:17.10-bookworm@sha256:4f736ae292687621d4dbe0d499ffd024a36bd2ee7d8ca6f2ccd4c800f047b394
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: crew_local_admin
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-crew-local-postgres-admin-change-2026}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=trust --data-checksums
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      USER_DB_OWNER_PASSWORD: ${USER_DB_OWNER_PASSWORD:-crew-local-user-owner-change-2026}
+      USER_DB_API_PASSWORD: ${USER_DB_API_PASSWORD:-crew-local-user-api-change-2026}
+      USER_DB_MAGIC_WORKER_PASSWORD: ${USER_DB_MAGIC_WORKER_PASSWORD:-crew-local-user-magic-change-2026}
+      USER_DB_PUSH_WORKER_PASSWORD: ${USER_DB_PUSH_WORKER_PASSWORD:-crew-local-user-push-change-2026}
+      EVENT_DB_OWNER_PASSWORD: ${EVENT_DB_OWNER_PASSWORD:-crew-local-event-owner-change-2026}
+      EVENT_DB_API_PASSWORD: ${EVENT_DB_API_PASSWORD:-crew-local-event-api-change-2026}
+      EVENT_DB_ATTACHMENT_WORKER_PASSWORD: ${EVENT_DB_ATTACHMENT_WORKER_PASSWORD:-crew-local-event-attachment-change-2026}
+      EVENT_DB_NOTIFICATION_WORKER_PASSWORD: ${EVENT_DB_NOTIFICATION_WORKER_PASSWORD:-crew-local-event-notification-change-2026}
+      EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD: ${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:-crew-local-event-recap-retention-change-2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-crew-databases.sh:ro
+    ports:
+      - 127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U crew_local_admin -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  redis-rate-limit:
+    image: crew-local-rate-limit-redis:8.8.0
+    build:
+      context: .
+      dockerfile: infra/redis/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      REDIS_GATEWAY_PASSWORD: ${REDIS_GATEWAY_PASSWORD:-crew_local_gateway_redis_change_2026}
+      REDIS_USER_PASSWORD: ${REDIS_USER_PASSWORD:-crew_local_user_redis_change_2026}
+    volumes:
+      - redis_rate_limit_data:/data
+    ports:
+      - 127.0.0.1:${REDIS_HOST_PORT:-6380}:6379
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REDISCLI_AUTH="$${REDIS_GATEWAY_PASSWORD}"
+          redis-cli --user crew_gateway --no-auth-warning ping | grep -qx PONG
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  jwt-bootstrap:
+    <<: *bun-runtime
+    restart: "no"
+    user: "0:0"
+    cap_add:
+      - CHOWN
+    command: [bun, infra/generate-user-jwt.ts, /run/crew-jwt]
+    volumes:
+      - user_jwt_keys:/run/crew-jwt
+
+  user-migrate:
+    <<: *bun-runtime
+    restart: "no"
+    command: [bun, services/user-service/scripts/migrate.ts]
+    environment:
+      USER_DATABASE_URL: postgres://crew_user_owner:${USER_DB_OWNER_PASSWORD:-crew-local-user-owner-change-2026}@postgres:5432/crew_user
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  event-migrate:
+    <<: *bun-runtime
+    restart: "no"
+    command: [bun, services/event-service/scripts/migrate.ts]
+    environment:
+      EVENT_DATABASE_URL: postgres://crew_event_owner:${EVENT_DB_OWNER_PASSWORD:-crew-local-event-owner-change-2026}@postgres:5432/crew_event
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  db-grants:
+    image: postgres:17.10-bookworm@sha256:4f736ae292687621d4dbe0d499ffd024a36bd2ee7d8ca6f2ccd4c800f047b394
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    entrypoint: [/bin/bash, /infra/postgres/grant-runtime.sh]
+    environment:
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-crew-local-postgres-admin-change-2026}
+    volumes:
+      - ./infra/postgres:/infra/postgres:ro
+    depends_on:
+      user-migrate:
+        condition: service_completed_successfully
+      event-migrate:
+        condition: service_completed_successfully
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    restart: unless-stopped
+    command: [server, /data, --console-address, ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-crewlocaladmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-crew-local-minio-admin-change-2026}
+      MINIO_PROMETHEUS_AUTH_TYPE: jwt
+    volumes:
+      - minio_data:/data
+    ports:
+      - 127.0.0.1:${MINIO_HOST_PORT:-9000}:9000
+      - 127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001
+    networks:
+      default:
+        aliases:
+          - crew-minio.localhost
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  minio-bootstrap:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    entrypoint: [/bin/sh, /infra/minio/bootstrap.sh]
+    environment:
+      MC_CONFIG_DIR: /tmp/mc
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-crewlocaladmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-crew-local-minio-admin-change-2026}
+      MINIO_API_ACCESS_KEY: ${MINIO_API_ACCESS_KEY:-crewlocalapi}
+      MINIO_API_SECRET_KEY: ${MINIO_API_SECRET_KEY:-crew-local-minio-api-change-2026}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:-crewlocalattachment}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:-crew-local-minio-worker-change-2026}
+      MINIO_BUCKET_QUOTA: 256MiB
+    volumes:
+      - ./infra/minio:/infra/minio:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  typesense:
+    image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
+    restart: unless-stopped
+    command:
+      - --data-dir=/data
+      - --api-key=${TYPESENSE_API_KEY:-crew-local-typesense-key-change-2026}
+    volumes:
+      - typesense_data:/data
+    ports:
+      - 127.0.0.1:${TYPESENSE_HOST_PORT:-8108}:8108
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8108;
+          printf 'GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3;
+          grep -q '"ok":true' <&3
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  provider-sink:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, infra/provider-sink.ts]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3010"
+      PROVIDER_SINK_BEARER: ${PROVIDER_SINK_BEARER:-crew-local-provider-bearer-change-2026}
+      PROVIDER_SINK_FIXTURE_BEARER: ${PROVIDER_SINK_FIXTURE_BEARER:-crew-local-fixture-bearer-change-2026}
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://127.0.0.1:3010/internal/ready');if(!r.ok)process.exit(1)
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  user-api:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/user-service/src/index.ts]
+    environment:
+      <<: [*user-payload-env, *event-service-auth-env, *member-directory-service-auth-env]
+      MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY_ID: ${MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY_ID:-}
+      MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY: ${MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY:-}
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: "3001"
+      DATABASE_URL: postgres://crew_user_api:${USER_DB_API_PASSWORD:-crew-local-user-api-change-2026}@postgres:5432/crew_user
+      JWT_ISSUER: crew-user-service
+      JWT_AUDIENCE: crew-mobile
+      JWT_KEY_ID: local-user-jwt-v1
+      JWT_PRIVATE_KEY_PATH: /run/crew-jwt/user-jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /run/crew-jwt/user-jwt-public.pem
+      JWT_PREVIOUS_KEY_ID: ${JWT_PREVIOUS_KEY_ID:-}
+      JWT_PREVIOUS_PUBLIC_KEY_PATH: ${JWT_PREVIOUS_PUBLIC_KEY_PATH:-}
+      REFRESH_TOKEN_KEY: ${REFRESH_TOKEN_KEY:-crew-local-refresh-token-key-change-2026}
+      RATE_LIMIT_REDIS_URL: redis://crew_user:${REDIS_USER_PASSWORD:-crew_local_user_redis_change_2026}@redis-rate-limit:6379/0
+      RATE_LIMIT_KEY: ${USER_RATE_LIMIT_KEY:-DAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
+      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew.app/auth/redeem}
+    volumes:
+      - user_jwt_keys:/run/crew-jwt:ro
+    ports:
+      - 127.0.0.1:${USER_API_HOST_PORT:-3001}:3001
+    depends_on:
+      jwt-bootstrap:
+        condition: service_completed_successfully
+      db-grants:
+        condition: service_completed_successfully
+      redis-rate-limit:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://127.0.0.1:3001/internal/ready');if(!r.ok)process.exit(1)
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  event-api:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/event-service/src/index.ts]
+    environment:
+      <<: *event-notification-env
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: "3002"
+      EVENT_DATABASE_URL: postgres://crew_event_api:${EVENT_DB_API_PASSWORD:-crew-local-event-api-change-2026}@postgres:5432/crew_event
+      INVITATION_TOKEN_KEY: ${INVITATION_TOKEN_KEY:-crew-local-invitation-token-key-change-2026}
+      RECAP_SHARE_TOKEN_CURRENT_KEY_ID: ${RECAP_SHARE_TOKEN_CURRENT_KEY_ID:-local-recap-share-v1}
+      RECAP_SHARE_TOKEN_CURRENT_KEY: ${RECAP_SHARE_TOKEN_CURRENT_KEY:-crew-local-recap-share-token-key-change-2026}
+      SYNC_CURSOR_KEY: ${SYNC_CURSOR_KEY:-crew-local-sync-cursor-key-change-2026}
+      USER_SERVICE_JWKS_URL: http://user-api:3001/.well-known/jwks.json
+      USER_TOKEN_ISSUER: crew-user-service
+      USER_TOKEN_AUDIENCE: crew-mobile
+      ATTACHMENT_GRANT_KEY: ${ATTACHMENT_GRANT_KEY:-crew-local-attachment-grant-key-change-2026}
+      ATTACHMENT_GRANT_KID: local-attachment-grant-v1
+      EVENT_OBJECT_STORE_ENDPOINT: http://crew-minio.localhost:9000
+      EVENT_OBJECT_STORE_REGION: us-east-1
+      EVENT_OBJECT_STORE_BUCKET: crew-event-development
+      EVENT_OBJECT_STORE_ACCESS_KEY_ID: ${MINIO_API_ACCESS_KEY:-crewlocalapi}
+      EVENT_OBJECT_STORE_SECRET_ACCESS_KEY: ${MINIO_API_SECRET_KEY:-crew-local-minio-api-change-2026}
+      PLACE_CANDIDATE_SERVICE_ISSUER: crew-place-catalog
+      PLACE_CANDIDATE_SERVICE_AUDIENCE: crew-event-service
+      PLACE_CANDIDATE_SERVICE_CURRENT_KEY_ID: local-place-catalog-v1
+      PLACE_CANDIDATE_SERVICE_CURRENT_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:-CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
+      PLACE_SEARCH_CURSOR_KEY: ${PLACE_SEARCH_CURSOR_KEY:-crew-local-place-search-cursor-key-change-2026}
+      PLACE_SEARCH_TYPESENSE_URL: http://typesense:8108
+      PLACE_SEARCH_TYPESENSE_SEARCH_API_KEY: ${TYPESENSE_SEARCH_API_KEY:-crew-local-typesense-key-change-2026}
+      PLACE_SEARCH_TYPESENSE_ALIAS: crew_places
+      # The API snapshots bounded policy only; provider credentials stay in the worker.
+      EVENT_ENRICHMENT_LLM_MODEL: ${EVENT_ENRICHMENT_LLM_MODEL:-local-fixture-model}
+    ports:
+      - 127.0.0.1:${EVENT_API_HOST_PORT:-3002}:3002
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+      minio-bootstrap:
+        condition: service_completed_successfully
+      user-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://127.0.0.1:3002/internal/ready');if(!r.ok)process.exit(1)
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  place-golf-import:
+    <<: *bun-runtime
+    profiles: [tools]
+    restart: "no"
+    command: [bun, services/event-service/scripts/import-golf-candidates.ts]
+    environment:
+      NODE_ENV: development
+      PLACE_GOLF_IMPORT_EVENT_SERVICE_URL: http://event-api:3002
+      PLACE_GOLF_IMPORT_OVERPASS_URL: https://overpass-api.de/api/interpreter
+      PLACE_GOLF_IMPORT_BOUNDS: ${PLACE_GOLF_IMPORT_BOUNDS:-36.78,30.90,36.95,31.30}
+      PLACE_GOLF_IMPORT_COUNTRY_CODE: ${PLACE_GOLF_IMPORT_COUNTRY_CODE:-TR}
+      PLACE_GOLF_IMPORT_LOCALITY: ${PLACE_GOLF_IMPORT_LOCALITY:-Belek}
+      PLACE_GOLF_IMPORT_REGION: ${PLACE_GOLF_IMPORT_REGION:-Antalya}
+      PLACE_GOLF_IMPORT_SERVICE_ISSUER: crew-place-catalog
+      PLACE_GOLF_IMPORT_SERVICE_AUDIENCE: crew-event-service
+      PLACE_GOLF_IMPORT_SERVICE_KEY_ID: local-place-catalog-v1
+      PLACE_GOLF_IMPORT_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:-CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
+    depends_on:
+      event-api:
+        condition: service_healthy
+
+  place-search-reindex:
+    <<: *bun-runtime
+    profiles: [tools]
+    restart: "no"
+    command: [bun, services/event-service/scripts/reindex-places.ts]
+    environment:
+      NODE_ENV: development
+      PLACE_SEARCH_REINDEX_EVENT_SERVICE_URL: http://event-api:3002
+      PLACE_SEARCH_REINDEX_TYPESENSE_URL: http://typesense:8108
+      PLACE_SEARCH_REINDEX_TYPESENSE_ADMIN_API_KEY: ${TYPESENSE_API_KEY:-crew-local-typesense-key-change-2026}
+      PLACE_SEARCH_REINDEX_ALIAS: crew_places
+      PLACE_SEARCH_REINDEX_SERVICE_ISSUER: crew-place-catalog
+      PLACE_SEARCH_REINDEX_SERVICE_AUDIENCE: crew-event-service
+      PLACE_SEARCH_REINDEX_SERVICE_KEY_ID: local-place-catalog-v1
+      PLACE_SEARCH_REINDEX_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:-CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
+    depends_on:
+      event-api:
+        condition: service_healthy
+      typesense:
+        condition: service_healthy
+
+  magic-worker:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/user-service/src/worker.ts]
+    environment:
+      <<: *user-payload-env
+      NODE_ENV: development
+      DATABASE_URL: postgres://crew_user_magic_worker:${USER_DB_MAGIC_WORKER_PASSWORD:-crew-local-user-magic-change-2026}@postgres:5432/crew_user
+      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew.app/auth/redeem}
+      MAGIC_LINK_DELIVERY_URL: http://provider-sink:3010/magic-links
+      MAGIC_LINK_DELIVERY_BEARER: ${PROVIDER_SINK_BEARER:-crew-local-provider-bearer-change-2026}
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+      provider-sink:
+        condition: service_healthy
+
+  push-worker:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/user-service/src/push-worker.ts]
+    environment:
+      <<: *user-payload-env
+      NODE_ENV: development
+      DATABASE_URL: postgres://crew_user_push_worker:${USER_DB_PUSH_WORKER_PASSWORD:-crew-local-user-push-change-2026}@postgres:5432/crew_user
+      PUSH_DELIVERY_URL: http://provider-sink:3010/push
+      PUSH_DELIVERY_BEARER: ${PROVIDER_SINK_BEARER:-crew-local-provider-bearer-change-2026}
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+      provider-sink:
+        condition: service_healthy
+
+  attachment-worker:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/event-service/src/worker.ts]
+    environment:
+      NODE_ENV: development
+      EVENT_ATTACHMENT_WORKER_ID: local-attachment-worker
+      EVENT_ATTACHMENT_WORKER_DATABASE_URL: postgres://crew_event_attachment_worker:${EVENT_DB_ATTACHMENT_WORKER_PASSWORD:-crew-local-event-attachment-change-2026}@postgres:5432/crew_event
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ENDPOINT: http://crew-minio.localhost:9000
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_REGION: us-east-1
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_BUCKET: crew-event-development
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ACCESS_KEY_ID: ${MINIO_WORKER_ACCESS_KEY:-crewlocalattachment}
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_SECRET_ACCESS_KEY: ${MINIO_WORKER_SECRET_KEY:-crew-local-minio-worker-change-2026}
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+      minio-bootstrap:
+        condition: service_completed_successfully
+
+  notification-worker:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/event-service/src/notification-worker.ts]
+    environment:
+      <<: *event-notification-env
+      NODE_ENV: development
+      EVENT_NOTIFICATION_WORKER_ID: local-notification-worker
+      EVENT_NOTIFICATION_WORKER_DATABASE_URL: postgres://crew_event_notification_worker:${EVENT_DB_NOTIFICATION_WORKER_PASSWORD:-crew-local-event-notification-change-2026}@postgres:5432/crew_event
+      EVENT_NOTIFICATION_WORKER_USER_SERVICE_URL: http://user-api:3001
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_ISSUER: crew-event-service
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_AUDIENCE: crew-user-service
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_CURRENT_KEY_ID: local-event-service-v1
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_CURRENT_KEY: ${EVENT_NOTIFICATION_SERVICE_CURRENT_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+      user-api:
+        condition: service_healthy
+
+  recap-retention-worker:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/event-service/src/recap-retention-worker.ts]
+    environment:
+      NODE_ENV: development
+      EVENT_RECAP_RETENTION_WORKER_ID: local-recap-retention-worker
+      EVENT_RECAP_RETENTION_WORKER_DATABASE_URL: postgres://crew_event_recap_retention_worker:${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:-crew-local-event-recap-retention-change-2026}@postgres:5432/crew_event
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+
+  api-gateway:
+    <<: *bun-runtime
+    restart: unless-stopped
+    command: [bun, services/api-gateway/src/index.ts]
+    environment:
+      <<: *member-directory-service-auth-env
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: "3000"
+      USER_SERVICE_URL: http://user-api:3001
+      EVENT_SERVICE_URL: http://event-api:3002
+      USER_TOKEN_ISSUER: crew-user-service
+      USER_TOKEN_AUDIENCE: crew-mobile
+      USER_SERVICE_JWKS_URL: http://user-api:3001/.well-known/jwks.json
+      RATE_LIMIT_REDIS_URL: redis://crew_gateway:${REDIS_GATEWAY_PASSWORD:-crew_local_gateway_redis_change_2026}@redis-rate-limit:6379/0
+      RATE_LIMIT_KEY: ${GATEWAY_RATE_LIMIT_KEY:-BAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
+    ports:
+      - 127.0.0.1:${GATEWAY_HOST_PORT:-3000}:3000
+    depends_on:
+      user-api:
+        condition: service_healthy
+      event-api:
+        condition: service_healthy
+      redis-rate-limit:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const r=await fetch('http://127.0.0.1:3000/internal/ready');if(!r.ok)process.exit(1)
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  fixture-bootstrap:
+    <<: *bun-runtime
+    profiles: [tools]
+    restart: "no"
+    command: [bun, infra/bootstrap-fixture.ts]
+    environment:
+      CREW_LOCAL_FIXTURE: "1"
+      FIXTURE_GATEWAY_URL: http://api-gateway:3000/core/v1/
+      FIXTURE_PROVIDER_SINK_URL: http://provider-sink:3010/
+      PROVIDER_SINK_FIXTURE_BEARER: ${PROVIDER_SINK_FIXTURE_BEARER:-crew-local-fixture-bearer-change-2026}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      provider-sink:
+        condition: service_healthy
+      magic-worker:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_rate_limit_data:
+  minio_data:
+  typesense_data:
+  user_jwt_keys:

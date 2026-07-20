@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- tapOn:
+    id: event-hub-date-2026-10-05
+- extendedWaitUntil:
+    visible: "Golf round: Carya Golf Club"
+    timeout: 15000
+- assertVisible: "Carya Golf Club"
+- assertVisible: "08:30"
+

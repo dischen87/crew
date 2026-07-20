@@ -1,0 +1,12 @@
+appId: app.crew.next.evidence
+---
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action
+- extendedWaitUntil:
+    visible: Offline gespeichert · nächster Versuch folgt
+    timeout: 15000
+- assertVisible: LOKAL GESPEICHERT

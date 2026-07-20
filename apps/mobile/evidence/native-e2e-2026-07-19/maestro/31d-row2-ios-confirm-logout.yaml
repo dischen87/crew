@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- assertVisible: Abmelden?
+- tapOn:
+    point: 69%, 57%
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 20000
+- assertVisible: Bitte anmelden
+- assertVisible:
+    id: private-access-sign-in

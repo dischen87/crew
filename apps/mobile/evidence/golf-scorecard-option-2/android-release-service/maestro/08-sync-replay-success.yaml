@@ -1,0 +1,9 @@
+appId: app.crew.next.evidence
+---
+- tapOn:
+    id: golf-sync-action
+- extendedWaitUntil:
+    visible: Alle Score-Daten synchronisiert
+    timeout: 15000
+- assertVisible: SYNCHRON
+- assertVisible: '1. Platz, Du, 2 Stableford-Punkte, 1 von 18 Löchern'

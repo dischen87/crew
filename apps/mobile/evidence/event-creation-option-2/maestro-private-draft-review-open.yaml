@@ -1,0 +1,6 @@
+appId: app.crew.next
+---
+- assertVisible: Privater Entwurf
+- assertVisible: OK
+- assertNotVisible:
+    id: event-create-submit

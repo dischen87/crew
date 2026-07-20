@@ -5,10 +5,10 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "check": "bun run build && bun scripts/check-preview.ts",
     "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "^5",
-    "@crew/shared": "workspace:*"
+    "astro": "^5"
   }
 }

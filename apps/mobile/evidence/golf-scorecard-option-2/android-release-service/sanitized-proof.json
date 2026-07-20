@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "capturedOn": "2026-07-19",
+  "platform": "android-emulator",
+  "build": {
+    "variant": "releaseEvidence",
+    "packageName": "app.crew.next.evidence",
+    "applicationIdSuffix": ".evidence",
+    "debuggable": false,
+    "runAsRejected": true,
+    "usesCleartextTraffic": false,
+    "loopbackCleartextOnly": true,
+    "locallySignedForEmulator": true,
+    "signatureSchemes": {
+      "v2": true,
+      "v3": true
+    },
+    "entryMtime": "2026-07-19T23:23:53+0200",
+    "apkMtime": "2026-07-19T23:26:58+0200",
+    "entrySha256": "d844682fc73244fc67e1e1df148342250d3152416baade12d442a86a863c2cda",
+    "hermesBundleSha256": "6ac5270b9f8363661b232df506b19fdf4113a126e01e69db70db4d846c02d71e",
+    "unsignedApkSha256": "93cde3207a687eeb9395daf680e8cbc27fd02cdb29afd3bbd8e516f87650c403",
+    "signedApkSha256": "f99cecfd484d4c2f800b85fe20c84e5b527c84febaa9ca8c1aaf72ad23b797aa",
+    "normalRelease": {
+      "packageName": "app.crew.next",
+      "usesCleartextTraffic": false,
+      "debuggable": false
+    },
+    "boundary": "Separate .evidence Android sandbox; not an in-place production-package upgrade proof"
+  },
+  "productionRuntime": {
+    "gatewayProvider": true,
+    "privateBootstrapGate": true,
+    "rootNavigator": true,
+    "golfRuntimeReassigned": false,
+    "randomUuidInjected": false,
+    "sha256Injected": false,
+    "mobileSyncEngineRandomUuid": "secureUuidV4",
+    "mobileSyncEngineDefaultSha256": true
+  },
+  "releaseCrypto": {
+    "randomUuidAbsent": true,
+    "secureRandomPresent": true,
+    "subtleAbsent": true,
+    "secureDeviceId": true
+  },
+  "singleInput": {
+    "hole": 2,
+    "strokes": 5,
+    "putts": 2,
+    "typedOnce": true,
+    "savedOnce": true,
+    "serverScoreRowsBeforeDelivery": 0,
+    "serverMutationReceiptsBeforeDelivery": 0
+  },
+  "processRestart": {
+    "terminatedPid": 8797,
+    "pidAbsentAfterForceStop": true,
+    "coldPid": 9752,
+    "pidChanged": true,
+    "localValuesAfterRestart": {
+      "strokes": 5,
+      "putts": 2,
+      "deliveryState": "queued"
+    }
+  },
+  "syncTraces": [
+    {
+      "sequence": 1,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false
+    },
+    {
+      "sequence": 2,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false
+    },
+    {
+      "sequence": 3,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false
+    },
+    {
+      "sequence": 4,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503,
+      "replayed": false
+    },
+    {
+      "sequence": 5,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "success-suppressed",
+      "downstreamStatus": 200,
+      "facadeStatus": 503,
+      "replayed": false
+    },
+    {
+      "sequence": 6,
+      "bodyFingerprint": "sha256:62e382531c22272719bee52ea6d713de42d7e2363aebbdfe4fabb241a043b010",
+      "idempotencyFingerprint": "sha256:531188a634c63f2355c8e840c748fc6a954ccbef964ede670d84daa5cb8857a7",
+      "outcome": "forwarded",
+      "downstreamStatus": 200,
+      "facadeStatus": 200,
+      "replayed": true
+    }
+  ],
+  "traceInvariants": {
+    "bodyFingerprintStable": true,
+    "idempotencyFingerprintStable": true,
+    "newMutationIdentityAfterRestart": false,
+    "committedResponseSuppressedOnce": true,
+    "identicalReplayObserved": true
+  },
+  "readOnlyPostgres": {
+    "scoreRows": 1,
+    "hole": 2,
+    "strokes": 5,
+    "putts": 2,
+    "playingHandicap": 18,
+    "handicapStrokes": 1,
+    "netStrokes": 4,
+    "stablefordPoints": 2,
+    "version": 1,
+    "receiptRows": 1,
+    "receiptOutcomeApplied": true,
+    "clientMutationUuidV4": true,
+    "deviceIdUuidV4": true,
+    "syncIdempotencyRows": 1,
+    "syncIdempotencyComplete": true,
+    "syncIdempotencyResponseStatus": 200
+  },
+  "organizerAuthoritativeProjection": {
+    "httpStatus": 200,
+    "privateParticipantScoreRecordsVisible": 0,
+    "matchingLeaderboardEntries": 1,
+    "rank": 1,
+    "stablefordPoints": 2,
+    "holesCompleted": 1,
+    "privacyBoundaryPreserved": true
+  },
+  "finalUi": {
+    "syncLabel": "Alle Score-Daten synchronisiert",
+    "holeState": "SYNCHRON",
+    "leaderboardProjection": "1. Platz, Du, 2 Stableford-Punkte, 1 von 18 Löchern"
+  },
+  "executionCorrections": {
+    "previewAssertionCorrectedFromNet3ToNet4BeforeSave": true,
+    "inputsRetyped": false,
+    "commit503LabelCorrectedBeforeReplay": true,
+    "postReplayProjectionAssertedWithoutAdditionalMutation": true
+  },
+  "sanitization": {
+    "deterministicNonSecretFixtureRouteIdRetained": true,
+    "deterministicNonSecretExampleTestEmailRetained": true,
+    "generatedPrivateIdentifiersRetained": false,
+    "bearersRetained": false,
+    "sessionsRetained": false,
+    "magicLinksRetained": false
+  },
+  "gates": {
+    "status": "golf-scoped-pass",
+    "releaseEvidenceGradleAssemble": {
+      "passed": true,
+      "actionableTasks": 377
+    },
+    "apkSignatureVerification": true,
+    "mobileJest": {
+      "suitesPassed": 7,
+      "testsPassed": 31,
+      "failures": 0
+    },
+    "mobileScopedEslint": {
+      "errors": 0,
+      "warnings": 2,
+      "warningRule": "no-void"
+    },
+    "evidencePrettier": true,
+    "mobileDataBiome": true,
+    "mobileData": {
+      "files": 4,
+      "testsPassed": 69,
+      "assertions": 578,
+      "failures": 0
+    },
+    "nativeRunner": {
+      "testsPassed": 11,
+      "expectedDatabaseSkip": 1,
+      "failures": 0
+    },
+    "fullIntegratedMobileAndMobileDataGate": "delegated after concurrent Recap work stabilizes; not a Golf-lane failure"
+  },
+  "restoration": {
+    "status": "complete",
+    "evidencePackageAbsent": true,
+    "productionDebugApkSha256": "a69cd7520f860be011991320564502885cb0e81c17ba7c668408f7ff7de2dfa8",
+    "productionDebugApkExact": true,
+    "appDataFiles": 24,
+    "appDataHashesExact": true,
+    "productionDebugSignedOutUi": true,
+    "adbReversesExact": true,
+    "fontScaleExact": true,
+    "physicalSizeExact": true,
+    "physicalDensityExact": true,
+    "accessibilitySettingsExact": true,
+    "imeSettingExact": true,
+    "metro8081Pid": 45252,
+    "metro8082Pid": 70661,
+    "metroPidsUnchanged": true,
+    "eventFixtureRowsAfterRunnerStop": 0,
+    "redisKeysAfterRunnerStop": 0,
+    "postgresStopped": true,
+    "redisStopped": true,
+    "ports3000And3101And5433And6380Free": true,
+    "runtimePathRemoved": true
+  }
+}

@@ -1,0 +1,15 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      id: android-evidence-${SURFACE}-${STATE}
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: android-evidence-${SURFACE}-${STATE}
+- extendedWaitUntil:
+    visible:
+      id: ${TARGET}
+    timeout: 30000

@@ -1,11 +1,30 @@
-name: Deploy Crew App
+name: Legacy Crew Deploy (Manual Quarantine)
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Legacy environment to deploy
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirmation:
+        description: Type DEPLOY_LEGACY to confirm this legacy workflow
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legacy-crew-deploy
+  cancel-in-progress: false
 
 jobs:
   test:
+    if: ${{ inputs.confirmation == 'DEPLOY_LEGACY' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,6 +57,12 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Install workspace dependencies from frozen lock
+        run: bun install --frozen-lockfile
+
+      - name: Validate mobile gateway client
+        run: bun run check:mobile-client
 
       - name: Install API dependencies
         working-directory: packages/api
@@ -80,8 +105,10 @@ jobs:
           bun run build
 
   deploy-staging:
+    if: ${{ inputs.confirmation == 'DEPLOY_LEGACY' }}
     runs-on: ubuntu-latest
     needs: test
+    environment: legacy-staging
     steps:
       - uses: actions/checkout@v4
 
@@ -101,8 +128,10 @@ jobs:
             echo "Crew staging deployed to staging.crew-haus.com"
 
   deploy-production:
+    if: ${{ inputs.confirmation == 'DEPLOY_LEGACY' && inputs.target == 'production' }}
     runs-on: ubuntu-latest
     needs: deploy-staging
+    environment: legacy-production
     steps:
       - uses: actions/checkout@v4
 

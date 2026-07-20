@@ -1,0 +1,20 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible: Events
+    timeout: 10000
+- tapOn:
+    id: events-create
+- extendedWaitUntil:
+    visible:
+      id: event-create-retry
+    timeout: 15000
+- tapOn:
+    id: event-create-retry
+- extendedWaitUntil:
+    visible:
+      id: event-create-retry
+    timeout: 15000
+- assertVisible: Entwurf gespeichert
+- assertVisible: Release Crypto Replay
+- assertVisible: Entwurf lokal gespeichert. Wartet auf Verbindung.

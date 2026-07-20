@@ -1,0 +1,17 @@
+appId: app.crew.next
+---
+- tapOn:
+    id: native-e2e-evidence-back
+- assertVisible:
+    id: golf-scorecard-view
+- scrollUntilVisible:
+    element:
+      id: golf-sync-action
+    direction: DOWN
+- tapOn:
+    id: golf-sync-action
+- extendedWaitUntil:
+    visible: Alle Score-Daten synchronisiert
+    timeout: 20000
+- assertVisible: SYNCHRON
+- assertVisible: Loch 2 von 18

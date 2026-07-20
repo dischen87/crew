@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: native-e2e-evidence
+- tapOn:
+    id: native-e2e-evidence-back
+- extendedWaitUntil:
+    visible:
+      id: team-feed-view
+    timeout: 15000

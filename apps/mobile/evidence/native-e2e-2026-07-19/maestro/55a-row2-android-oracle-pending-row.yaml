@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: native-e2e-evidence
+- scrollUntilVisible:
+    element:
+      id: native-e2e-evidence-row-1
+    direction: DOWN
+- assertVisible:
+    id: native-e2e-evidence-row-1
+- assertVisible: golf.score.set
+- assertVisible: PENDING

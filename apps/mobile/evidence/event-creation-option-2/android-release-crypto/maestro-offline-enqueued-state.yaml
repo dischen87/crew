@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- tapOn: OK
+- extendedWaitUntil:
+    visible:
+      id: event-create-retry
+    timeout: 15000
+- assertVisible: Entwurf gespeichert
+- assertVisible: Android Release Crypto Replay
+- assertVisible: Entwurf lokal gespeichert. Wartet auf Verbindung.

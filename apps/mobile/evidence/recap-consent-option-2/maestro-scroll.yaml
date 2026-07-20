@@ -1,0 +1,9 @@
+appId: app.crew.next.recapconsent.evidence
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: '${TARGET_TEXT}'
+    direction: DOWN
+    timeout: 20000

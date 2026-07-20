@@ -1,0 +1,11 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: Events nicht verfügbar
+    timeout: 10000
+- assertVisible:
+    id: events-retry
+- assertVisible:
+    id: events-create

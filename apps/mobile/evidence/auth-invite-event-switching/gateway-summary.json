@@ -1,0 +1,23 @@
+{
+  "duplicateTitlesByDistinctRootIds": true,
+  "invitePreviewCalls": 2,
+  "inviteRedeemAttempts": 2,
+  "inviteRedeemKeyStable": true,
+  "joined": true,
+  "magicCreateAttempts": 1,
+  "magicRedeemAttempts": 2,
+  "magicRedeemKeyStable": true,
+  "operations": [
+    "POST /v1/auth/magic-links",
+    "POST /v1/auth/magic-links/redeem",
+    "POST /v1/auth/magic-links/redeem",
+    "GET /v1/event-roots",
+    "POST /v1/invitations/preview",
+    "POST /v1/invitations/redeem",
+    "POST /v1/invitations/preview",
+    "POST /v1/invitations/redeem",
+    "GET /v1/event-roots",
+    "GET /v1/event-roots/evt_evidence_alpha/events/evt_evidence_alpha"
+  ],
+  "rawSecretsRecorded": false
+}

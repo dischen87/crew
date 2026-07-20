@@ -1,0 +1,11 @@
+aa2bd7f28a601c810c4eed2cf7dda08c98c84e1f5a8e6e69dcc05dd4bb52b167  ../../../../infra/native-e2e-runner.ts
+56fd4722a54ad3af22c3a18c65ae1b0d59e28ae54008753ee9ff2bb34be0198d  ../../../../infra/native-e2e-runner.test.ts
+fe2ccc6f0715a884c0bbf38b5a8ebeaf322120518491fa9f4324ef5dfb1acddf  ../../src/screens/FeedbackComposeScreen.tsx
+0be182e67449af123c69d5f2bffb54a7456b587d285adbe67a1f55b401d39098  ../../src/screens/FeedbackComposeView.tsx
+7801a1757e80a23cc6655ac77c7f8e25a57a218cfa9598a1888590c2f363e4f7  ../../src/screens/FeedbackComposeRuntime.ts
+ffc384c25c1cef00df0c1b9ab7aeceb07a39799be03692c7e56e3f63b6a8537d  ../../src/screens/CommunityFeedbackListScreen.tsx
+2466867e814e925217394d8473902ee7c33fc7c64e7bcebe726831e7e58ca374  ../../src/screens/CommunityFeedbackListView.tsx
+a4009283b7c13365c0a83113649d4264aa65f63a338b623801399e404320116a  ../../src/app/GatewayProvider.tsx
+2133973a71bd50a520738f0d42a38b822add5ee1835afd7431d2614e29ddea68  ../../src/app/runtimeConfig.ts
+7c736a9dfcf9947ecfae8dcc3d78061d01db413cb2ce56e5cadb23ceb89eff77  ../../../../packages/mobile-data/src/feedbackSubmissions.ts
+8f001b12bd9caa77918d237bb21a8a075e091634b2aa5eda28ad77276418ed0a  ../../../../packages/mobile-data/src/outbox.ts

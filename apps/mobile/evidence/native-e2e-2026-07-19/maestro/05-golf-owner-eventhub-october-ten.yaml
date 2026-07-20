@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- tapOn:
+    id: event-hub-date-2026-10-10
+- extendedWaitUntil:
+    visible: 'Golf round: Sueno Hotels Golf Belek'
+    timeout: 15000
+- assertVisible: '08:20'
+- assertVisible:
+    id: event-hub-date-2026-10-10

@@ -1,0 +1,24 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 15000
+- tapOn:
+    id: private-access-sign-in
+- extendedWaitUntil:
+    visible:
+      id: sign-in-view
+    timeout: 15000
+- tapOn:
+    id: sign-in-email
+- inputText: crew.golf.participant.local@example.test
+- hideKeyboard
+- tapOn:
+    id: sign-in-submit
+- extendedWaitUntil:
+    visible: ANFRAGE ANGENOMMEN
+    timeout: 20000
+- assertVisible: Wenn die Adresse verwendet werden kann, senden wir einen Anmeldelink.

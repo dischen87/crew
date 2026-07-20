@@ -1,0 +1,117 @@
+{
+  "sets": [
+    {
+      "directory": "apps/mobile/evidence/event-hub-option-2",
+      "manifest": "apps/mobile/evidence/event-hub-option-2/asset-manifest.sha256",
+      "name": "event-hub-option-2",
+      "requiredGroups": {
+        "entry": ["apps/mobile/evidence/event-hub-option-2-entry.js"],
+        "evidencePolicy": [
+          "apps/mobile/evidence/manifest-coverage.json",
+          "apps/mobile/evidence/option-2-native-qa.md"
+        ],
+        "frame": ["apps/mobile/src/screens/ScreenFrame.tsx"],
+        "primitives": ["apps/mobile/src/design/primitives.tsx"],
+        "screens": ["apps/mobile/src/screens/EventHubScreen.tsx"],
+        "theme": ["apps/mobile/src/design/theme.ts"],
+        "views": ["apps/mobile/src/screens/EventHubView.tsx"],
+        "visibleAssets": [
+          "apps/mobile/assets/fonts/DM Sans.ttf",
+          "apps/mobile/src/assets/crew-board-background.png",
+          "apps/mobile/src/assets/crew-logo.png",
+          "apps/mobile/src/assets/icons/arrow-right.png",
+          "apps/mobile/src/assets/icons/bus.png",
+          "apps/mobile/src/assets/icons/calendar.png",
+          "apps/mobile/src/assets/icons/caret-right.png",
+          "apps/mobile/src/assets/icons/chat.png",
+          "apps/mobile/src/assets/icons/check.png",
+          "apps/mobile/src/assets/icons/cloud-offline.png",
+          "apps/mobile/src/assets/icons/crew.png",
+          "apps/mobile/src/assets/icons/golf.png",
+          "apps/mobile/src/assets/icons/location.png",
+          "apps/mobile/src/assets/icons/more.png",
+          "apps/mobile/src/assets/icons/navigation.png",
+          "apps/mobile/src/assets/icons/wine.png",
+          "apps/mobile/src/assets/participants/aylin-avatar.png",
+          "apps/mobile/src/assets/participants/david-avatar.png",
+          "apps/mobile/src/assets/participants/jonas-avatar.png",
+          "apps/mobile/src/assets/participants/lena-avatar.png",
+          "apps/mobile/src/assets/participants/marco-avatar.png",
+          "apps/mobile/src/assets/participants/nico-avatar.png",
+          "apps/mobile/src/assets/participants/sara-avatar.png"
+        ]
+      },
+      "status": "current"
+    },
+    {
+      "directory": "apps/mobile/evidence/recap-option-2",
+      "manifest": "apps/mobile/evidence/recap-option-2/asset-manifest.sha256",
+      "name": "recap-option-2",
+      "requiredGroups": {
+        "entry": ["apps/mobile/evidence/recap-option-2-entry.js"],
+        "evidencePolicy": [
+          "apps/mobile/evidence/manifest-coverage.json",
+          "apps/mobile/evidence/option-2-native-qa.md"
+        ],
+        "frame": ["apps/mobile/src/screens/ScreenFrame.tsx"],
+        "primitives": ["apps/mobile/src/design/primitives.tsx"],
+        "screens": ["apps/mobile/src/screens/RecapScreen.tsx"],
+        "theme": ["apps/mobile/src/design/theme.ts"],
+        "views": ["apps/mobile/src/screens/RecapView.tsx"],
+        "visibleAssets": [
+          "apps/mobile/assets/fonts/DM Sans.ttf",
+          "apps/mobile/src/assets/crew-board-background.png",
+          "apps/mobile/src/assets/crew-logo.png",
+          "apps/mobile/src/assets/icons/arrow-right.png",
+          "apps/mobile/src/assets/icons/calendar.png",
+          "apps/mobile/src/assets/icons/caret-right.png",
+          "apps/mobile/src/assets/icons/check.png",
+          "apps/mobile/src/assets/icons/cloud-offline.png",
+          "apps/mobile/src/assets/icons/crew.png"
+        ]
+      },
+      "status": "stale"
+    },
+    {
+      "directory": "apps/mobile/evidence/auth-option-2",
+      "manifest": "apps/mobile/evidence/auth-option-2/asset-manifest.sha256",
+      "name": "auth-option-2",
+      "requiredGroups": {
+        "entry": ["apps/mobile/evidence/auth-option-2-entry.js"],
+        "evidencePolicy": [
+          "apps/mobile/evidence/manifest-coverage.json",
+          "apps/mobile/evidence/option-2-native-qa.md"
+        ],
+        "frame": ["apps/mobile/src/screens/ScreenFrame.tsx"],
+        "primitives": ["apps/mobile/src/design/primitives.tsx"],
+        "screens": [
+          "apps/mobile/src/screens/SignInScreen.tsx",
+          "apps/mobile/src/screens/EmailIdentityScreen.tsx",
+          "apps/mobile/src/screens/InvitePreviewScreen.tsx",
+          "apps/mobile/src/screens/PrivateAccessScreen.tsx",
+          "apps/mobile/src/screens/InboundGateScreen.tsx",
+          "apps/mobile/src/screens/UnavailableScreen.tsx"
+        ],
+        "theme": ["apps/mobile/src/design/theme.ts"],
+        "views": [
+          "apps/mobile/src/screens/SignInScreen.tsx",
+          "apps/mobile/src/screens/EmailIdentityScreen.tsx",
+          "apps/mobile/src/screens/InvitePreviewScreen.tsx",
+          "apps/mobile/src/screens/PrivateAccessScreen.tsx",
+          "apps/mobile/src/screens/InboundGateScreen.tsx",
+          "apps/mobile/src/screens/UnavailableScreen.tsx"
+        ],
+        "visibleAssets": [
+          "apps/mobile/assets/fonts/DM Sans.ttf",
+          "apps/mobile/src/assets/crew-board-background.png",
+          "apps/mobile/src/assets/crew-logo.png",
+          "apps/mobile/src/assets/icons/arrow-right.png",
+          "apps/mobile/src/assets/icons/check.png",
+          "apps/mobile/src/assets/icons/cloud-offline.png",
+          "apps/mobile/src/assets/icons/crew.png"
+        ]
+      },
+      "status": "stale"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+appId: app.crew.next.evidence
+---
+- assertVisible: Alle Score-Daten synchronisiert
+- assertVisible: SYNCHRON
+- assertVisible: '1. Platz, Du, 2 Stableford-Punkte, 1 von 18 Löchern'

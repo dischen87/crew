@@ -1,0 +1,13 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 15000
+- assertVisible: Bitte anmelden
+- assertVisible: Melde dich an, um deine privaten Events auf diesem Gerät zu öffnen.
+- assertVisible:
+    id: private-access-sign-in
+

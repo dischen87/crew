@@ -1,0 +1,10 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-evidence
+    timeout: 15000
+- assertVisible: Sync-Beweis
+- assertVisible: 'Ausstehend: 1'
+- assertVisible: 'Aufmerksamkeit: 0'
+- assertVisible: 'Gekürzt: NEIN'

@@ -1,0 +1,24 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- tapOn:
+    id: golf-strokes-input
+- eraseText
+- inputText: '5'
+- tapOn: Par 4 · HCP 1
+- tapOn:
+    id: golf-putts-input
+- eraseText
+- inputText: '2'
+- tapOn: Par 4 · HCP 1
+- scrollUntilVisible:
+    element:
+      id: golf-save-action
+    direction: DOWN
+- tapOn:
+    id: golf-save-action
+- extendedWaitUntil:
+    visible: LOKAL GESPEICHERT
+    timeout: 15000
+- assertVisible: Offline gespeichert.*|1 Änderung lokal gespeichert

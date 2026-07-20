@@ -1,0 +1,9 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: Ähnliche Meldungen werden gerade nicht online geprüft.*
+    direction: DOWN
+    timeout: 30000

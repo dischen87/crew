@@ -1,0 +1,17 @@
+appId: app.crew.next
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: private-access-unavailable
+    timeout: 10000
+- assertVisible: PRIVATE DATEN GESPERRT
+- scrollUntilVisible:
+    element:
+      id: private-access-safe-exit
+    direction: DOWN
+- assertVisible:
+    id: private-access-retry
+- assertVisible:
+    id: private-access-safe-exit

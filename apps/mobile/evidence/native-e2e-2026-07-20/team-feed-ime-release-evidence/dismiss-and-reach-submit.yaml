@@ -1,0 +1,12 @@
+appId: app.crew.next.evidence
+---
+- assertVisible:
+    id: team-feed-input
+- inputText: 'IME acceptance'
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: team-feed-submit
+    direction: DOWN
+- assertVisible:
+    id: team-feed-submit

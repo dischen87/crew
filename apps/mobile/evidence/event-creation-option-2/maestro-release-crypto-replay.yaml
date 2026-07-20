@@ -1,0 +1,24 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible: Events
+    timeout: 10000
+- tapOn:
+    id: events-create
+- runFlow:
+    when:
+      visible:
+        id: event-create-retry
+    commands:
+      - tapOn:
+          id: event-create-retry
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 15000
+- assertVisible: Release Crypto Replay
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-primary-action
+- assertNotVisible:
+    id: event-create-submit

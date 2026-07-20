@@ -1,0 +1,14 @@
+{
+	"Rules": [
+		{
+			"Expiration": {
+				"Days": 1
+			},
+			"ID": "crew-quarantine-expiry-v1",
+			"Filter": {
+				"Prefix": "quarantine/"
+			},
+			"Status": "Enabled"
+		}
+	]
+}

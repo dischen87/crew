@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- extendedWaitUntil:
+    visible: Events
+    timeout: 15000
+- tapOn:
+    id: events-create
+- extendedWaitUntil:
+    visible: Sanitized Release crypto proof
+    timeout: 15000
+- assertVisible:
+    id: android:id/message

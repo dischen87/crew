@@ -1,0 +1,20 @@
+{
+	"name": "@crew/mobile-client",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": "./src/index.ts",
+	"scripts": {
+		"generate": "bun scripts/generate.ts",
+		"generate:check": "bun scripts/generate.ts --check",
+		"lint": "biome check scripts src/*.ts test",
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.0",
+		"@types/bun": "latest",
+		"openapi-typescript": "7.13.0",
+		"typescript": "^5.7.0"
+	}
+}

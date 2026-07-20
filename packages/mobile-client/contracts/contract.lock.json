@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "contract": {
+    "name": "api-gateway",
+    "source": "../../services/api-gateway/openapi/openapi.json",
+    "repositoryPath": "services/api-gateway/openapi/openapi.json",
+    "digest": "sha256:15b983ac9ca1857a34861c173a5f04776e94ccf9e5a60035eead6e1bd99a42df",
+    "byteCount": 1275004,
+    "version": "0.2.0",
+    "sourceCommit": null,
+    "sourceState": "worktree"
+  }
+}

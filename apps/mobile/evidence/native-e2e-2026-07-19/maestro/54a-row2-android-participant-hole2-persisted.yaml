@@ -1,0 +1,11 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: golf-scorecard-view
+- assertVisible: Loch 2 von 18
+- assertVisible: LOKAL GESPEICHERT
+- assertVisible: Offline gespeichert · nächster Versuch folgt
+- assertVisible:
+    id: golf-strokes-input
+- assertVisible:
+    id: golf-putts-input

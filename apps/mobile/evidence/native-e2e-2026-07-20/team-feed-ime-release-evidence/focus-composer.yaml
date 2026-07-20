@@ -1,0 +1,10 @@
+appId: app.crew.next.evidence
+---
+- assertVisible:
+    id: team-feed-view
+- tapOn:
+    id: team-feed-input
+- extendedWaitUntil:
+    visible:
+      id: team-feed-input
+    timeout: 10000

@@ -1,0 +1,20 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: event-hub
+- swipe:
+    start: 88%, 44%
+    end: 20%, 44%
+    duration: 600
+- extendedWaitUntil:
+    visible:
+      id: event-hub-date-2026-10-11
+    timeout: 10000
+- tapOn:
+    id: event-hub-date-2026-10-09
+- extendedWaitUntil:
+    visible: 'Golf round: National Golf Club'
+    timeout: 15000
+- assertVisible: '09:10'
+- assertVisible:
+    id: event-hub-date-2026-10-09

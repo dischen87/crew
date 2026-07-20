@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-20",
+  "privacy": {
+    "rawIdentifiersRetained": false,
+    "rawPayloadRetained": false,
+    "tokensOrLinksRetained": false,
+    "postInputScreenshotsRetained": false
+  },
+  "ios": {
+    "runtime": {
+      "kind": "local-release-shaped",
+      "distributionArtifact": false,
+      "freshNativeCompile": false,
+      "nativeShell": "existing-non-debug",
+      "freshCurrentSourceBundleSha256": "78d1bc05237fe2ef7911b3c5ddcf04319b089ca7d442d5860e061c4919c0bf17",
+      "signedExecutableSha256": "5b10b25870f0b63db0ee5833c94862d52c71ea2021558d11371c9a0d36ee6777",
+      "infoPlistSha256": "2e21e15405ad7bc25a8babcfe36c0e0d4e3820562bd5164dbb4528ea0266ea54"
+    },
+    "releaseCryptoShape": {
+      "randomUuidAbsent": true,
+      "secureRandomPresent": true,
+      "subtleDigestAbsent": true
+    },
+    "listState": "cached-shell-with-remote-refresh-error",
+    "uiReceipt": "locally-saved-waiting-for-connection",
+    "serverItemReadbackReached": true,
+    "trace": {
+      "count": 4,
+      "outcomes": [
+        "transport-detached",
+        "transport-detached",
+        "success-suppressed",
+        "forwarded"
+      ],
+      "facadeStatuses": [503, 503, 503, 201],
+      "downstreamStatuses": [null, null, 201, 201],
+      "replayed": [false, false, false, true],
+      "requestSha256": "a0f7298fddbeba8f9f4741cc300b3c4c3633f416db6b249d3dd19d5d286e67cd",
+      "bodySha256": "b71756e105788ea2ad9b3d90d12e5bbe4380c7498875ae455741306166513747",
+      "feedbackSha256": "98293fbf109eea2b3cba90070aa3bff675e500502103cd0e9c825b27949f2aa7",
+      "idempotencySha256": "73a44933c1142fda692c650a87cbb1a2d877ae8fe11a033df35d61422742b35c"
+    },
+    "database": {
+      "feedbackRows": 1,
+      "statusHistoryRows": 1,
+      "attachmentRows": 0,
+      "diagnosticsRows": 0,
+      "complete201FeedbackIdempotencyRows": 1
+    },
+    "fifthColdLaunchTraceCount": 4,
+    "restoration": {
+      "debugAppHashesMatched": 4,
+      "preflightScreenshotExact": true,
+      "preflightScreenshotSha256": "9e671a6d3d7854f4e313bf49d28ed2a65bde747597e88a2d4361b9db1cd01b53",
+      "existingMetroProcessesUnchanged": true
+    }
+  },
+  "android": {
+    "replayRuntime": {
+      "kind": "current-source-debug",
+      "distributionArtifact": false,
+      "apkSha256": "d581716c944f74d0aab50614fe11547029ab4ce3f38aef023085c68f00e2cb6d",
+      "metroBundleSha256": "ccefd00c88904f6abaf56cb9e643340da0b3405f3309d6911a50cfb21e888815",
+      "network": "isolated-device-reverse-to-temporary-metro-8083"
+    },
+    "releaseBoundary": {
+      "kind": "separate-current-source-release-evidence",
+      "fullReleaseNetworkE2E": false,
+      "distributionArtifact": false,
+      "locallySignedApkSha256": "94da1f747cb886e0535270b6c7e3c5fb5e1a64bf26dc7786f79062fdb39c7840",
+      "embeddedHermesBundleSha256": "7d34587cd4b6e5ad7cdf24caa43c1c73a97d72975161cf580ce68a1b259340f9",
+      "signatureSchemes": ["v2", "v3"],
+      "runtimeProofPath": "../golf-scorecard-option-2/android-release-service/semantics/crypto-proof.xml",
+      "runtimeProofSha256": "d7767a3a055c57070f0a6d1f43f5eb4bc2fec0bbaf4f88da58ef30657e5a36d9",
+      "releaseCryptoShape": {
+        "randomUuidAbsent": true,
+        "secureRandomPresent": true,
+        "subtleDigestAbsent": true
+      }
+    },
+    "listState": "cached-shell-with-remote-refresh-error",
+    "uiReceipt": "locally-saved-waiting-for-connection",
+    "trace": {
+      "count": 4,
+      "outcomes": [
+        "transport-detached",
+        "transport-detached",
+        "success-suppressed",
+        "forwarded"
+      ],
+      "facadeStatuses": [503, 503, 503, 201],
+      "downstreamStatuses": [null, null, 201, 201],
+      "replayed": [false, false, false, true],
+      "requestSha256": "2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "bodySha256": "930eb45cb4d631ae0e7e5280c2fac2cd76abf4c40d2c4ff2523f46f84fe112c0",
+      "feedbackSha256": "4300b6c3ed16f1ea8f05f179112cf7fa40a235928e24c3bc7cc825444d7208d9",
+      "idempotencySha256": "3c5e93b9ab2f00ac6232dc59fb76386c7e007e89b955619ea607faf2d2a5c453"
+    },
+    "database": {
+      "feedbackRows": 1,
+      "statusHistoryRows": 1,
+      "attachmentRows": 0,
+      "diagnosticsRows": 0,
+      "complete201FeedbackIdempotencyRows": 1
+    },
+    "fifthColdLaunchTraceCount": 4,
+    "restoration": {
+      "temporaryPackageRemoved": true,
+      "temporaryReverseMappingsRemoved": true,
+      "temporaryEmulatorStopped": true,
+      "temporaryMetroStopped": true,
+      "originalEmulatorUntouched": true,
+      "existingMetroProcessesUnchanged": true
+    }
+  },
+  "runner": {
+    "sourceSha256": "aa2bd7f28a601c810c4eed2cf7dda08c98c84e1f5a8e6e69dcc05dd4bb52b167",
+    "testSha256": "56fd4722a54ad3af22c3a18c65ae1b0d59e28ae54008753ee9ff2bb34be0198d",
+    "postgresSuite": {
+      "runs": 2,
+      "testsPerRun": 15,
+      "failures": 0,
+      "expectationsPerRun": 179
+    },
+    "rootlessCleanupRegression": {
+      "fixtureRootlessRemoved": true,
+      "foreignRootlessPreserved": true,
+      "foreignRootForeignActorPreserved": true,
+      "foreignRootFixtureActorPreserved": true,
+      "dependentRowsCovered": ["status-history", "votes", "comments"]
+    }
+  }
+}

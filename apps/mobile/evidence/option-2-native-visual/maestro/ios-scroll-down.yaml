@@ -1,0 +1,12 @@
+appId: app.crew.next
+---
+- launchApp:
+    clearState: false
+- swipe:
+    start: 50%, 82%
+    end: 50%, 18%
+    duration: 650
+- extendedWaitUntil:
+    visible:
+      id: crew-evidence-capture-complete
+    timeout: 30000
