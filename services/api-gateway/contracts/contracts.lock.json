@@ -5,15 +5,15 @@
       "digest": "sha256:333a09d9e104cb54aa83aa83cb52a1ff10f1bd2f59f910ab78cf7ce6be666d55",
       "version": "0.1.0",
       "source": "../user-service/openapi/openapi.json",
-      "sourceCommit": null,
-      "sourceState": "worktree"
+      "sourceCommit": "8981694ef4f445ace48572166ac56ca8072142b6",
+      "sourceState": "committed"
     },
     "event-service": {
       "digest": "sha256:b09563d2cdcd9e76981f9dcdf4b50b24be80ac07350db0a4fd198268e89fab66",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": null,
-      "sourceState": "worktree"
+      "sourceCommit": "8981694ef4f445ace48572166ac56ca8072142b6",
+      "sourceState": "committed"
     }
   }
 }
