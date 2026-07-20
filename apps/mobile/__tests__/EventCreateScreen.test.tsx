@@ -66,7 +66,11 @@ jest.mock('../src/app/PrivateBootstrapGate', () => ({
 }));
 
 jest.mock('../src/storage/deviceIdentity', () => ({
-  secureDeviceIdStore: { getOrCreate: jest.fn() },
+  secureDeviceIdStore: {
+    assertCurrent: jest.fn(async () => undefined),
+    discardIfUnbound: jest.fn(async () => undefined),
+    getOrCreate: jest.fn(),
+  },
 }));
 
 jest.mock('../src/storage/secureRandom', () => ({
@@ -129,6 +133,11 @@ test('creates a server-provided template once, persists it first and lands on th
   });
 
   const rootEventId = `evt_${uuid(1)}`;
+  expect(secureDeviceIdStore.getOrCreate).toHaveBeenCalledWith(
+    mockPrivateDatabase.database,
+    accountId,
+    rootEventId,
+  );
   expect(mockEngine.enqueueRootCreate).toHaveBeenCalledTimes(1);
   expect(mockEngine.enqueueRootCreate).toHaveBeenCalledWith(
     accountId,
@@ -173,6 +182,34 @@ test('creates a server-provided template once, persists it first and lands on th
   expect(
     mockGateway.request.mock.calls.map(([operationId]) => operationId),
   ).toEqual(['eventTemplatesList']);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('removes an unbound stream identity when root enqueue fails', async () => {
+  mockUuidSequence(30);
+  mockEngine.enqueueRootCreate.mockRejectedValueOnce(
+    new Error('database enqueue failed'),
+  );
+  const renderer = await renderScreen();
+  await chooseOption(renderer, 'blank');
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-create-title' })
+      .props.onChangeText('Fehlgeschlagener Entwurf'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-create-submit' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(secureDeviceIdStore.discardIfUnbound).toHaveBeenCalledWith(
+    mockPrivateDatabase.database,
+    accountId,
+    `evt_${uuid(30)}`,
+  );
+  expect(textInside(renderer)).toContain('Noch nicht gespeichert');
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 

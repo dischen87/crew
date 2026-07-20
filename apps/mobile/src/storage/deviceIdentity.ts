@@ -1,4 +1,14 @@
 import * as Keychain from 'react-native-keychain';
+import {
+  assertMutationStreamIdentity,
+  discardUnboundMutationStreamIdentity,
+  getOrCreateMutationStreamIdentity,
+  initializeMutationStreamIdentities,
+  recoverSequenceFailureStreams,
+  SequenceFailureRecoveryDeferredError,
+  type SqlDatabase,
+  type SqlExecutor,
+} from '@crew/mobile-data';
 import { secureUuidV4 } from './secureRandom';
 
 const DEVICE_ID_SERVICE = 'app.crew.next.device-id.v1';
@@ -8,8 +18,6 @@ const DEVICE_ID_PATTERN =
 
 export interface DeviceIdCredentials {
   get(): Promise<{ username: string; password: string } | null>;
-  set(username: string, password: string): Promise<void>;
-  reset(): Promise<void>;
 }
 
 const keychainCredentials: DeviceIdCredentials = {
@@ -21,21 +29,11 @@ const keychainCredentials: DeviceIdCredentials = {
       ? { username: value.username, password: value.password }
       : null;
   },
-  async set(username, password) {
-    await Keychain.setGenericPassword(username, password, {
-      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      service: DEVICE_ID_SERVICE,
-    });
-  },
-  async reset() {
-    await Keychain.resetGenericPassword({ service: DEVICE_ID_SERVICE });
-  },
 };
 
 export class SecureDeviceIdStore {
   readonly #credentials: DeviceIdCredentials;
   readonly #newUuid: () => string;
-  #pending: Promise<string> | null = null;
 
   constructor(
     credentials: DeviceIdCredentials = keychainCredentials,
@@ -45,29 +43,84 @@ export class SecureDeviceIdStore {
     this.#newUuid = newUuid;
   }
 
-  getOrCreate(): Promise<string> {
-    if (this.#pending) return this.#pending;
-    const pending = this.#getOrCreate().finally(() => {
-      if (this.#pending === pending) this.#pending = null;
-    });
-    this.#pending = pending;
-    return pending;
+  getOrCreate(
+    database: SqlDatabase,
+    accountUserId: string,
+    rootEventId: string,
+  ): Promise<string> {
+    return getOrCreateMutationStreamIdentity(
+      database,
+      accountUserId,
+      rootEventId,
+      () => this.#legacyDeviceId(),
+      () => this.#newDeviceId(),
+    );
   }
 
-  async #getOrCreate(): Promise<string> {
-    const existing = await this.#credentials.get();
-    if (
-      existing?.username === DEVICE_ID_USERNAME &&
-      DEVICE_ID_PATTERN.test(existing.password)
-    ) {
-      return existing.password;
+  async initializeExisting(
+    database: SqlDatabase,
+    accountUserId: string,
+  ): Promise<void> {
+    await initializeMutationStreamIdentities(
+      database,
+      accountUserId,
+      () => this.#legacyDeviceId(),
+      () => this.#newDeviceId(),
+    );
+    try {
+      await recoverSequenceFailureStreams(database, accountUserId, {
+        newDeviceId: () => this.#newDeviceId(),
+        randomUUID: this.#newUuid,
+      });
+    } catch (error) {
+      if (!(error instanceof SequenceFailureRecoveryDeferredError)) throw error;
+      // Keep private reads available and the untouched dead letter visible.
     }
-    if (existing) await this.#credentials.reset();
+  }
+
+  discardIfUnbound(
+    database: SqlDatabase,
+    accountUserId: string,
+    rootEventId: string,
+  ): Promise<void> {
+    return discardUnboundMutationStreamIdentity(
+      database,
+      accountUserId,
+      rootEventId,
+    );
+  }
+
+  assertCurrent(
+    executor: SqlExecutor,
+    accountUserId: string,
+    rootEventId: string,
+    deviceId: string,
+  ): Promise<void> {
+    return assertMutationStreamIdentity(
+      executor,
+      accountUserId,
+      rootEventId,
+      deviceId,
+    );
+  }
+
+  async #legacyDeviceId(): Promise<string | null> {
+    try {
+      const existing = await this.#credentials.get();
+      return existing?.username === DEVICE_ID_USERNAME &&
+        DEVICE_ID_PATTERN.test(existing.password)
+        ? existing.password
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #newDeviceId(): string {
     const deviceId = `dvc_${this.#newUuid()}`;
     if (!DEVICE_ID_PATTERN.test(deviceId)) {
       throw new Error('Secure device ID generation failed');
     }
-    await this.#credentials.set(DEVICE_ID_USERNAME, deviceId);
     return deviceId;
   }
 }

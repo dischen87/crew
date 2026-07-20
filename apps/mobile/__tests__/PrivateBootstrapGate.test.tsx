@@ -52,6 +52,7 @@ function dependencies(
     getDatabaseKey: jest.fn(async () => 'f'.repeat(64)),
     openDatabase: jest.fn(() => database),
     migrateDatabase: jest.fn(async () => undefined),
+    initializeDeviceIdentities: jest.fn(async () => undefined),
     purgeDeniedRoots: jest.fn(async () => undefined),
     purgeFeedbackSubmissions: jest.fn(async () => undefined),
     listFeedbackScreenshotFileKeys: jest.fn(async () => []),
@@ -70,6 +71,7 @@ test('keeps key generation, SQLCipher open and migration off signed-out boot', a
   expect(deps.getDatabaseKey).not.toHaveBeenCalled();
   expect(deps.openDatabase).not.toHaveBeenCalled();
   expect(deps.migrateDatabase).not.toHaveBeenCalled();
+  expect(deps.initializeDeviceIdentities).not.toHaveBeenCalled();
   expect(deps.purgeDeniedRoots).not.toHaveBeenCalled();
   expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
   expect(deps.reconcileAttachments).not.toHaveBeenCalled();
@@ -89,6 +91,7 @@ test('fails closed when the protected session cannot be read', async () => {
   expect(deps.getDatabaseKey).not.toHaveBeenCalled();
   expect(deps.openDatabase).not.toHaveBeenCalled();
   expect(deps.migrateDatabase).not.toHaveBeenCalled();
+  expect(deps.initializeDeviceIdentities).not.toHaveBeenCalled();
   expect(deps.purgeDeniedRoots).not.toHaveBeenCalled();
   expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
   expect(deps.reconcileAttachments).not.toHaveBeenCalled();
@@ -134,6 +137,12 @@ test('opens the account database and migrates before reporting ready', async () 
     expect(opened).toBe(database);
     calls.push('migrate');
   });
+  jest
+    .mocked(deps.initializeDeviceIdentities)
+    .mockImplementation(async (id, opened) => {
+      expect(opened).toBe(database);
+      calls.push(`identity:${id}`);
+    });
   jest.mocked(deps.purgeDeniedRoots).mockImplementation(async (id, opened) => {
     expect(opened).toBe(database);
     calls.push(`purge:${id}`);
@@ -152,6 +161,7 @@ test('opens the account database and migrates before reporting ready', async () 
     `key:${accountId}`,
     `open:${accountId}:64`,
     'migrate',
+    `identity:${accountId}`,
     `purge:${accountId}`,
     `reconcile:${accountId}`,
   ]);
@@ -163,6 +173,24 @@ test('closes an opened database when migration fails', async () => {
   jest
     .mocked(deps.migrateDatabase)
     .mockRejectedValueOnce(new Error('migration failed'));
+
+  await expect(bootstrapPrivateDatabase(deps)).resolves.toEqual({
+    accountId,
+    reason: 'privateData',
+    status: 'unavailable',
+  });
+  expect(database.close).toHaveBeenCalledTimes(1);
+  expect(deps.initializeDeviceIdentities).not.toHaveBeenCalled();
+  expect(deps.purgeDeniedRoots).not.toHaveBeenCalled();
+  expect(deps.reconcileAttachments).not.toHaveBeenCalled();
+});
+
+test('fails closed before denial purge when legacy stream binding fails', async () => {
+  const database = fakeDatabase();
+  const deps = dependencies(session, database);
+  jest
+    .mocked(deps.initializeDeviceIdentities)
+    .mockRejectedValueOnce(new Error('identity migration failed'));
 
   await expect(bootstrapPrivateDatabase(deps)).resolves.toEqual({
     accountId,
@@ -286,6 +314,9 @@ test('closes old private state before atomically replacing the account session',
         `migrate:${database === firstDatabase ? accountId : secondAccountId}`,
       );
     }),
+    initializeDeviceIdentities: jest.fn(async id => {
+      calls.push(`identity:${id}`);
+    }),
     purgeDeniedRoots: jest.fn(async id => {
       calls.push(`purge:${id}`);
     }),
@@ -343,6 +374,7 @@ test('closes old private state before atomically replacing the account session',
     `key:${secondAccountId}`,
     `open:${secondAccountId}`,
     `migrate:${secondAccountId}`,
+    `identity:${secondAccountId}`,
     `purge:${secondAccountId}`,
     `reconcile:${secondAccountId}`,
   ]);

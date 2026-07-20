@@ -2091,6 +2091,37 @@ CREATE TABLE recap_external_command_attempts (
 );
 `,
 	},
+	{
+		version: 22,
+		name: "root_scoped_mutation_stream_identity",
+		sql: `
+CREATE TABLE mutation_stream_identities (
+  account_user_id TEXT NOT NULL CHECK (account_user_id LIKE 'usr_%'),
+  root_event_id TEXT NOT NULL CHECK (root_event_id LIKE 'evt_%'),
+  device_id TEXT NOT NULL CHECK (
+    length(device_id) = 40 AND
+    substr(device_id, 1, 4) = 'dvc_' AND
+    substr(device_id, 13, 1) = '-' AND
+    substr(device_id, 18, 1) = '-' AND
+    substr(device_id, 19, 1) = '4' AND
+    substr(device_id, 23, 1) = '-' AND
+    substr(device_id, 24, 1) GLOB '[89ab]' AND
+    substr(device_id, 28, 1) = '-' AND
+    replace(substr(device_id, 5), '-', '') NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (account_user_id, root_event_id)
+);
+
+CREATE TRIGGER mutation_stream_identity_root_purge
+AFTER DELETE ON root_sync_state
+BEGIN
+  DELETE FROM mutation_stream_identities
+  WHERE account_user_id = old.account_user_id
+    AND root_event_id = old.root_event_id;
+END;
+`,
+	},
 ];
 
 interface AppliedMigrationRow {

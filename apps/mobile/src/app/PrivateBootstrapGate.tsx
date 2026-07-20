@@ -26,6 +26,7 @@ import {
 } from '../media/attachmentMedia';
 import { openAccountDatabase } from '../storage/opSqliteAdapter';
 import { deniedRootRegistry } from '../storage/deniedRoots';
+import { secureDeviceIdStore } from '../storage/deviceIdentity';
 import { secureSessionStore } from '../storage/secureSession';
 import { queryClient } from './queryClient';
 
@@ -46,6 +47,10 @@ export type PrivateBootstrapDependencies = {
   getDatabaseKey(accountId: string): Promise<string>;
   openDatabase(accountId: string, encryptionKey: string): ClosableSqlDatabase;
   migrateDatabase(database: SqlDatabase): Promise<void>;
+  initializeDeviceIdentities(
+    accountId: string,
+    database: SqlDatabase,
+  ): Promise<void>;
   purgeDeniedRoots(accountId: string, database: SqlDatabase): Promise<void>;
   purgeFeedbackSubmissions(
     accountId: string,
@@ -104,6 +109,9 @@ const defaultDependencies: PrivateBootstrapDependencies = {
   getDatabaseKey: getOrCreateDatabaseKey,
   openDatabase: openAccountDatabase,
   migrateDatabase: migrate,
+  initializeDeviceIdentities(accountId, database) {
+    return secureDeviceIdStore.initializeExisting(database, accountId);
+  },
   purgeDeniedRoots(accountId, database) {
     return deniedRootRegistry.purgeRecorded(accountId, database);
   },
@@ -153,6 +161,7 @@ export async function bootstrapPrivateDatabase(
   try {
     database = dependencies.openDatabase(accountId, key);
     await dependencies.migrateDatabase(database);
+    await dependencies.initializeDeviceIdentities(accountId, database);
     await dependencies.purgeDeniedRoots(accountId, database);
     await dependencies.reconcileAttachments(accountId, database);
     return { status: 'ready', accountId, database };

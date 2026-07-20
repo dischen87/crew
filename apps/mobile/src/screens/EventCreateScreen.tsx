@@ -98,6 +98,13 @@ export function EventCreateScreen({ navigation }: Props) {
             client ?? unavailableGatewayClient,
             {
               activeAccountUserId: () => activeAccountRef.current,
+              assertMutationStreamIdentity: (executor, account, root, device) =>
+                secureDeviceIdStore.assertCurrent(
+                  executor,
+                  account,
+                  root,
+                  device,
+                ),
               randomUUID: secureUuidV4,
             },
           )
@@ -487,13 +494,28 @@ export function EventCreateScreen({ navigation }: Props) {
             overlay,
           );
         } else {
-          const deviceId = await secureDeviceIdStore.getOrCreate();
-          await syncEngine.enqueueRootCreate(
+          const deviceId = await secureDeviceIdStore.getOrCreate(
+            privateDatabase.database,
             accountUserId,
-            deviceId,
-            command,
-            overlay,
+            command.id,
           );
+          try {
+            await syncEngine.enqueueRootCreate(
+              accountUserId,
+              deviceId,
+              command,
+              overlay,
+            );
+          } catch (error) {
+            await secureDeviceIdStore
+              .discardIfUnbound(
+                privateDatabase.database,
+                accountUserId,
+                command.id,
+              )
+              .catch(() => undefined);
+            throw error;
+          }
         }
         if (activeAccountRef.current !== accountUserId) return;
         failedCreationRef.current = null;

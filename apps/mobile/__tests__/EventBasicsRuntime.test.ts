@@ -54,7 +54,10 @@ jest.mock('@crew/mobile-data', () => ({
 }));
 
 jest.mock('../src/storage/deviceIdentity', () => ({
-  secureDeviceIdStore: { getOrCreate: () => mockDeviceId() },
+  secureDeviceIdStore: {
+    assertCurrent: jest.fn(async () => undefined),
+    getOrCreate: () => mockDeviceId(),
+  },
 }));
 
 jest.mock('../src/storage/deniedRoots', () => ({

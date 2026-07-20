@@ -396,6 +396,52 @@ test('manager adapter sends assignments and decision through the typed outbox se
   );
 });
 
+test('same controller resolves the current root identity again after a purge rotation', async () => {
+  let currentDeviceId = 'device-before-purge';
+  const readDeviceId = jest.fn(async () => currentDeviceId);
+  const sync = syncMock();
+  const controller = new TeamCollaborationController({
+    accountUserId,
+    deviceId: readDeviceId,
+    resolvePerson: id => ({ id, name: 'Lena' }),
+    role: 'organizer',
+    store: {
+      getAssignments: jest.fn(async () => assignmentReadModel()),
+      getDecision: jest.fn(async () => decisionReadModel()),
+    },
+    sync,
+  });
+
+  await controller.publishAssignments({
+    eventId,
+    rootEventId,
+    teams: [],
+  });
+  currentDeviceId = 'device-after-purge';
+  await controller.replaceDecision({
+    decisionId,
+    eventId,
+    options: [],
+    rootEventId,
+    state: 'open',
+    title: 'Neu geladen',
+  });
+
+  expect(readDeviceId).toHaveBeenCalledTimes(2);
+  expect(sync.enqueueTeamAssignments).toHaveBeenCalledWith(
+    accountUserId,
+    rootEventId,
+    'device-before-purge',
+    expect.any(Object),
+  );
+  expect(sync.enqueueTeamDecision).toHaveBeenCalledWith(
+    accountUserId,
+    rootEventId,
+    'device-after-purge',
+    expect.any(Object),
+  );
+});
+
 test('pre-write account guard runs after each async read and before either outbox enqueue', async () => {
   let activeAccount: string | null = accountUserId;
   const assertActive = () => {
@@ -473,6 +519,7 @@ test('controller coalesces concurrent response taps and replays the same choice 
   const first = controller.submitResponse(input);
   const second = controller.submitResponse(input);
   expect(first).toBe(second);
+  await Promise.resolve();
   await Promise.resolve();
   expect(sync.enqueueTeamResponse).toHaveBeenCalledTimes(1);
   release(outboxItem());

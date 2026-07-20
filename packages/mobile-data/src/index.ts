@@ -117,6 +117,12 @@ export {
 	type MemberDirectoryStoreOptions,
 } from "./memberDirectory.ts";
 export { migrate, migrations } from "./migrations.ts";
+export {
+	assertMutationStreamIdentity,
+	discardUnboundMutationStreamIdentity,
+	getOrCreateMutationStreamIdentity,
+	initializeMutationStreamIdentities,
+} from "./mutationStreamIdentity.ts";
 export type {
 	GolfScoreEnqueueResult,
 	MobileSyncEngineOptions,
@@ -125,6 +131,7 @@ export type {
 	OutboxItem,
 	OutboxState,
 	RootCreateCommand,
+	SequenceFailureRecoveryOptions,
 	SyncFailureCode,
 	SyncMutation,
 	SyncMutationDraft,
@@ -137,6 +144,8 @@ export {
 	MobileSyncEngine,
 	MobileSyncPublicationInProgressError,
 	MobileSyncRootAccessDeniedError,
+	recoverSequenceFailureStreams,
+	SequenceFailureRecoveryDeferredError,
 	teamResponseEntityId,
 } from "./outbox.ts";
 export type {

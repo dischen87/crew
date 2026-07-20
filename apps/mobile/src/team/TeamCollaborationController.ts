@@ -81,7 +81,7 @@ type TeamWriter = Pick<
 
 type TeamCollaborationControllerOptions = {
   accountUserId: string;
-  deviceId: string;
+  deviceId: string | (() => Promise<string>);
   resolvePerson(userId: string):
     | Promise<TeamPerson | null>
     | TeamPerson
@@ -93,7 +93,7 @@ type TeamCollaborationControllerOptions = {
 
 export class TeamCollaborationController {
   readonly #accountUserId: string;
-  readonly #deviceId: string;
+  readonly #deviceId: () => Promise<string>;
   readonly #resolvePerson: TeamCollaborationControllerOptions['resolvePerson'];
   readonly #role: TeamRole;
   readonly #store: TeamReader;
@@ -102,7 +102,9 @@ export class TeamCollaborationController {
 
   constructor(options: TeamCollaborationControllerOptions) {
     this.#accountUserId = options.accountUserId;
-    this.#deviceId = options.deviceId;
+    const deviceId = options.deviceId;
+    this.#deviceId =
+      typeof deviceId === 'string' ? async () => deviceId : deviceId;
     this.#resolvePerson = options.resolvePerson;
     this.#role = options.role;
     this.#store = options.store;
@@ -237,7 +239,7 @@ export class TeamCollaborationController {
     return this.#sync.enqueueTeamAssignments(
       this.#accountUserId,
       input.rootEventId,
-      this.#deviceId,
+      await this.#deviceId(),
       {
         baseVersion: current.version,
         eventId: input.eventId,
@@ -266,7 +268,7 @@ export class TeamCollaborationController {
     return this.#sync.enqueueTeamDecision(
       this.#accountUserId,
       input.rootEventId,
-      this.#deviceId,
+      await this.#deviceId(),
       {
         baseVersion: current?.version ?? 0,
         decisionId: input.decisionId,
@@ -336,7 +338,7 @@ export class TeamCollaborationController {
     return this.#sync.enqueueTeamResponse(
       this.#accountUserId,
       input.rootEventId,
-      this.#deviceId,
+      await this.#deviceId(),
       {
         baseVersion: 0,
         decisionId: current.id,

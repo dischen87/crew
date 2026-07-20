@@ -8,6 +8,7 @@ import {
   MobileSyncEngine,
   MobileSyncRootAccessDeniedError,
   type GolfScoreEnqueueResult,
+  type SqlExecutor,
 } from '@crew/mobile-data';
 import type { MobileGatewayClient } from '../app/GatewayProvider';
 import type { ClosableSqlDatabase } from '../app/PrivateBootstrapGate';
@@ -20,7 +21,19 @@ import {
   type GolfScorecardViewModel,
 } from './GolfScorecardController';
 
-type DeviceIdReader = { getOrCreate(): Promise<string> };
+type DeviceIdReader = {
+  assertCurrent?(
+    executor: SqlExecutor,
+    accountUserId: string,
+    rootEventId: string,
+    deviceId: string,
+  ): Promise<void>;
+  getOrCreate(
+    database: ClosableSqlDatabase,
+    accountUserId: string,
+    rootEventId: string,
+  ): Promise<string>;
+};
 
 export type GolfScorecardRuntimeOptions = {
   accountUserId: string;
@@ -91,9 +104,14 @@ export class GolfScorecardRuntime {
     if (!event) return null;
     assertActive(options);
 
-    const deviceId = await (
-      options.deviceIdStore ?? secureDeviceIdStore
-    ).getOrCreate();
+    const deviceIds = options.deviceIdStore ?? secureDeviceIdStore;
+    const deviceId = () =>
+      deviceIds.getOrCreate(
+        options.database,
+        options.accountUserId,
+        options.rootEventId,
+      );
+    await deviceId();
     assertActive(options);
     const directory = new MemberDirectoryStore(
       options.database,
@@ -105,6 +123,16 @@ export class GolfScorecardRuntime {
       options.client ?? offlineGatewayClient,
       {
         activeAccountUserId: options.activeAccountUserId,
+        ...(deviceIds.assertCurrent
+          ? {
+              assertMutationStreamIdentity: (
+                executor: SqlExecutor,
+                account: string,
+                root: string,
+                device: string,
+              ) => deviceIds.assertCurrent!(executor, account, root, device),
+            }
+          : {}),
         randomUUID: secureUuidV4,
         onRootReadStarted: (accountUserId, rootEventId) =>
           deniedRootRegistry.arm(accountUserId, rootEventId),

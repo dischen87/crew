@@ -15,6 +15,7 @@ import type {
 	FeedRecord,
 	ItineraryRecord,
 	MembershipRecord,
+	OutboxItem,
 	RootCreateCommand,
 	RootSyncState,
 	SqlDatabase,
@@ -26,12 +27,18 @@ import type {
 	SyncPushBody,
 } from "../src/index.ts";
 import {
+	assertMutationStreamIdentity,
+	discardUnboundMutationStreamIdentity,
+	getOrCreateMutationStreamIdentity,
+	initializeMutationStreamIdentities,
 	LocalAttachmentStore,
 	MobileDataStore,
 	MobileSyncEngine,
 	MobileSyncRootAccessDeniedError,
 	migrate,
 	migrations,
+	recoverSequenceFailureStreams,
+	sha256Hex,
 } from "../src/index.ts";
 import { putTeamSyncProjection } from "../src/teamOffline.ts";
 
@@ -743,6 +750,7 @@ describe("mobile SQLite read models", () => {
 			{ version: 19, name: "feedback_screenshot_delivery" },
 			{ version: 20, name: "feedback_duplicate_suggestion_cache" },
 			{ version: 21, name: "recap_external_command_attempts" },
+			{ version: 22, name: "root_scoped_mutation_stream_identity" },
 		]);
 		expect(
 			await database.first<{ foreign_keys: number }>("PRAGMA foreign_keys"),
@@ -1144,12 +1152,13 @@ INSERT INTO events VALUES (
 			{ version: 19 },
 			{ version: 20 },
 			{ version: 21 },
+			{ version: 22 },
 		]);
 		await database.run(
-			"INSERT INTO schema_migrations (version, name) VALUES (22, 'future_schema')",
+			"INSERT INTO schema_migrations (version, name) VALUES (23, 'future_schema')",
 		);
 		await expect(migrate(database)).rejects.toThrow(
-			"Unknown or renamed SQLite migration 22:future_schema",
+			"Unknown or renamed SQLite migration 23:future_schema",
 		);
 		database.close();
 	});
@@ -1975,6 +1984,645 @@ INSERT INTO events VALUES (
 
 const syncAccount = "usr_00000000000000000000000000000001";
 const syncDevice = "dvc_00000000-0000-4000-8000-000000000001";
+const alternateSyncDevice = "dvc_00000000-0000-4000-8000-000000000002";
+const freshSyncDevice = "dvc_00000000-0000-4000-8000-000000000099";
+
+describe("root-scoped mutation stream identity", () => {
+	test("migrates each legacy root without changing its sequence", async () => {
+		const database = new BunDatabase();
+		await migrateThrough(database, 21);
+		await seedAccount(database, syncAccount);
+		await seedMinimalRoot(database, syncAccount, "evt_other");
+		const engine = testSyncEngine(database, syncAccount, noFetch);
+		await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_legacy_a", "Legacy A"),
+			{},
+		);
+		await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			alternateSyncDevice,
+			feedCreate("fed_legacy_b", "Legacy B"),
+			{},
+		);
+		await engine.enqueueMutation(
+			syncAccount,
+			"evt_other",
+			syncDevice,
+			feedCreate("fed_legacy_other", "Other root"),
+			{},
+		);
+
+		await migrate(database);
+		let legacyReads = 0;
+		await initializeMutationStreamIdentities(
+			database,
+			syncAccount,
+			async () => {
+				legacyReads += 1;
+				return alternateSyncDevice;
+			},
+			() => freshSyncDevice,
+		);
+
+		expect(legacyReads).toBe(1);
+		expect(
+			await database.all(
+				`SELECT root_event_id, device_id FROM mutation_stream_identities
+WHERE account_user_id = ? ORDER BY root_event_id`,
+				[syncAccount],
+			),
+		).toEqual([
+			{ root_event_id: "evt_other", device_id: syncDevice },
+			{ root_event_id: "evt_trip", device_id: alternateSyncDevice },
+		]);
+		const resumed = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			alternateSyncDevice,
+			feedCreate("fed_legacy_resumed", "Resumed"),
+			{},
+		);
+		expect(resumed.clientSequence).toBe(2);
+		database.close();
+	});
+
+	test("coalesces concurrent creation and never revives retained Keychain on fresh SQLite", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		let legacyReads = 0;
+		let generations = 0;
+		const acquire = () =>
+			getOrCreateMutationStreamIdentity(
+				database,
+				syncAccount,
+				"evt_trip",
+				async () => {
+					legacyReads += 1;
+					return syncDevice;
+				},
+				() => {
+					generations += 1;
+					return freshSyncDevice;
+				},
+			);
+		const [first, second] = await Promise.all([acquire(), acquire()]);
+
+		expect(first).toBe(freshSyncDevice);
+		expect(second).toBe(first);
+		expect(legacyReads).toBe(1);
+		expect(generations).toBe(1);
+		expect(
+			await database.first<{ count: number }>(
+				"SELECT COUNT(*) AS count FROM mutation_stream_identities",
+			),
+		).toEqual({ count: 1 });
+		database.close();
+	});
+
+	test("rejects non-canonical persisted stream identities", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		for (const invalid of [
+			"dvc_00000000-0000-1000-8000-000000000001",
+			"dvc_00000000-0000-4000-7000-000000000001",
+			"dvc_00000000-0000-4000-8000-00000000000A",
+		]) {
+			await expect(
+				database.run(
+					`INSERT INTO mutation_stream_identities (
+  account_user_id, root_event_id, device_id
+) VALUES (?, 'evt_invalid', ?)`,
+					[syncAccount, invalid],
+				),
+			).rejects.toThrow();
+		}
+		database.close();
+	});
+
+	test("rotates only the purged root and passes a server-like sequence ledger", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		await seedMinimalRoot(database, syncAccount, "evt_survivor");
+		const legacy = async () => syncDevice;
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			legacy,
+			() => syncDevice,
+		);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_survivor",
+			legacy,
+			() => alternateSyncDevice,
+		);
+
+		await new MobileDataStore(database).clearRootData(syncAccount, "evt_trip");
+		expect(
+			await database.first(
+				`SELECT 1 FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+				[syncAccount],
+			),
+		).toBeNull();
+		expect(
+			await database.first<{ device_id: string }>(
+				`SELECT device_id FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_survivor'`,
+				[syncAccount],
+			),
+		).toEqual({ device_id: alternateSyncDevice });
+
+		await seedMinimalRoot(database, syncAccount, "evt_trip");
+		const rotated = await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			legacy,
+			() => freshSyncDevice,
+		);
+		expect(rotated).toBe(freshSyncDevice);
+		const engine = testSyncEngine(database, syncAccount, noFetch, {
+			assertMutationStreamIdentity,
+		});
+		await expect(
+			engine.enqueueMutation(
+				syncAccount,
+				"evt_trip",
+				syncDevice,
+				feedCreate("fed_stale_identity", "Must not persist"),
+				{},
+			),
+		).rejects.toThrow("Mutation stream identity changed");
+		expect(
+			await database.first<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+				[syncAccount],
+			),
+		).toEqual({ count: 0 });
+		const queued = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			rotated,
+			feedCreate("fed_reinstalled", "Reinstalled"),
+			{},
+		);
+		const ledger = new Map([[`${syncAccount}:evt_trip:${syncDevice}`, 2]]);
+		const accept = (deviceId: string, sequence: number) => {
+			const key = `${syncAccount}:evt_trip:${deviceId}`;
+			const expected = ledger.get(key) ?? 1;
+			if (sequence !== expected) throw new Error("SEQUENCE_REUSED");
+			ledger.set(key, expected + 1);
+		};
+		expect(() => accept(syncDevice, 1)).toThrow("SEQUENCE_REUSED");
+		expect(() => accept(queued.deviceId, queued.clientSequence)).not.toThrow();
+		expect(ledger.get(`${syncAccount}:evt_trip:${freshSyncDevice}`)).toBe(2);
+		database.close();
+	});
+
+	test("replaces a persisted sequence failure tail exactly once", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		await seedMinimalRoot(database, syncAccount, "evt_other");
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			async () => null,
+			() => syncDevice,
+		);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_other",
+			async () => null,
+			() => alternateSyncDevice,
+		);
+		const engine = testSyncEngine(database, syncAccount, noFetch, {
+			randomUUID: uuidSequence(700),
+		});
+		const first = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_sequence_first", "First intent"),
+			{ local: "first" },
+		);
+		const second = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_sequence_second", "Second intent"),
+			{ local: "second", replacementFor: first.clientMutationId },
+		);
+		const unrelated = await engine.enqueueMutation(
+			syncAccount,
+			"evt_other",
+			alternateSyncDevice,
+			feedCreate("fed_unrelated_conflict", "Unrelated conflict"),
+			{ local: "unrelated" },
+		);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'dead_letter', server_consumed = 1,
+  last_error_code = 'sequence', last_request_id = 'request-old-sequence'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, first.clientMutationId],
+		);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'blocked', server_consumed = 0,
+  blocked_until_pull = 1, last_error_code = 'blocked'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, second.clientMutationId],
+		);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'dead_letter', server_consumed = 1,
+  last_error_code = 'conflict'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, unrelated.clientMutationId],
+		);
+
+		expect(
+			await recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => freshSyncDevice,
+				now: () => new Date("2026-07-20T12:00:00.000Z"),
+				randomUUID: uuidSequence(900),
+			}),
+		).toBe(1);
+		const recovered = await engine.listOutbox(syncAccount, "evt_trip");
+		expect(recovered).toHaveLength(2);
+		expect(
+			recovered.map((item) => ({
+				deviceId: item.deviceId,
+				sequence: item.clientSequence,
+				state: item.state,
+			})),
+		).toEqual([
+			{ deviceId: freshSyncDevice, sequence: 1, state: "pending" },
+			{ deviceId: freshSyncDevice, sequence: 2, state: "pending" },
+		]);
+		const domainCommand = (item: OutboxItem) => {
+			const command = item.command as SyncPushBody["mutations"][number];
+			const {
+				clientMutationId: _id,
+				clientSequence: _sequence,
+				...domain
+			} = command;
+			return domain;
+		};
+		expect(domainCommand(requiredTest(recovered[0]))).toEqual(
+			domainCommand(first),
+		);
+		expect(domainCommand(requiredTest(recovered[1]))).toEqual(
+			domainCommand(second),
+		);
+		expect(recovered[0]?.optimisticOverlay).toEqual({ local: "first" });
+		expect(recovered[1]?.optimisticOverlay).toEqual({
+			local: "second",
+			replacementFor: null,
+		});
+		expect(recovered[0]).toMatchObject({
+			createdAt: first.createdAt,
+			lastError: null,
+			serverConsumed: false,
+			updatedAt: first.updatedAt,
+		});
+		expect(recovered[1]).toMatchObject({
+			createdAt: second.createdAt,
+			lastError: null,
+			serverConsumed: false,
+			updatedAt: second.updatedAt,
+		});
+		for (const row of await database.all<{
+			command_fingerprint: string;
+			command_json: string;
+		}>(
+			`SELECT command_json, command_fingerprint FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+			[syncAccount],
+		)) {
+			expect(row.command_fingerprint).toBe(await sha256Hex(row.command_json));
+		}
+		expect(
+			await database.first<{ device_id: string }>(
+				`SELECT device_id FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+				[syncAccount],
+			),
+		).toEqual({ device_id: freshSyncDevice });
+		expect(await engine.listOutbox(syncAccount, "evt_other")).toEqual([
+			expect.objectContaining({
+				clientMutationId: unrelated.clientMutationId,
+				lastError: expect.objectContaining({ code: "conflict" }),
+				state: "dead_letter",
+			}),
+		]);
+		expect(
+			await recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => {
+					throw new Error("must not generate another device");
+				},
+				randomUUID: () => {
+					throw new Error("must not generate another mutation");
+				},
+			}),
+		).toBe(0);
+		expect(await engine.listOutbox(syncAccount, "evt_trip")).toEqual(recovered);
+
+		const ledger = new Map([[`${syncAccount}:evt_trip:${syncDevice}`, 3]]);
+		const accept = (deviceId: string, sequence: number) => {
+			const key = `${syncAccount}:evt_trip:${deviceId}`;
+			const expected = ledger.get(key) ?? 1;
+			if (sequence !== expected) throw new Error("SEQUENCE_REUSED");
+			ledger.set(key, expected + 1);
+		};
+		expect(() => accept(syncDevice, 1)).toThrow("SEQUENCE_REUSED");
+		for (const item of recovered) {
+			expect(() => accept(item.deviceId, item.clientSequence)).not.toThrow();
+		}
+		expect(await database.all("PRAGMA foreign_key_check")).toEqual([]);
+		database.close();
+	});
+
+	test("rolls back sequence recovery when the stream or UUID source is ambiguous", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			async () => null,
+			() => syncDevice,
+		);
+		const engine = testSyncEngine(database, syncAccount, noFetch, {
+			randomUUID: uuidSequence(930),
+		});
+		const failed = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_ambiguous_first", "First"),
+			{},
+		);
+		const active = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_ambiguous_second", "Second"),
+			{},
+		);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'dead_letter', server_consumed = 1,
+  last_error_code = 'sequence'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, failed.clientMutationId],
+		);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'sending', lease_owner = 'lease-live',
+  lease_expires_at = '2026-07-20T13:00:00.000Z'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, active.clientMutationId],
+		);
+		const before = await database.all(
+			`SELECT * FROM mutation_outbox WHERE account_user_id = ?
+ORDER BY root_event_id, client_sequence`,
+			[syncAccount],
+		);
+		await expect(
+			recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => freshSyncDevice,
+				randomUUID: uuidSequence(940),
+			}),
+		).rejects.toThrow("uncertain outcome");
+		expect(
+			await database.all(
+				`SELECT * FROM mutation_outbox WHERE account_user_id = ?
+ORDER BY root_event_id, client_sequence`,
+				[syncAccount],
+			),
+		).toEqual(before);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			attentionCount: 1,
+			state: "needs_attention",
+		});
+
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'blocked', lease_owner = NULL,
+  lease_expires_at = NULL, last_error_code = 'blocked'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, active.clientMutationId],
+		);
+		const batchBodyJson = JSON.stringify({
+			deviceId: syncDevice,
+			mutations: [failed.command, active.command],
+			protocolVersion: 1,
+			rootEventId: "evt_trip",
+		});
+		await database.run(
+			`INSERT INTO sync_push_batches (
+  account_user_id, root_event_id, device_id, idempotency_key, body_json,
+  body_fingerprint, mutation_ids_json, created_at
+) VALUES (?, 'evt_trip', ?, 'sync-ambiguous', ?, ?, ?, ?)`,
+			[
+				syncAccount,
+				syncDevice,
+				batchBodyJson,
+				await sha256Hex(batchBodyJson),
+				JSON.stringify([failed.clientMutationId, active.clientMutationId]),
+				now,
+			],
+		);
+		await expect(
+			recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => freshSyncDevice,
+				randomUUID: uuidSequence(950),
+			}),
+		).rejects.toThrow("uncertain outcome");
+		expect(
+			await database.first<{ idempotency_key: string }>(
+				"SELECT idempotency_key FROM sync_push_batches",
+			),
+		).toEqual({ idempotency_key: "sync-ambiguous" });
+		await database.run(
+			`DELETE FROM sync_push_batches
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+			[syncAccount],
+		);
+		const beforeInvalidUuid = await database.all(
+			`SELECT * FROM mutation_outbox WHERE account_user_id = ?
+ORDER BY root_event_id, client_sequence`,
+			[syncAccount],
+		);
+		await expect(
+			recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => freshSyncDevice,
+				randomUUID: () => "not-a-uuid",
+			}),
+		).rejects.toThrow("identity is invalid");
+		expect(
+			await database.all(
+				`SELECT * FROM mutation_outbox WHERE account_user_id = ?
+ORDER BY root_event_id, client_sequence`,
+				[syncAccount],
+			),
+		).toEqual(beforeInvalidUuid);
+		expect(
+			await database.first<{ device_id: string }>(
+				`SELECT device_id FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_trip'`,
+				[syncAccount],
+			),
+		).toEqual({ device_id: syncDevice });
+		database.close();
+	});
+
+	test("atomically relinks a pending golf intent to its recovered mutation", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		await database.transaction(async (transaction) => {
+			await putGolfSyncProjection(transaction, syncAccount, "golfRound", {
+				rootEventId: "evt_trip",
+				eventId: "evt_day_a",
+				holes: [{ hole: 1, par: 4, strokeIndex: 1 }],
+				teams: [],
+				version: 1,
+				updatedAt: now,
+			});
+			await putGolfSyncProjection(transaction, syncAccount, "golfRoster", {
+				rootEventId: "evt_trip",
+				eventId: "evt_day_a",
+				players: [{ userId: syncAccount, playingHandicap: 18 }],
+				version: 1,
+				updatedAt: now,
+			});
+			await putGolfSyncProjection(transaction, syncAccount, "golfPlayer", {
+				rootEventId: "evt_trip",
+				eventId: "evt_day_a",
+				userId: syncAccount,
+				playingHandicap: 18,
+				version: 1,
+			});
+		});
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			async () => null,
+			() => syncDevice,
+		);
+		const engine = testSyncEngine(database, syncAccount, noFetch, {
+			randomUUID: uuidSequence(960),
+		});
+		const queued = await engine.enqueueGolfScore(
+			{
+				accountUserId: syncAccount,
+				baseVersion: 0,
+				clientIntentId: "gsi_sequence_recovery",
+				eventId: "evt_day_a",
+				hole: 1,
+				putts: 2,
+				rootEventId: "evt_trip",
+				strokes: 5,
+			},
+			syncDevice,
+		);
+		const failed = requiredTest(queued.outbox);
+		await database.run(
+			`UPDATE mutation_outbox SET state = 'dead_letter', server_consumed = 1,
+  last_error_code = 'sequence'
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+			[syncAccount, failed.clientMutationId],
+		);
+		expect(
+			await recoverSequenceFailureStreams(database, syncAccount, {
+				newDeviceId: () => freshSyncDevice,
+				now: () => new Date("2026-07-20T12:00:00.000Z"),
+				randomUUID: uuidSequence(970),
+			}),
+		).toBe(1);
+		const [replacement] = await engine.listOutbox(syncAccount, "evt_trip");
+		expect(replacement).toMatchObject({
+			clientMutationId: "00000000-0000-4000-8000-000000000970",
+			clientSequence: 1,
+			deviceId: freshSyncDevice,
+			state: "pending",
+		});
+		expect(
+			await database.first<{
+				client_intent_id: string;
+				outbox_client_mutation_id: string;
+				state: string;
+			}>(
+				`SELECT client_intent_id, outbox_client_mutation_id, state
+FROM golf_score_intents WHERE account_user_id = ? AND client_intent_id = ?`,
+				[syncAccount, "gsi_sequence_recovery"],
+			),
+		).toEqual({
+			client_intent_id: "gsi_sequence_recovery",
+			outbox_client_mutation_id: requiredTest(replacement).clientMutationId,
+			state: "pending",
+		});
+		expect(await database.all("PRAGMA foreign_key_check")).toEqual([]);
+		database.close();
+	});
+
+	test("removes only an unbound failed root-create identity", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_failed_create",
+			async () => syncDevice,
+			() => freshSyncDevice,
+		);
+		await discardUnboundMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_failed_create",
+		);
+		expect(
+			await database.first(
+				`SELECT 1 FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_failed_create'`,
+				[syncAccount],
+			),
+		).toBeNull();
+
+		await seedMinimalRoot(database, syncAccount, "evt_bound_create");
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_bound_create",
+			async () => syncDevice,
+			() => alternateSyncDevice,
+		);
+		await discardUnboundMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_bound_create",
+		);
+		expect(
+			await database.first(
+				`SELECT 1 FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = 'evt_bound_create'`,
+				[syncAccount],
+			),
+		).not.toBeNull();
+		database.close();
+	});
+});
 
 describe("durable optimistic mutation outbox", () => {
 	test("allocates a gap-free sequence atomically when an insert rolls back", async () => {
@@ -3499,6 +4147,7 @@ const deniedRootScopedTables = [
 	"sync_snapshot_staging",
 	"sync_snapshot_records",
 	"mutation_streams",
+	"mutation_stream_identities",
 	"mutation_outbox",
 	"sync_push_batches",
 	"local_attachment_media",
@@ -3537,6 +4186,20 @@ describe("authoritative root access denial", () => {
 		await migrate(database);
 		await seedDeniedRootGraph(database, deniedFileKey);
 		await seedMinimalRoot(database, syncAccount, survivorRoot);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			"evt_trip",
+			async () => syncDevice,
+			() => syncDevice,
+		);
+		await getOrCreateMutationStreamIdentity(
+			database,
+			syncAccount,
+			survivorRoot,
+			async () => syncDevice,
+			() => alternateSyncDevice,
+		);
 		await retainLocalAttachment(
 			database,
 			syncAccount,
@@ -3617,6 +4280,13 @@ describe("authoritative root access denial", () => {
 				survivorRoot,
 			),
 		).toBe(1);
+		expect(
+			await database.first<{ device_id: string }>(
+				`SELECT device_id FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = ?`,
+				[syncAccount, survivorRoot],
+			),
+		).toEqual({ device_id: alternateSyncDevice });
 		expect(
 			await rootRowCount(database, "root_sync_state", otherAccount, "evt_trip"),
 		).toBe(1);
@@ -4332,6 +5002,12 @@ function testSyncEngine(
 			accountUserId: string,
 			rootEventId: string,
 		) => void | Promise<void>;
+		assertMutationStreamIdentity?: (
+			executor: SqlExecutor,
+			accountUserId: string,
+			rootEventId: string,
+			deviceId: string,
+		) => void | Promise<void>;
 		randomUUID?: () => string;
 		sha256?: (value: string) => string | Promise<string>;
 	} = {},
@@ -4346,6 +5022,11 @@ function testSyncEngine(
 	});
 	return new MobileSyncEngine(database, gateway, {
 		activeAccountUserId: options.activeAccountUserId ?? (() => accountUserId),
+		...(options.assertMutationStreamIdentity
+			? {
+					assertMutationStreamIdentity: options.assertMutationStreamIdentity,
+				}
+			: {}),
 		...(options.onRootReadStarted
 			? { onRootReadStarted: options.onRootReadStarted }
 			: {}),

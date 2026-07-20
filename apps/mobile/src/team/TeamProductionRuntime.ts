@@ -8,6 +8,7 @@ import {
   MobileSyncRootAccessDeniedError,
   type FeedRecord,
   type OutboxItem,
+  type SqlExecutor,
   type SyncMutationDraft,
   TeamOfflineStore,
 } from '@crew/mobile-data';
@@ -25,7 +26,19 @@ import {
   type TeamRole,
 } from './TeamCollaborationController';
 
-type DeviceIdReader = { getOrCreate(): Promise<string> };
+type DeviceIdReader = {
+  assertCurrent?(
+    executor: SqlExecutor,
+    accountUserId: string,
+    rootEventId: string,
+    deviceId: string,
+  ): Promise<void>;
+  getOrCreate(
+    database: ClosableSqlDatabase,
+    accountUserId: string,
+    rootEventId: string,
+  ): Promise<string>;
+};
 
 export type TeamProductionRuntimeOptions = {
   accountUserId: string;
@@ -70,7 +83,7 @@ export class TeamProductionRuntime {
   readonly #controller: TeamCollaborationController;
   readonly #data: MobileDataStore;
   readonly #database: ClosableSqlDatabase;
-  readonly #deviceId: string;
+  readonly #deviceId: () => Promise<string>;
   readonly #directory: MemberDirectoryStore;
   readonly #feedInFlight = new Map<string, Promise<OutboxItem>>();
   readonly #randomUUID: () => string;
@@ -85,7 +98,7 @@ export class TeamProductionRuntime {
     controller: TeamCollaborationController;
     data: MobileDataStore;
     database: ClosableSqlDatabase;
-    deviceId: string;
+    deviceId(): Promise<string>;
     directory: MemberDirectoryStore;
     randomUUID: () => string;
     role: TeamRole;
@@ -122,9 +135,14 @@ export class TeamProductionRuntime {
     if (!membership) return null;
     assertActive(options);
 
-    const deviceId = await (
-      options.deviceIdStore ?? secureDeviceIdStore
-    ).getOrCreate();
+    const deviceIds = options.deviceIdStore ?? secureDeviceIdStore;
+    const deviceId = () =>
+      deviceIds.getOrCreate(
+        options.database,
+        options.accountUserId,
+        options.rootEventId,
+      );
+    await deviceId();
     assertActive(options);
     const randomUUID = options.randomUUID ?? secureUuidV4;
     const team = new TeamOfflineStore(options.database);
@@ -138,6 +156,16 @@ export class TeamProductionRuntime {
       options.client ?? offlineGatewayClient,
       {
         activeAccountUserId: options.activeAccountUserId,
+        ...(deviceIds.assertCurrent
+          ? {
+              assertMutationStreamIdentity: (
+                executor: SqlExecutor,
+                account: string,
+                root: string,
+                device: string,
+              ) => deviceIds.assertCurrent!(executor, account, root, device),
+            }
+          : {}),
         randomUUID,
         onRootReadStarted: (accountUserId, rootEventId) =>
           deniedRootRegistry.arm(accountUserId, rootEventId),
@@ -361,7 +389,7 @@ export class TeamProductionRuntime {
     return this.#sync.enqueueMutation(
       this.#accountUserId,
       this.#rootEventId,
-      this.#deviceId,
+      await this.#deviceId(),
       command,
       command,
     );

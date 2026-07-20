@@ -92,7 +92,7 @@ type GolfSync = Pick<
 type GolfScorecardControllerOptions = {
   accountUserId: string;
   activeAccountUserId(): string | null;
-  deviceId: string;
+  deviceId: string | (() => Promise<string>);
   eventId: string;
   resolvePerson(userId: string): Promise<string | null> | string | null;
   role: GolfScorecardRole;
@@ -107,7 +107,7 @@ type GolfOutboxItem = OutboxItem & { command: GolfMutation };
 export class GolfScorecardController {
   readonly #accountUserId: string;
   readonly #activeAccountUserId: () => string | null;
-  readonly #deviceId: string;
+  readonly #deviceId: () => Promise<string>;
   readonly #eventId: string;
   readonly #resolvePerson: GolfScorecardControllerOptions['resolvePerson'];
   readonly #role: GolfScorecardRole;
@@ -118,7 +118,9 @@ export class GolfScorecardController {
   constructor(options: GolfScorecardControllerOptions) {
     this.#accountUserId = options.accountUserId;
     this.#activeAccountUserId = options.activeAccountUserId;
-    this.#deviceId = options.deviceId;
+    const deviceId = options.deviceId;
+    this.#deviceId =
+      typeof deviceId === 'string' ? async () => deviceId : deviceId;
     this.#eventId = options.eventId;
     this.#resolvePerson = options.resolvePerson;
     this.#role = options.role;
@@ -215,7 +217,7 @@ export class GolfScorecardController {
         rootEventId: this.#rootEventId,
         strokes: input.strokes,
       },
-      this.#deviceId,
+      await this.#deviceId(),
     );
   }
 

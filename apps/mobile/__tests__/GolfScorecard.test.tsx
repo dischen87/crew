@@ -108,6 +108,37 @@ test('participant controller projects exactly 18 holes, local Stableford, one ou
   expect('enqueueScore' in store).toBe(false);
 });
 
+test('same scorecard resolves a rotated root identity for every save', async () => {
+  let currentDeviceId = 'device-before-purge';
+  const readDeviceId = jest.fn(async () => currentDeviceId);
+  const { controller, sync } = controllerFixture('participant', {
+    deviceId: readDeviceId,
+  });
+  const command = {
+    baseVersion: 0,
+    clientIntentId: 'gsi_rotated_identity',
+    hole: 18,
+    putts: 1,
+    strokes: 4,
+  };
+
+  await controller.saveScore(command);
+  currentDeviceId = 'device-after-purge';
+  await controller.saveScore(command);
+
+  expect(readDeviceId).toHaveBeenCalledTimes(2);
+  expect(sync.enqueueGolfScore).toHaveBeenNthCalledWith(
+    1,
+    expect.any(Object),
+    'device-before-purge',
+  );
+  expect(sync.enqueueGolfScore).toHaveBeenNthCalledWith(
+    2,
+    expect.any(Object),
+    'device-after-purge',
+  );
+});
+
 test('restart reads queued state from the existing scorecard and outbox without inventing a second model', async () => {
   const pending = golfOutbox({ state: 'pending' });
   const { controller } = controllerFixture('participant', {
@@ -531,6 +562,7 @@ function controllerFixture(
   role: GolfScorecardRole,
   overrides: {
     active?: () => string | null;
+    deviceId?: string | (() => Promise<string>);
     eligible?: boolean;
     outbox?: readonly OutboxItem[];
     scorecard?: ReturnType<typeof scorecard>;
@@ -560,7 +592,7 @@ function controllerFixture(
     controller: new GolfScorecardController({
       accountUserId,
       activeAccountUserId: overrides.active ?? (() => accountUserId),
-      deviceId,
+      deviceId: overrides.deviceId ?? deviceId,
       eventId,
       resolvePerson: id => (id === otherUserId ? 'Marco' : null),
       role,

@@ -130,6 +130,12 @@ export interface OutboxEvidence {
 
 export interface MobileSyncEngineOptions {
 	activeAccountUserId: () => string | null | Promise<string | null>;
+	assertMutationStreamIdentity?: (
+		executor: SqlExecutor,
+		accountUserId: string,
+		rootEventId: string,
+		deviceId: string,
+	) => void | Promise<void>;
 	onRootReadStarted?: (
 		accountUserId: string,
 		rootEventId: string,
@@ -146,6 +152,14 @@ export interface MobileSyncEngineOptions {
 	now?: () => Date;
 	random?: () => number;
 	randomUUID: () => string;
+	sha256?: (value: string) => string | Promise<string>;
+}
+
+export interface SequenceFailureRecoveryOptions {
+	newDeviceId: () => string;
+	randomUUID: () => string;
+	now?: () => Date;
+	rootEventId?: string;
 	sha256?: (value: string) => string | Promise<string>;
 }
 
@@ -187,6 +201,30 @@ interface PushBatchRow {
 	lease_owner: string | null;
 	lease_expires_at: string | null;
 	created_at: string;
+}
+
+interface GolfIntentRecoveryRow {
+	account_user_id: string;
+	client_intent_id: string;
+	root_event_id: string;
+	event_id: string;
+	score_id: string;
+	user_id: string;
+	hole: number;
+	client_sequence: number;
+	outbox_client_mutation_id: string | null;
+	base_version: number;
+	strokes: number | null;
+	putts: number | null;
+	playing_handicap: number;
+	handicap_strokes: number;
+	net_strokes: number | null;
+	stableford_points: number;
+	command_json: string;
+	state: GolfScoreIntent["state"];
+	applied_entity_version: number | null;
+	created_at: string;
+	updated_at: string;
 }
 
 type OutboxEvidenceSourceRow = Pick<
@@ -256,9 +294,381 @@ export class MobileSyncPublicationInProgressError extends Error {
 	}
 }
 
+export class SequenceFailureRecoveryDeferredError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SequenceFailureRecoveryDeferredError";
+	}
+}
+
+/**
+ * Stored `sequence` failures cover non-consuming stream-integrity rejections.
+ * Rotate that root's transport identity and replace only a provably safe
+ * rejected/unconsumed tail so shipped failures do not remain permanently stuck.
+ */
+export async function recoverSequenceFailureStreams(
+	database: SqlDatabase,
+	accountUserId: string,
+	options: SequenceFailureRecoveryOptions,
+): Promise<number> {
+	validateAccount(accountUserId);
+	if (options.rootEventId) validateRoot(options.rootEventId);
+	const timestamp = recoveryTimestamp(options.now ?? (() => new Date()));
+	const digest = options.sha256 ?? sha256Hex;
+	const sha256 = async (value: string) => {
+		const result = await digest(value);
+		if (!/^[a-f0-9]{64}$/.test(result)) {
+			throw new Error("SHA-256 provider returned an invalid lowercase digest");
+		}
+		return result;
+	};
+
+	return database.transaction(async (transaction) => {
+		const failures = await transaction.all<{
+			device_id: string;
+			failure_count: number;
+			first_sequence: number;
+			root_event_id: string;
+		}>(
+			options.rootEventId
+				? `SELECT root_event_id, device_id, COUNT(*) AS failure_count,
+  MIN(client_sequence) AS first_sequence
+FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ?
+  AND operation_id = 'syncMutationsApply' AND state = 'dead_letter'
+  AND last_error_code = 'sequence'
+GROUP BY root_event_id, device_id
+ORDER BY root_event_id, device_id`
+				: `SELECT root_event_id, device_id, COUNT(*) AS failure_count,
+  MIN(client_sequence) AS first_sequence
+FROM mutation_outbox
+WHERE account_user_id = ? AND operation_id = 'syncMutationsApply'
+  AND state = 'dead_letter' AND last_error_code = 'sequence'
+GROUP BY root_event_id, device_id
+ORDER BY root_event_id, device_id`,
+			options.rootEventId
+				? [accountUserId, options.rootEventId]
+				: [accountUserId],
+		);
+		const recoveredRoots = new Set<string>();
+		for (const failure of failures) {
+			validateRoot(failure.root_event_id);
+			validateDevice(failure.device_id);
+			if (recoveredRoots.has(failure.root_event_id)) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Multiple compromised mutation streams share one root",
+				);
+			}
+			if (Number(failure.failure_count) !== 1) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream has multiple failures",
+				);
+			}
+			const firstSequence = Number(failure.first_sequence);
+			if (!Number.isSafeInteger(firstSequence) || firstSequence < 1) {
+				throw new Error("Invalid compromised mutation sequence");
+			}
+			const identity = await transaction.first<{ device_id: string }>(
+				`SELECT device_id FROM mutation_stream_identities
+WHERE account_user_id = ? AND root_event_id = ?`,
+				[accountUserId, failure.root_event_id],
+			);
+			if (identity?.device_id !== failure.device_id) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream is no longer current",
+				);
+			}
+			const ambiguous = await transaction.first(
+				`SELECT 1 FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  AND operation_id = 'syncMutationsApply'
+  AND (
+    (server_consumed = 1 AND NOT (
+      state = 'dead_letter' AND last_error_code = 'sequence'
+    )) OR
+    state IN ('sending', 'awaiting_pull') OR
+    lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL
+  )
+LIMIT 1`,
+				[accountUserId, failure.root_event_id, failure.device_id],
+			);
+			const persistedBatch = await transaction.first(
+				`SELECT 1 FROM sync_push_batches
+WHERE account_user_id = ? AND root_event_id = ?`,
+				[accountUserId, failure.root_event_id],
+			);
+			if (ambiguous || persistedBatch) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream has an uncertain outcome",
+				);
+			}
+			const uncertain = await transaction.first(
+				`SELECT 1 FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  AND operation_id = 'syncMutationsApply' AND server_consumed = 0
+  AND (
+    client_sequence < ? OR
+    (client_sequence >= ? AND state NOT IN ('pending', 'blocked', 'dead_letter'))
+  )
+LIMIT 1`,
+				[
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+					firstSequence,
+					firstSequence,
+				],
+			);
+			if (uncertain) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream has an uncertain outcome",
+				);
+			}
+			const rows = await transaction.all<OutboxRow>(
+				`SELECT * FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  AND operation_id = 'syncMutationsApply' AND client_sequence >= ?
+  AND (
+    (state = 'dead_letter' AND last_error_code = 'sequence') OR
+    (server_consumed = 0 AND state IN ('pending', 'blocked'))
+  )
+ORDER BY client_sequence, client_mutation_id`,
+				[
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+					firstSequence,
+				],
+			);
+			if (
+				rows.length === 0 ||
+				rows[0]?.state !== "dead_letter" ||
+				rows[0]?.last_error_code !== "sequence" ||
+				Number(rows[0]?.client_sequence) !== firstSequence
+			) {
+				throw new Error("Compromised mutation stream head is missing");
+			}
+			const recoverableCount = await transaction.first<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  AND operation_id = 'syncMutationsApply' AND client_sequence >= ?`,
+				[
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+					firstSequence,
+				],
+			);
+			if (Number(recoverableCount?.count) !== rows.length) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream tail is not recoverable",
+				);
+			}
+			if (
+				rows.some(
+					(row, index) => Number(row.client_sequence) !== firstSequence + index,
+				)
+			) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Compromised mutation stream tail has a sequence gap",
+				);
+			}
+			if (rows.length >= MAX_CLIENT_SEQUENCE) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Replacement mutation stream is exhausted",
+				);
+			}
+
+			const replacementDeviceId = recoveryDeviceId(options.newDeviceId);
+			if (replacementDeviceId === failure.device_id) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Replacement mutation stream identity was reused",
+				);
+			}
+			const occupiedDevice = await transaction.first(
+				`SELECT 1 FROM mutation_streams
+WHERE account_user_id = ? AND device_id = ?
+UNION ALL
+SELECT 1 FROM mutation_stream_identities
+WHERE account_user_id = ? AND device_id = ?
+LIMIT 1`,
+				[
+					accountUserId,
+					replacementDeviceId,
+					accountUserId,
+					replacementDeviceId,
+				],
+			);
+			if (occupiedDevice) {
+				throw new SequenceFailureRecoveryDeferredError(
+					"Replacement mutation stream identity already exists",
+				);
+			}
+
+			const replacedMutationIds = new Set(
+				rows.map((row) => row.client_mutation_id),
+			);
+			const replacements: Array<{
+				commandJson: string;
+				fingerprint: string;
+				golfIntent: GolfIntentRecoveryRow | null;
+				id: string;
+				overlayJson: string;
+				row: OutboxRow;
+				sequence: number;
+			}> = [];
+			for (const [index, row] of rows.entries()) {
+				await verifyRow(row, sha256);
+				const persisted = canonicalizePersistedMutation(
+					parseJson<unknown>(row.command_json),
+					accountUserId,
+				);
+				if (
+					persisted.clientMutationId !== row.client_mutation_id ||
+					persisted.clientSequence !== Number(row.client_sequence)
+				) {
+					throw new Error("Persisted mutation identity mismatch");
+				}
+				const overlayJson = recoveredOverlayJson(
+					row.optimistic_overlay_json,
+					replacedMutationIds,
+				);
+				const id = recoveryUuid(options.randomUUID);
+				const occupiedMutation = await transaction.first(
+					`SELECT 1 FROM mutation_outbox
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+					[accountUserId, id],
+				);
+				if (occupiedMutation || replacements.some((item) => item.id === id)) {
+					throw new SequenceFailureRecoveryDeferredError(
+						"Replacement mutation identity already exists",
+					);
+				}
+				const sequence = index + 1;
+				const commandJson = serializeJson({
+					...canonicalizeMutationDraft(persisted, accountUserId),
+					clientMutationId: id,
+					clientSequence: sequence,
+				} satisfies SyncMutation);
+				const golfIntent = await transaction.first<GolfIntentRecoveryRow>(
+					`SELECT * FROM golf_score_intents
+WHERE account_user_id = ? AND outbox_client_mutation_id = ?`,
+					[accountUserId, row.client_mutation_id],
+				);
+				if (
+					golfIntent &&
+					(golfIntent.state !== "pending" ||
+						persisted.kind !== "golf.score.set")
+				) {
+					throw new Error("Compromised golf score intent cannot be replaced");
+				}
+				replacements.push({
+					commandJson,
+					fingerprint: await sha256(commandJson),
+					golfIntent,
+					id,
+					overlayJson,
+					row,
+					sequence,
+				});
+			}
+
+			for (const replacement of replacements) {
+				if (replacement.golfIntent) {
+					await transaction.run(
+						`DELETE FROM golf_score_intents
+WHERE account_user_id = ? AND client_intent_id = ?`,
+						[accountUserId, replacement.golfIntent.client_intent_id],
+					);
+				}
+				await transaction.run(
+					`DELETE FROM mutation_outbox
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+					[accountUserId, replacement.row.client_mutation_id],
+				);
+			}
+			await transaction.run(
+				`INSERT INTO mutation_streams (
+  account_user_id, root_event_id, device_id, next_client_sequence
+) VALUES (?, ?, ?, ?)`,
+				[
+					accountUserId,
+					failure.root_event_id,
+					replacementDeviceId,
+					replacements.length + 1,
+				],
+			);
+			await transaction.run(
+				`INSERT INTO mutation_stream_identities (
+  account_user_id, root_event_id, device_id, created_at
+) VALUES (?, ?, ?, ?)
+ON CONFLICT (account_user_id, root_event_id) DO UPDATE SET
+  device_id = excluded.device_id, created_at = excluded.created_at`,
+				[accountUserId, failure.root_event_id, replacementDeviceId, timestamp],
+			);
+			for (const replacement of replacements) {
+				await transaction.run(
+					`INSERT INTO mutation_outbox (
+  account_user_id, client_mutation_id, root_event_id, device_id,
+  client_sequence, operation_id, command_json, command_fingerprint,
+  optimistic_overlay_json, state, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, 'syncMutationsApply', ?, ?, ?, 'pending', ?, ?)`,
+					[
+						accountUserId,
+						replacement.id,
+						failure.root_event_id,
+						replacementDeviceId,
+						replacement.sequence,
+						replacement.commandJson,
+						replacement.fingerprint,
+						replacement.overlayJson,
+						replacement.row.created_at,
+						replacement.row.updated_at,
+					],
+				);
+				if (replacement.golfIntent) {
+					await insertRecoveredGolfIntent(
+						transaction,
+						replacement.golfIntent,
+						replacement.id,
+					);
+				}
+			}
+			await transaction.run(
+				`DELETE FROM mutation_streams
+WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  AND NOT EXISTS (
+    SELECT 1 FROM mutation_outbox
+    WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM sync_push_batches
+    WHERE account_user_id = ? AND root_event_id = ? AND device_id = ?
+  )`,
+				[
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+					accountUserId,
+					failure.root_event_id,
+					failure.device_id,
+				],
+			);
+			recoveredRoots.add(failure.root_event_id);
+		}
+		return recoveredRoots.size;
+	});
+}
+
 export class MobileSyncEngine {
 	readonly #store: MobileDataStore;
 	readonly #activeAccountUserId: MobileSyncEngineOptions["activeAccountUserId"];
+	readonly #assertMutationStreamIdentity: NonNullable<
+		MobileSyncEngineOptions["assertMutationStreamIdentity"]
+	>;
 	readonly #onRootReadStarted: MobileSyncEngineOptions["onRootReadStarted"];
 	readonly #onRootReadFinished: MobileSyncEngineOptions["onRootReadFinished"];
 	readonly #onRootPurged: NonNullable<MobileSyncEngineOptions["onRootPurged"]>;
@@ -275,6 +685,8 @@ export class MobileSyncEngine {
 	) {
 		this.#store = new MobileDataStore(database);
 		this.#activeAccountUserId = options.activeAccountUserId;
+		this.#assertMutationStreamIdentity =
+			options.assertMutationStreamIdentity ?? (() => undefined);
 		if (
 			Boolean(options.onRootReadStarted) !== Boolean(options.onRootReadFinished)
 		) {
@@ -321,6 +733,12 @@ export class MobileSyncEngine {
 ) VALUES (?, ?, NULL, NULL, NULL, '1', NULL)
 ON CONFLICT (account_user_id, root_event_id) DO NOTHING`,
 				[accountUserId, canonicalCommand.id],
+			);
+			await this.#assertMutationStreamIdentity(
+				transaction,
+				accountUserId,
+				canonicalCommand.id,
+				deviceId,
 			);
 			await ensureStream(
 				transaction,
@@ -576,6 +994,12 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 			[accountUserId, rootEventId],
 		);
 		if (!root) throw new Error("Root must be bootstrapped before enqueue");
+		await this.#assertMutationStreamIdentity(
+			transaction,
+			accountUserId,
+			rootEventId,
+			deviceId,
+		);
 		await transaction.run(
 			`DELETE FROM event_publish_guards
 WHERE account_user_id = ? AND root_event_id = ? AND expires_at <= ?`,
@@ -1905,6 +2329,102 @@ WHERE account_user_id = ? AND client_mutation_id = ?`,
 			this.#now().getTime() - Date.parse(createdAt) >= MAX_RETRY_AGE_MS
 		);
 	}
+}
+
+async function insertRecoveredGolfIntent(
+	executor: SqlExecutor,
+	intent: GolfIntentRecoveryRow,
+	clientMutationId: string,
+): Promise<void> {
+	await executor.run(
+		`INSERT INTO golf_score_intents (
+  account_user_id, client_intent_id, root_event_id, event_id, score_id,
+  user_id, hole, client_sequence, base_version, strokes, putts,
+  playing_handicap, handicap_strokes, net_strokes, stableford_points,
+  command_json, state, applied_entity_version, created_at, updated_at,
+  outbox_client_mutation_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			intent.account_user_id,
+			intent.client_intent_id,
+			intent.root_event_id,
+			intent.event_id,
+			intent.score_id,
+			intent.user_id,
+			intent.hole,
+			intent.client_sequence,
+			intent.base_version,
+			intent.strokes,
+			intent.putts,
+			intent.playing_handicap,
+			intent.handicap_strokes,
+			intent.net_strokes,
+			intent.stableford_points,
+			intent.command_json,
+			intent.state,
+			intent.applied_entity_version,
+			intent.created_at,
+			intent.updated_at,
+			clientMutationId,
+		],
+	);
+}
+
+function recoveredOverlayJson(
+	value: string,
+	replacedMutationIds: ReadonlySet<string>,
+): string {
+	const overlay = parseJson<unknown>(value);
+	if (
+		isRecord(overlay) &&
+		typeof overlay.replacementFor === "string" &&
+		replacedMutationIds.has(overlay.replacementFor)
+	) {
+		return serializeJson({ ...overlay, replacementFor: null });
+	}
+	return value;
+}
+
+function recoveryTimestamp(now: () => Date): string {
+	const value = now();
+	if (!Number.isFinite(value.getTime())) {
+		throw new Error("Clock returned an invalid date");
+	}
+	return value.toISOString();
+}
+
+function recoveryDeviceId(newDeviceId: () => string): string {
+	let value: string;
+	try {
+		value = newDeviceId();
+	} catch {
+		throw new SequenceFailureRecoveryDeferredError(
+			"Replacement mutation stream identity is unavailable",
+		);
+	}
+	if (!value.startsWith("dvc_") || !uuidV4Pattern.test(value.slice(4))) {
+		throw new SequenceFailureRecoveryDeferredError(
+			"Replacement mutation stream identity is invalid",
+		);
+	}
+	return value;
+}
+
+function recoveryUuid(randomUUID: () => string): string {
+	let value: string;
+	try {
+		value = randomUUID();
+	} catch {
+		throw new SequenceFailureRecoveryDeferredError(
+			"Replacement mutation identity is unavailable",
+		);
+	}
+	if (!uuidV4Pattern.test(value)) {
+		throw new SequenceFailureRecoveryDeferredError(
+			"Replacement mutation identity is invalid",
+		);
+	}
+	return value;
 }
 
 async function ensureStream(

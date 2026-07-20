@@ -114,6 +114,13 @@ export class EventBasicsRuntime {
       options.client ?? unavailableClient,
       {
         activeAccountUserId: options.activeAccountUserId,
+        assertMutationStreamIdentity: (executor, account, root, device) =>
+          secureDeviceIdStore.assertCurrent(
+            executor,
+            account,
+            root,
+            device,
+          ),
         onRootPurged: accountUserId =>
           reconcileRetainedAttachmentFiles(
             new LocalAttachmentStore(options.database),
@@ -249,7 +256,11 @@ export class EventBasicsRuntime {
         return before;
       }
       await this.#assertActive();
-      const deviceId = await secureDeviceIdStore.getOrCreate();
+      const deviceId = await secureDeviceIdStore.getOrCreate(
+        this.#database,
+        this.#accountUserId,
+        rootEventId,
+      );
       await this.#assertActive();
       const outbox = await this.#sync.listOutbox(
         this.#accountUserId,
