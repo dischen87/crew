@@ -3095,6 +3095,118 @@ WHERE account_user_id = ? AND client_mutation_id = ?`,
 		database.close();
 	});
 
+	test("retains a rejected feed entry through a participant to viewer scope reset", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		await database.run(
+			"UPDATE memberships SET role = 'participant' WHERE account_user_id = ? AND root_event_id = ?",
+			[syncAccount, "evt_trip"],
+		);
+		const base = bootstrapPage("evt_trip", "2", "Viewer trip", "21");
+		const viewerPage = {
+			...base,
+			records: [
+				...base.records,
+				{
+					entityType: "membership",
+					entityId: syncAccount,
+					entityVersion: 2,
+					data: {
+						rootEventId: "evt_trip",
+						userId: syncAccount,
+						role: "viewer",
+						status: "active",
+						version: 2,
+						createdAt: now,
+						updatedAt: now,
+					},
+				},
+			],
+		} as SyncBootstrapPage;
+		const seen: string[] = [];
+		const engine = testSyncEngine(
+			database,
+			syncAccount,
+			async (input, init) => {
+				const pathname = new URL(String(input)).pathname;
+				seen.push(pathname);
+				if (pathname.endsWith("/sync/push")) {
+					const body = JSON.parse(String(init?.body)) as SyncPushBody;
+					const mutation = requiredTest(body.mutations[0]);
+					return gatewayJson(init, 200, {
+						protocolVersion: 1,
+						rootEventId: body.rootEventId,
+						deviceId: body.deviceId,
+						results: [
+							{
+								clientMutationId: mutation.clientMutationId,
+								clientSequence: mutation.clientSequence,
+								outcome: "rejected",
+								replayed: false,
+								error: {
+									code: "FORBIDDEN",
+									message: "private role detail",
+									retryable: false,
+								},
+							},
+						],
+						nextExpectedClientSequence: mutation.clientSequence + 1,
+					});
+				}
+				if (pathname.endsWith("/sync/pull")) {
+					return gatewayError(init, 410, "CURSOR_EXPIRED", false);
+				}
+				if (pathname.endsWith("/sync/bootstrap")) {
+					return gatewayJson(init, 200, viewerPage);
+				}
+				throw new Error("unexpected request");
+			},
+			{ randomUUID: uuidSequence(450) },
+		);
+		const queued = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_role_downgrade", "Bleibt lokal erhalten."),
+			{ feedEntryId: "fed_role_downgrade" },
+		);
+
+		expect(await engine.syncRoot(syncAccount, "evt_trip")).toMatchObject({
+			state: "needs_attention",
+			pendingCount: 0,
+			attentionCount: 1,
+		});
+		expect(seen).toEqual([
+			"/core/v1/sync/push",
+			"/core/v1/sync/pull",
+			"/core/v1/sync/bootstrap",
+		]);
+		expect(await engine.listOutbox(syncAccount, "evt_trip")).toEqual([
+			expect.objectContaining({
+				clientMutationId: queued.clientMutationId,
+				command: expect.objectContaining({
+					entityId: "fed_role_downgrade",
+				}),
+				lastError: expect.objectContaining({ code: "permission" }),
+				serverConsumed: true,
+				state: "dead_letter",
+			}),
+		]);
+		expect(
+			(
+				await new MobileDataStore(database).listMemberships(
+					syncAccount,
+					"evt_trip",
+				)
+			)[0]?.role,
+		).toBe("viewer");
+		expect(
+			JSON.stringify(await engine.listOutbox(syncAccount, "evt_trip")),
+		).not.toContain("private role detail");
+		database.close();
+	});
+
 	test("converges a team event through the shared offline graph and outbox", async () => {
 		const database = new BunDatabase();
 		await migrate(database);

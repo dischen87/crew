@@ -592,6 +592,71 @@ test('production route loads the exact scope, queues text and returns without a 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('production route exposes a rejected queued entry as an assistive attention transition', async () => {
+  const queued = {
+    ...feedModel(),
+    entries: [entry('queued', 'Bleibt lokal erhalten.')],
+  };
+  const attention = {
+    ...feedModel(),
+    entries: [entry('attention', 'Bleibt lokal erhalten.')],
+  };
+  let refreshed = false;
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => (refreshed ? attention : queued)),
+    refresh: jest.fn(async () => {
+      refreshed = true;
+    }),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const screen = () => (
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />
+  );
+  const renderer = await render(screen());
+
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-entry-queued' }),
+  ).toBeTruthy();
+
+  mockOnline = true;
+  await ReactTestRenderer.act(async () => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>{screen()}</SafeAreaProvider>,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(runtime.refresh).toHaveBeenCalledTimes(1);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-entry-attention' }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.findByProps({
+      testID: 'team-feed-entry-copy-fed_attention',
+    }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.find(
+      node =>
+        node.props.role === 'status' &&
+        String(node.props.accessibilityLabel).includes(
+          'Aktion „Beitrag kopieren“',
+        ),
+    ),
+  ).toBeTruthy();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('production route keeps unsaved text in the field when the durable enqueue fails', async () => {
   const model = feedModel();
   const runtime = {
