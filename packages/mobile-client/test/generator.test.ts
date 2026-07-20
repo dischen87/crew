@@ -24,7 +24,7 @@ describe("gateway contract generation", () => {
 		expect(new TextDecoder().decode(result.stderr)).toBe("");
 	});
 
-	test("the pin is byte exact and its worktree provenance is honest", async () => {
+	test("the pin is byte exact and its source provenance is honest", async () => {
 		const source = new Uint8Array(await Bun.file(sourceUrl).arrayBuffer());
 		const pinned = new Uint8Array(
 			await Bun.file(
@@ -38,8 +38,7 @@ describe("gateway contract generation", () => {
 		expect(pinned).toEqual(source);
 		expect(lock.contract.digest).toBe(`sha256:${sha256(source)}`);
 		expect(lock.contract.byteCount).toBe(source.byteLength);
-		expect(lock.contract.sourceState).toBe("worktree");
-		expect(lock.contract.sourceCommit).toBeNull();
+		expect(lock.contract).toMatchObject(detectProvenance(source));
 	});
 
 	test("the route manifest contains every operation exactly once in stable order", async () => {
