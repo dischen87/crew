@@ -16,6 +16,9 @@ const composeSource = await Bun.file(
 const platformDockerfileSource = await Bun.file(
 	new URL("infra/Dockerfile", repositoryRoot),
 ).text();
+const runtimeGrantSource = await Bun.file(
+	new URL("infra/postgres/grant-runtime.sql", repositoryRoot),
+).text();
 const checkoutSha = "34e114876b0b11c390a56381ad16ebd13914f8d5";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
@@ -222,6 +225,22 @@ describe("Crew Next GitHub Actions workflow", () => {
 		expect(
 			Object.keys(object(fixture.environment, "fixture environment")),
 		).not.toContainEqual(expect.stringMatching(/DATABASE|POSTGRES|SQL/));
+	});
+
+	test("grants each runtime worker the database operations it executes", () => {
+		for (const required of [
+			"GRANT SELECT, UPDATE, DELETE ON TABLE user_delivery_outbox",
+			"GRANT SELECT, UPDATE, DELETE ON TABLE user_push_outbox",
+			"event_attachment_cleanup_jobs,\n\tevent_attachment_uploads",
+			"GRANT SELECT, UPDATE, DELETE ON TABLE event_attachments",
+			"GRANT SELECT ON TABLE event_feedback_attachments",
+			"GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox",
+		]) {
+			expect(runtimeGrantSource).toContain(required);
+		}
+		expect(runtimeGrantSource).not.toMatch(
+			/GRANT\s+[^;]*INSERT[^;]*TO\s+crew_(?:user|event)_[a-z_]+_worker/,
+		);
 	});
 });
 

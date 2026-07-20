@@ -19,8 +19,10 @@ WHERE schemaname = 'public' AND tablename <> 'user_schema_migrations'
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO crew_user_api;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO crew_user_api;
 
-GRANT SELECT, UPDATE ON TABLE user_delivery_outbox TO crew_user_magic_worker;
-GRANT SELECT, UPDATE ON TABLE user_push_outbox TO crew_user_push_worker;
+GRANT SELECT, UPDATE, DELETE ON TABLE user_delivery_outbox
+TO crew_user_magic_worker;
+GRANT SELECT, UPDATE, DELETE ON TABLE user_push_outbox
+TO crew_user_push_worker;
 GRANT SELECT ON TABLE user_profiles, user_devices TO crew_user_push_worker;
 
 \connect crew_event
@@ -53,14 +55,15 @@ TO crew_event_recap_retention_worker;
 
 GRANT SELECT, UPDATE ON TABLE
 	event_attachment_verify_jobs,
-	event_attachment_cleanup_jobs
+	event_attachment_cleanup_jobs,
+	event_attachment_uploads
 TO crew_event_attachment_worker;
-GRANT SELECT ON TABLE
-	event_attachment_uploads,
-	event_attachments
+GRANT SELECT, UPDATE, DELETE ON TABLE event_attachments
+TO crew_event_attachment_worker;
+GRANT SELECT ON TABLE event_feedback_attachments
 TO crew_event_attachment_worker;
 
-GRANT SELECT, UPDATE ON TABLE event_notification_outbox
+GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox
 TO crew_event_notification_worker;
 GRANT SELECT ON TABLE
 	event_roots,
