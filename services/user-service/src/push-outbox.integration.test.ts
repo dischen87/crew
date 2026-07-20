@@ -566,12 +566,14 @@ if (!databaseUrl) {
 			const first = pushWorker(repository, payloads, sender, {
 				deliveryTimeoutMs: 10,
 				leaseMs: 500,
+				random: () => 0.5,
 			});
 			expect(await first.runOnce()).toMatchObject({ retried: 1 });
 			clock = new Date(clock.getTime() + 1_001);
 			const second = pushWorker(repository, payloads, sender, {
 				deliveryTimeoutMs: 10,
 				leaseMs: 500,
+				random: () => 0.5,
 			});
 			expect(await second.runOnce()).toMatchObject({ delivered: 1 });
 			expect(calls).toHaveLength(2);
