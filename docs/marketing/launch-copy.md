@@ -67,13 +67,14 @@ App-Store-Metadaten bleiben bis zur Erfüllung ihrer Gates Entwurf.
 Der CTA benötigt einen realen, datenschutzgeprüften Kontaktweg; ohne ihn bleibt
 die Fläche unveröffentlicht.
 
-**Repository-Stand 2026-07-19:** `apps/web` setzt diese Fassung als lokale,
+**Repository-Stand 2026-07-20:** `apps/web` setzt diese Fassung als lokale,
 script-freie Option-2-Closed-Preview in `de-CH` um. Der statische Build emittiert
 nur die Preview-Seite; der alte Join-Pfad liefert `404`. Die Route bleibt
 `noindex`, und ohne konfigurierte absolute HTTPS-Kontaktadresse ist der CTA
-bewusst deaktiviert. Browser-renderte Mobile-/Desktop-QA, ein
-datenschutzgeprüfter Kontaktweg, Deployment-/Live-Evidence und eine
-Analytics-/Consent-Entscheidung fehlen weiterhin. `packages/web` bleibt die
+bewusst deaktiviert. Browser-renderte Mobile-/Desktop-, Fokus-,
+Reduced-Motion- und 200%-Zoom-QA ist lokal bestanden. Ein datenschutzgeprüfter
+Kontaktweg, Deployment-/Live-Evidence und eine Analytics-/Consent-Entscheidung
+fehlen weiterhin. `packages/web` bleibt die
 quarantänisierte Legacy-PWA und ist kein Crew-Next-Beleg. Die Fassung oben ist
 damit **in Code und Copy vorhanden, aber nicht publikationsfreigegeben**; sie
 belegt weder Preview-Conversion noch Next-Analytics.

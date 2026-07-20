@@ -11,9 +11,10 @@ Privacy/Security approval, configure one absolute, credential-free HTTPS target
 as `PUBLIC_CLOSED_PREVIEW_CONTACT_URL`. Without that value, the visible
 `Closed Preview anfragen` action stays disabled.
 
-Publication remains separately gated by rendered mobile/desktop browser
-acceptance, Privacy/Legal approval, an explicit analytics/consent decision, and
-deployment/distribution evidence. This local build proves none of those gates.
+Local mobile/desktop browser acceptance is recorded in
+`evidence/closed-preview-2026-07-20/`. Publication remains separately gated by
+Privacy/Legal approval, an explicit analytics/consent decision, and
+deployment/distribution evidence. The local render proves none of those gates.
 
 Do not substitute a placeholder recipient, App Store URL, client-only form, or
 tracking endpoint.
