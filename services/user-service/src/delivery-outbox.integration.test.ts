@@ -309,6 +309,7 @@ if (!databaseUrl) {
 					maxAttempts: 3,
 					baseBackoffMs: 100,
 					maxBackoffMs: 1_000,
+					random: () => 0.5,
 					now: () => new Date(clock),
 				});
 			expect(await worker().runOnce()).toMatchObject({ retried: 1 });
