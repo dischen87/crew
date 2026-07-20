@@ -4,6 +4,7 @@ FROM ${BUN_IMAGE}
 WORKDIR /app
 
 COPY package.json bun.lock ./
+COPY apps/mobile/package.json ./apps/mobile/package.json
 COPY packages ./packages
 COPY services ./services
 COPY infra ./infra
@@ -12,4 +13,3 @@ RUN bun install --production --frozen-lockfile
 
 ENV NODE_ENV=development
 USER bun
-

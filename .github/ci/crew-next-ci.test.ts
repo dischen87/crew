@@ -13,6 +13,9 @@ const dockerIgnoreSource = await Bun.file(
 const composeSource = await Bun.file(
 	new URL("compose.yaml", repositoryRoot),
 ).text();
+const platformDockerfileSource = await Bun.file(
+	new URL("infra/Dockerfile", repositoryRoot),
+).text();
 const checkoutSha = "34e114876b0b11c390a56381ad16ebd13914f8d5";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
@@ -201,6 +204,9 @@ describe("Crew Next GitHub Actions workflow", () => {
 
 	test("pins external Compose images and keeps fixture bootstrap API-only", () => {
 		expect(composeSource).not.toMatch(/\blatest\b/i);
+		expect(platformDockerfileSource).toContain(
+			"COPY apps/mobile/package.json ./apps/mobile/package.json",
+		);
 		const compose = object(Bun.YAML.parse(composeSource), "Compose document");
 		const services = object(compose.services, "Compose services");
 		for (const [name, value] of Object.entries(services)) {
