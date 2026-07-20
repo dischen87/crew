@@ -599,6 +599,7 @@ test('restart reconciliation removes a DB-failure orphan and preserves reference
     getDatabaseKey: jest.fn(async () => 'f'.repeat(64)),
     openDatabase: jest.fn(() => database),
     migrateDatabase: jest.fn(async () => undefined),
+    initializeDeviceIdentities: jest.fn(async () => undefined),
     purgeDeniedRoots: jest.fn(async () => undefined),
     purgeFeedbackSubmissions: jest.fn(async () => undefined),
     listFeedbackScreenshotFileKeys: jest.fn(async () => []),
