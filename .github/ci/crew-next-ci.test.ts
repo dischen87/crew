@@ -269,6 +269,7 @@ function validateWorkflow(source: string) {
 	);
 	const checkout = requiredStep(steps, "Check out repository");
 	expect(checkout.uses).toBe(`actions/checkout@${checkoutSha}`);
+	expect(object(checkout.with, "checkout inputs")["fetch-depth"]).toBe(0);
 	const setupBun = requiredStep(steps, "Set up Bun 1.3.9");
 	expect(setupBun.uses).toBe(`oven-sh/setup-bun@${setupBunSha}`);
 	expect(object(setupBun.with, "Bun inputs")["bun-version"]).toBe("1.3.9");
