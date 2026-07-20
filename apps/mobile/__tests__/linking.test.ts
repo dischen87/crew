@@ -52,6 +52,48 @@ test('moves invite and auth secrets behind an opaque navigation handle', async (
     kind: 'auth',
     token: `ml_${'a'.repeat(43)}`,
   });
+
+  await expect(
+    sanitizeInboundUrl(
+      'https://crew-haus.com/events/evt_weekend',
+      memoryStore().store,
+      false,
+    ),
+  ).resolves.toBe('https://crew-haus.com/events/evt_weekend');
+  expect(linking.prefixes).toContain('https://crew-haus.com');
+});
+
+test('accepts canonical HTTPS invite and auth links in Release', async () => {
+  const invite = memoryStore();
+  await expect(
+    sanitizeInboundUrl(
+      'https://crew-haus.com/join/abcdefghijklmnopqrst',
+      invite.store,
+      false,
+    ),
+  ).resolves.toBe(
+    'crewnext://inbound/invite/00000000-0000-4000-8000-000000000001',
+  );
+  expect(invite.routes).toEqual([
+    {
+      kind: 'invite',
+      token: 'abcdefghijklmnopqrst',
+      createdAt: expect.any(Number),
+    },
+  ]);
+
+  const auth = memoryStore();
+  await expect(
+    sanitizeInboundUrl(
+      `https://crew-haus.com/auth/redeem?token=ml_${'a'.repeat(43)}`,
+      auth.store,
+      false,
+    ),
+  ).resolves.toContain('crewnext://inbound/auth/');
+  expect(auth.routes[0]).toMatchObject({
+    kind: 'auth',
+    token: `ml_${'a'.repeat(43)}`,
+  });
 });
 
 test('sanitizes secrets when custom-scheme URL fields are missing like Hermes', async () => {
@@ -82,9 +124,17 @@ test('sanitizes secrets when custom-scheme URL fields are missing like Hermes', 
 
 test('rejects foreign schemes, oversized values and secret-like query parameters', async () => {
   const { store } = memoryStore();
-  await expect(
-    sanitizeInboundUrl('https://crew.app/events/evt_a', store),
-  ).resolves.toContain('invalid_link');
+  for (const value of [
+    'https://crew.app/events/evt_a',
+    'http://crew-haus.com/events/evt_a',
+    'https://crew-haus.com.evil/events/evt_a',
+    'https://crew-haus.com:444/events/evt_a',
+    'https://crew-haus.com/events/evt_a#secret',
+  ]) {
+    await expect(sanitizeInboundUrl(value, store)).resolves.toContain(
+      'invalid_link',
+    );
+  }
   await expect(
     sanitizeInboundUrl(`crewnext://events/${'a'.repeat(2_100)}`, store),
   ).resolves.toContain('invalid_link');

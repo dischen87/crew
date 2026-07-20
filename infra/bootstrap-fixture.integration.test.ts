@@ -615,6 +615,63 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 						requestId === "fixture.course.carya.search.v1",
 				),
 			).toBe(true);
+			for (const [requestId, path] of [
+				[
+					"fixture.participant.itinerary.update.denied.v1",
+					`/event-roots/${result.rootEventId}/itinerary/iti_local_turkey_golf_transfer_in`,
+				],
+				[
+					"fixture.organizer.event.arrival.live-update.v1",
+					`/event-roots/${result.rootEventId}/events/evt_local_turkey_golf_2026_arrival`,
+				],
+				[
+					"fixture.organizer.event.arrival.live-update.replay.v1",
+					`/event-roots/${result.rootEventId}/events/evt_local_turkey_golf_2026_arrival`,
+				],
+				[
+					"fixture.organizer.itinerary.transfer.live-update.v1",
+					`/event-roots/${result.rootEventId}/itinerary/iti_local_turkey_golf_transfer_in`,
+				],
+				[
+					"fixture.organizer.itinerary.transfer.live-update.replay.v1",
+					`/event-roots/${result.rootEventId}/itinerary/iti_local_turkey_golf_transfer_in`,
+				],
+				[
+					"fixture.organizer.feed.transfer-update.create.v1",
+					`/event-roots/${result.rootEventId}/feed`,
+				],
+				[
+					"fixture.organizer.feed.transfer-update.create.replay.v1",
+					`/event-roots/${result.rootEventId}/feed`,
+				],
+				[
+					"fixture.participant.feed.transfer-update.react.v1",
+					`/event-roots/${result.rootEventId}/feed/fed_local_turkey_golf_transfer_update/reaction`,
+				],
+				[
+					"fixture.participant.feed.transfer-update.react.replay.v1",
+					`/event-roots/${result.rootEventId}/feed/fed_local_turkey_golf_transfer_update/reaction`,
+				],
+				[
+					"fixture.participant.itinerary.read.v1",
+					`/event-roots/${result.rootEventId}/events/evt_local_turkey_golf_2026_arrival/itinerary`,
+				],
+				[
+					"fixture.participant.feed.read.v1",
+					`/event-roots/${result.rootEventId}/feed`,
+				],
+			] as const) {
+				expect(gatewayTraces).toContainEqual({
+					path: `/core/v1${path}`,
+					requestId,
+					responseRequestId: requestId,
+				});
+				expect(downstreamTraces).toContainEqual({
+					service: "event-service",
+					path: `/v1${path}`,
+					requestId,
+				});
+			}
 
 			const [proof] = await eventSql<
 				{
@@ -642,6 +699,12 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 					golfRoundTeamMembers: number;
 					golfScores: number;
 					participantStablefordPoints: number;
+					arrivalEventVersion: number;
+					arrivalDescription: string;
+					transferVersion: number;
+					transferNotes: string;
+					liveFeedEntries: number;
+					liveFeedReactions: number;
 				}[]
 			>`
 					SELECT
@@ -668,7 +731,13 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 							(SELECT count(*)::int FROM event_golf_round_teams WHERE root_event_id = ${result.rootEventId}) AS "golfRoundTeams",
 							(SELECT count(*)::int FROM event_golf_round_team_members WHERE root_event_id = ${result.rootEventId}) AS "golfRoundTeamMembers",
 							(SELECT count(*)::int FROM event_golf_scores WHERE root_event_id = ${result.rootEventId}) AS "golfScores",
-							(SELECT COALESCE(sum(stableford_points), 0)::int FROM event_golf_scores WHERE root_event_id = ${result.rootEventId} AND user_id = ${result.participantUserId}) AS "participantStablefordPoints"
+							(SELECT COALESCE(sum(stableford_points), 0)::int FROM event_golf_scores WHERE root_event_id = ${result.rootEventId} AND user_id = ${result.participantUserId}) AS "participantStablefordPoints",
+							(SELECT version FROM events WHERE root_event_id = ${result.rootEventId} AND id = 'evt_local_turkey_golf_2026_arrival') AS "arrivalEventVersion",
+							(SELECT description FROM events WHERE root_event_id = ${result.rootEventId} AND id = 'evt_local_turkey_golf_2026_arrival') AS "arrivalDescription",
+							(SELECT version FROM event_itinerary_items WHERE root_event_id = ${result.rootEventId} AND id = 'iti_local_turkey_golf_transfer_in') AS "transferVersion",
+							(SELECT notes FROM event_itinerary_items WHERE root_event_id = ${result.rootEventId} AND id = 'iti_local_turkey_golf_transfer_in') AS "transferNotes",
+							(SELECT count(*)::int FROM event_feed_entries WHERE root_event_id = ${result.rootEventId} AND id = 'fed_local_turkey_golf_transfer_update' AND author_user_id = ${result.organizerUserId}) AS "liveFeedEntries",
+							(SELECT count(*)::int FROM event_feed_reactions WHERE root_event_id = ${result.rootEventId} AND entry_id = 'fed_local_turkey_golf_transfer_update' AND user_id = ${result.participantUserId} AND reaction = 'celebrate' AND present) AS "liveFeedReactions"
 					`;
 			expect(proof).toEqual({
 				events: 8,
@@ -695,6 +764,14 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 				golfRoundTeamMembers: 3,
 				golfScores: 1,
 				participantStablefordPoints: 3,
+				arrivalEventVersion: 5,
+				arrivalDescription:
+					"Organizer confirmed the Antalya arrival meeting point.",
+				transferVersion: 2,
+				transferNotes:
+					"Meet at the arrivals group sign before the Belek transfer.",
+				liveFeedEntries: 1,
+				liveFeedReactions: 1,
 			});
 			const golfFlow = fixtureOfflineFlows("golf-tour").find(
 				({ platform }) => platform === "ios",

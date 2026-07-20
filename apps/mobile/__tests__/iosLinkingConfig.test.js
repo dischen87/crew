@@ -20,13 +20,24 @@ test('registers and forwards the Crew Next custom URL scheme', () => {
     resolve(appRoot, 'ios/CrewNext.xcodeproj/project.pbxproj'),
     'utf8',
   );
+  const androidManifest = readFileSync(
+    resolve(appRoot, 'android/app/src/main/AndroidManifest.xml'),
+    'utf8',
+  );
 
   expect(infoPlist).toContain('<string>crewnext</string>');
   expect(appDelegate).toContain('RCTLinkingManager.application(');
   expect(appDelegate).toContain('open url: URL');
+  expect(appDelegate).toContain('continue userActivity: NSUserActivity');
+  expect(appDelegate).toContain('restorationHandler: restorationHandler');
   expect(entitlements).toContain('<key>keychain-access-groups</key>');
   expect(entitlements).toContain(
     '<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>',
   );
+  expect(entitlements).toContain('<string>applinks:crew-haus.com</string>');
+  expect(androidManifest).toContain('android:autoVerify="true"');
+  expect(androidManifest).toContain('android:host="crew-haus.com"');
+  expect(androidManifest).toContain('android:path="/auth/redeem"');
+  expect(androidManifest).toContain('android:pathPrefix="/join/"');
   expect(project.match(/CODE_SIGN_ENTITLEMENTS/g)).toHaveLength(2);
 });

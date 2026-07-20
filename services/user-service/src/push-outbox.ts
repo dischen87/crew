@@ -580,7 +580,11 @@ export class PushDeliveryWorker {
 	}
 
 	private retryAt(job: ClaimedPushJob, failedAt: Date, error: unknown) {
-		if (job.attemptCount >= this.options.maxAttempts) return null;
+		if (
+			job.attemptCount >= this.options.maxAttempts ||
+			(error instanceof PushDeliveryError && !error.retryable)
+		)
+			return null;
 		const exponent = Math.min(job.attemptCount - 1, 30);
 		const exponential = Math.min(
 			this.options.baseBackoffMs * 2 ** exponent,

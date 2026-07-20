@@ -82,6 +82,9 @@ const golfOrganizerEmail = "crew.golf.organizer.local@example.test";
 const golfParticipantEmail = "crew.golf.participant.local@example.test";
 const golfOrganizerInvitationId = "inv_local_turkey_golf_organizer";
 const golfParticipantInvitationId = "inv_local_turkey_golf_participant";
+const golfLiveFeedId = "fed_local_turkey_golf_transfer_update";
+const golfLiveFeedBody =
+	"The Antalya transfer meeting point is confirmed at the arrivals group sign.";
 const golfRoundDeviceId = "dvc_00000000-0000-4000-8000-000000007101";
 const golfRoundMutationId = "00000000-0000-4000-8000-000000007101";
 const golfTeamId = "gtm_local_turkey_golf_carya";
@@ -1159,6 +1162,91 @@ async function bootstrapGolfTour(
 		);
 	}
 
+	const organizerRequest = fixtureRequest(
+		context.fetcher,
+		context.gateway,
+		organizer.accessToken,
+	);
+	const participantRequest = fixtureRequest(
+		context.fetcher,
+		context.gateway,
+		participant.accessToken,
+	);
+	const organizerWrite = replayWriter(organizerRequest, (name, replay) =>
+		context.operationId(`organizer.${name}`, replay),
+	);
+	await participantRequest(
+		`event-roots/${golfRootEventId}/itinerary/iti_local_turkey_golf_transfer_in`,
+		{
+			method: "PATCH",
+			requestId: context.operationId("participant.itinerary.update.denied"),
+			idempotencyKey: context.operationId(
+				"participant.itinerary.update.denied",
+			),
+			body: {
+				baseVersion: 1,
+				changes: { notes: "Participant changes are not authoritative." },
+			},
+			expectedStatus: 403,
+		},
+	);
+	const updatedArrival = record(
+		record(
+			await organizerWrite(
+				`event-roots/${golfRootEventId}/events/${golfEventIds.arrival}`,
+				{
+					name: "event.arrival.live-update",
+					method: "PATCH",
+					expectedStatus: 200,
+					body: {
+						baseVersion: 4,
+						changes: {
+							description:
+								"Organizer confirmed the Antalya arrival meeting point.",
+						},
+					},
+				},
+			),
+			"organizer event update",
+		).event,
+		"organizer updated event",
+	);
+	if (
+		updatedArrival.id !== golfEventIds.arrival ||
+		updatedArrival.description !==
+			"Organizer confirmed the Antalya arrival meeting point."
+	) {
+		throw new Error("Fixture organizer hierarchy update did not persist");
+	}
+	const updatedTransfer = record(
+		record(
+			await organizerWrite(
+				`event-roots/${golfRootEventId}/itinerary/iti_local_turkey_golf_transfer_in`,
+				{
+					name: "itinerary.transfer.live-update",
+					method: "PATCH",
+					expectedStatus: 200,
+					body: {
+						baseVersion: 1,
+						changes: {
+							notes:
+								"Meet at the arrivals group sign before the Belek transfer.",
+						},
+					},
+				},
+			),
+			"organizer itinerary update",
+		).item,
+		"organizer updated itinerary item",
+	);
+	if (
+		updatedTransfer.id !== "iti_local_turkey_golf_transfer_in" ||
+		updatedTransfer.notes !==
+			"Meet at the arrivals group sign before the Belek transfer."
+	) {
+		throw new Error("Fixture organizer itinerary update did not persist");
+	}
+
 	const scoringEventId = golfCourses[0].eventId;
 	const roundSetup = {
 		holes: Array.from({ length: 18 }, (_, index) => ({
@@ -1215,11 +1303,58 @@ async function bootstrapGolfTour(
 
 	await publishFixtureRoot(request, context.operationId, golfRootEventId);
 
-	const participantRequest = fixtureRequest(
-		context.fetcher,
-		context.gateway,
-		participant.accessToken,
+	const liveFeedEntry = record(
+		record(
+			await organizerWrite(`event-roots/${golfRootEventId}/feed`, {
+				name: "feed.transfer-update.create",
+				method: "POST",
+				expectedStatus: 201,
+				body: {
+					id: golfLiveFeedId,
+					eventId: golfEventIds.arrival,
+					parentEntryId: null,
+					kind: "message",
+					body: golfLiveFeedBody,
+				},
+			}),
+			"organizer feed update",
+		).entry,
+		"organizer feed entry",
 	);
+	if (
+		liveFeedEntry.id !== golfLiveFeedId ||
+		liveFeedEntry.authorUserId !== organizer.userId ||
+		liveFeedEntry.body !== golfLiveFeedBody
+	) {
+		throw new Error("Fixture organizer feed update did not persist");
+	}
+	const participantDomainWrite = replayWriter(
+		participantRequest,
+		(name, replay) => context.operationId(`participant.${name}`, replay),
+	);
+	const liveReaction = record(
+		record(
+			await participantDomainWrite(
+				`event-roots/${golfRootEventId}/feed/${golfLiveFeedId}/reaction`,
+				{
+					name: "feed.transfer-update.react",
+					method: "PUT",
+					expectedStatus: 200,
+					body: { reaction: "celebrate", present: true },
+				},
+			),
+			"participant feed reaction",
+		).reaction,
+		"participant reaction",
+	);
+	if (
+		liveReaction.entryId !== golfLiveFeedId ||
+		liveReaction.userId !== participant.userId ||
+		liveReaction.reaction !== "celebrate" ||
+		liveReaction.present !== true
+	) {
+		throw new Error("Fixture participant feed reaction did not persist");
+	}
 	const participantFlow = context.offlineFlowPlatform
 		? requiredOfflineFlow("golf-tour", context.offlineFlowPlatform)
 		: null;
@@ -1298,6 +1433,8 @@ async function bootstrapGolfTour(
 		snapshot,
 		organizerRoot,
 		participantRoot,
+		participantItinerary,
+		participantFeed,
 	] = await Promise.all([
 		request(`event-roots/${golfRootEventId}/memberships?limit=50`, {
 			method: "GET",
@@ -1337,6 +1474,19 @@ async function bootstrapGolfTour(
 			requestId: context.operationId("participant.event.read"),
 			expectedStatus: 200,
 		}),
+		participantRequest(
+			`event-roots/${golfRootEventId}/events/${golfEventIds.arrival}/itinerary?limit=50`,
+			{
+				method: "GET",
+				requestId: context.operationId("participant.itinerary.read"),
+				expectedStatus: 200,
+			},
+		),
+		participantRequest(`event-roots/${golfRootEventId}/feed?limit=50`, {
+			method: "GET",
+			requestId: context.operationId("participant.feed.read"),
+			expectedStatus: 200,
+		}),
 	]);
 	assertRoot(
 		organizerRoot.value,
@@ -1355,6 +1505,8 @@ async function bootstrapGolfTour(
 		invitations.value,
 		places.value,
 		snapshot.value,
+		participantItinerary.value,
+		participantFeed.value,
 		{
 			ownerUserId: context.ownerUserId,
 			organizerUserId: organizer.userId,
@@ -2146,6 +2298,8 @@ function assertGolfReadback(
 	invitationsValue: unknown,
 	placesValue: unknown,
 	snapshotValue: unknown,
+	participantItineraryValue: unknown,
+	participantFeedValue: unknown,
 	users: {
 		ownerUserId: string;
 		organizerUserId: string;
@@ -2243,6 +2397,39 @@ function assertGolfReadback(
 		counts("golf_round") !== 5
 	) {
 		throw new Error("Fixture itinerary readback is incomplete");
+	}
+	const participantItinerary = records(
+		record(participantItineraryValue, "participant itinerary").items,
+		"participant itinerary.items",
+	);
+	if (
+		!participantItinerary.some(
+			(item) =>
+				item.id === "iti_local_turkey_golf_transfer_in" &&
+				item.notes ===
+					"Meet at the arrivals group sign before the Belek transfer." &&
+				item.version === 2,
+		)
+	) {
+		throw new Error("Fixture participant itinerary update is missing");
+	}
+	const participantFeed = records(
+		record(participantFeedValue, "participant feed").items,
+		"participant feed.items",
+	);
+	const liveFeed = participantFeed.find(({ id }) => id === golfLiveFeedId);
+	const reaction = liveFeed
+		? records(liveFeed.reactions, "participant feed reactions")[0]
+		: undefined;
+	if (
+		liveFeed?.eventId !== golfEventIds.arrival ||
+		liveFeed.authorUserId !== users.organizerUserId ||
+		liveFeed.body !== golfLiveFeedBody ||
+		reaction?.reaction !== "celebrate" ||
+		reaction.count !== 1 ||
+		reaction.viewerPresent !== true
+	) {
+		throw new Error("Fixture participant feed update is incomplete");
 	}
 	const roundRecords = dataFor("golfRound");
 	const rosterRecords = dataFor("golfRoster");

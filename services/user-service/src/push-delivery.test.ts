@@ -76,4 +76,47 @@ describe("push webhook delivery", () => {
 			);
 		}
 	});
+
+	test("classifies only supported terminal provider responses as permanent", async () => {
+		for (const [status, retryable] of [
+			[400, false],
+			[404, false],
+			[410, false],
+			[413, false],
+			[422, false],
+			[408, true],
+			[409, true],
+			[425, true],
+			[429, true],
+			[500, true],
+		] as const) {
+			const sender = createWebhookPushSender({
+				endpoint: "https://push.example/send",
+				bearer: "provider-secret-not-service-auth",
+				fetch: (async () =>
+					new Response(null, { status })) as unknown as typeof fetch,
+			});
+			try {
+				await send(sender);
+				throw new Error("Expected provider failure");
+			} catch (error) {
+				expect(error).toBeInstanceOf(PushDeliveryError);
+				expect((error as PushDeliveryError).retryable).toBe(retryable);
+			}
+		}
+	});
 });
+
+function send(sender: ReturnType<typeof createWebhookPushSender>) {
+	return sender({
+		pushToken: "private-device-token",
+		category: "event_update",
+		templateKey: "event_updated",
+		deepLink: { rootEventId: "evt_root0001" },
+		locale: "de-CH",
+		expiresAt: new Date(Date.now() + 60_000),
+		requestId: "request-1",
+		causationRequestId: "cause-1",
+		deliveryKey: "pjob_00000000000000000000000000000001",
+	});
+}

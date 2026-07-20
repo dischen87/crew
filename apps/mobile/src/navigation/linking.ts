@@ -1,5 +1,6 @@
 import { Linking } from 'react-native';
 import type { LinkingOptions } from '@react-navigation/native';
+import { CREW_WEB_URL } from '@crew/shared';
 import {
   keychainPendingRouteStore,
   type PendingRouteStore,
@@ -11,6 +12,7 @@ const MAX_URL_LENGTH = 2_048;
 const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,200}$/;
 const AUTH_TOKEN_PATTERN = /^ml_[A-Za-z0-9_-]{43}$/;
 const SCHEME_PREFIX = 'crewnext://';
+const HTTPS_PREFIX = `${CREW_WEB_URL}/`;
 const INVALID_LINK = 'crewnext://unavailable?reason=invalid_link';
 const ROOT_EVENT_ID_PATTERN = /^evt_[A-Za-z0-9._:-]{1,96}$/;
 
@@ -20,9 +22,11 @@ export async function sanitizeInboundUrl(
   allowSecretScheme = __DEV__,
 ): Promise<string | null> {
   if (!value) return null;
+  const customScheme = value.startsWith(SCHEME_PREFIX);
+  const canonicalHttps = value.startsWith(HTTPS_PREFIX);
   if (
     value.length > MAX_URL_LENGTH ||
-    !value.startsWith(SCHEME_PREFIX) ||
+    (!customScheme && !canonicalHttps) ||
     hasUnsafeCharacters(value)
   ) {
     return INVALID_LINK;
@@ -33,15 +37,27 @@ export async function sanitizeInboundUrl(
     // Hermes' URL implementation does not expose host/path for custom schemes.
     // Parse the exact same authority/path through a well-supported HTTPS base,
     // then return only the original Crew URL after validation.
-    url = new URL(`https://${value.slice(SCHEME_PREFIX.length)}`);
+    url = new URL(
+      customScheme
+        ? `https://${value.slice(SCHEME_PREFIX.length)}`
+        : value,
+    );
   } catch {
     return INVALID_LINK;
   }
-  if (url.protocol !== 'https:' || url.username || url.password) {
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    (!customScheme && url.origin !== CREW_WEB_URL)
+  ) {
     return INVALID_LINK;
   }
 
-  const segments = [url.hostname, ...url.pathname.split('/').filter(Boolean)];
+  const segments = [
+    ...(customScheme ? [url.hostname] : []),
+    ...url.pathname.split('/').filter(Boolean),
+  ];
   const inviteToken =
     segments[0] === 'join' && segments.length === 2 ? segments[1] : null;
   const authToken =
@@ -70,7 +86,7 @@ export async function sanitizeInboundUrl(
   }
 
   if (secret !== null) {
-    if (!allowSecretScheme) return INVALID_LINK;
+    if (customScheme && !allowSecretScheme) return INVALID_LINK;
     const queryKeys = Array.from(url.searchParams.keys());
     const validSecretShape = inviteToken
       ? url.search === ''
@@ -108,7 +124,7 @@ function hasUnsafeCharacters(value: string) {
 }
 
 export const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: ['crewnext://'],
+  prefixes: [SCHEME_PREFIX, CREW_WEB_URL],
   config: {
     initialRouteName: 'Events',
     screens: {

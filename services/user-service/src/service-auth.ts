@@ -63,7 +63,8 @@ function createServiceAuthVerifier(
 			try {
 				const header = decodeProtectedHeader(token);
 				const selected = keys.find(({ id }) => id === header.kid);
-				if (!selected || header.alg !== "HS256") return false;
+				if (!selected || header.alg !== "HS256" || header.typ !== "JWT")
+					return false;
 				const { payload } = await jwtVerify(token, selected.key, {
 					algorithms: ["HS256"],
 					issuer: options.issuer,
@@ -73,6 +74,7 @@ function createServiceAuthVerifier(
 				});
 				return (
 					payload.sub === subject &&
+					payload.aud === options.audience &&
 					payload.scope === scope &&
 					typeof payload.iat === "number" &&
 					typeof payload.exp === "number" &&

@@ -51,6 +51,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   ) -> Bool {
     RCTLinkingManager.application(application, open: url, options: options)
   }
+
+  func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    RCTLinkingManager.application(
+      application,
+      continue: userActivity,
+      restorationHandler: restorationHandler
+    )
+  }
 }
 
 class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {

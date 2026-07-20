@@ -274,7 +274,7 @@ services:
       REFRESH_TOKEN_KEY: ${REFRESH_TOKEN_KEY:-crew-local-refresh-token-key-change-2026}
       RATE_LIMIT_REDIS_URL: redis://crew_user:${REDIS_USER_PASSWORD:-crew_local_user_redis_change_2026}@redis-rate-limit:6379/0
       RATE_LIMIT_KEY: ${USER_RATE_LIMIT_KEY:-DAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
-      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew.app/auth/redeem}
+      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew-haus.com/auth/redeem}
     volumes:
       - user_jwt_keys:/run/crew-jwt:ro
     ports:
@@ -401,7 +401,7 @@ services:
       <<: *user-payload-env
       NODE_ENV: development
       DATABASE_URL: postgres://crew_user_magic_worker:${USER_DB_MAGIC_WORKER_PASSWORD:-crew-local-user-magic-change-2026}@postgres:5432/crew_user
-      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew.app/auth/redeem}
+      MAGIC_LINK_APP_URL: ${MAGIC_LINK_APP_URL:-https://crew-haus.com/auth/redeem}
       MAGIC_LINK_DELIVERY_URL: http://provider-sink:3010/magic-links
       MAGIC_LINK_DELIVERY_BEARER: ${PROVIDER_SINK_BEARER:-crew-local-provider-bearer-change-2026}
     depends_on:

@@ -407,6 +407,106 @@ test('keeps all eight event days and selects itinerary on 09 and 10 October', ()
   ]);
 });
 
+test('renders the Turkey participant travel, transfer, lodging and golf plan from SQLite', () => {
+  const readModels = snapshot(accountA, rootA, 'Turkey Golf Tour 2026');
+  readModels.root.startsAt = '2026-10-04T09:00:00.000Z';
+  readModels.root.endsAt = '2026-10-11T09:00:00.000Z';
+  const item = readModels.timeline[0]!;
+  const place = (id: string, name: string) =>
+    JSON.stringify({
+      countryCode: 'TR',
+      id,
+      latitude: 36.86,
+      locality: 'Belek',
+      longitude: 31.05,
+      name,
+    });
+  readModels.timeline = [
+    {
+      ...item,
+      detailsJson: JSON.stringify({ schemaVersion: 1, type: 'flight' }),
+      id: 'iti_flight',
+      placeSnapshotJson: place('plc_antalya', 'Antalya Airport'),
+      startsAt: '2026-10-05T06:00:00.000Z',
+      title: 'Flight to Antalya',
+    },
+    {
+      ...item,
+      detailsJson: JSON.stringify({
+        schemaVersion: 1,
+        type: 'road_transfer',
+      }),
+      id: 'iti_transfer',
+      placeSnapshotJson: place('plc_transfer', 'Arrivals group sign'),
+      startsAt: '2026-10-05T07:00:00.000Z',
+      title: 'Shared transfer to Belek',
+    },
+    {
+      ...item,
+      detailsJson: JSON.stringify({ schemaVersion: 1, type: 'lodging' }),
+      id: 'iti_lodging',
+      placeSnapshotJson: place('plc_hotel', 'Belek Tour Hotel'),
+      startsAt: '2026-10-05T08:00:00.000Z',
+      title: 'Seven-night lodging',
+    },
+    {
+      ...item,
+      detailsJson: JSON.stringify({ schemaVersion: 1, type: 'golf_round' }),
+      eventId: 'evt_carya',
+      id: 'iti_carya',
+      placeSnapshotJson: place('plc_carya', 'Carya Golf Club'),
+      startsAt: '2026-10-05T09:00:00.000Z',
+      title: 'Golf round: Carya Golf Club',
+    },
+  ];
+
+  const model = eventHubModelFromReadModels({
+    now: new Date('2026-10-05T05:30:00.000Z'),
+    phase: 'cached',
+    selectedDateId: '2026-10-05',
+    snapshot: readModels,
+    syncStatus: null,
+  });
+
+  expect(
+    model.timeline.map(({ icon, location, title }) => ({
+      icon,
+      location,
+      title,
+    })),
+  ).toEqual([
+    {
+      icon: 'bus',
+      location: 'Antalya Airport',
+      title: 'Flight to Antalya',
+    },
+    {
+      icon: 'bus',
+      location: 'Arrivals group sign',
+      title: 'Shared transfer to Belek',
+    },
+    {
+      icon: 'calendar',
+      location: 'Belek Tour Hotel',
+      title: 'Seven-night lodging',
+    },
+    {
+      icon: 'golf',
+      location: 'Carya Golf Club',
+      title: 'Golf round: Carya Golf Club',
+    },
+  ]);
+  expect(model.next).toMatchObject({
+    location: 'Antalya Airport',
+    title: 'Flight to Antalya',
+  });
+  expect(model.primaryAction).toMatchObject({
+    access: 'read',
+    destination: { label: 'Antalya Airport' },
+    label: 'Route öffnen',
+  });
+});
+
 test('resolves private draft review only for owners and organizers, never published or viewer roots', () => {
   const ownerDraft = snapshot(accountA, rootA, 'Privater Entwurf', 'owner');
   ownerDraft.root.status = 'draft';

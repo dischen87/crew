@@ -127,8 +127,16 @@ describe("push delivery worker", () => {
 	});
 
 	test("dead-letters exhausted or expiring work and rejects unsafe leases", async () => {
+		const permanentRepository = new FakePushOutbox([job(8)]);
+		expect(
+			await workerWith(permanentRepository, async () => {
+				throw new PushDeliveryError("provider_410", undefined, false);
+			}).runOnce(),
+		).toMatchObject({ deadLettered: 1 });
+		expect(permanentRepository.failures[0]?.retryAt).toBeNull();
+
 		const exhaustedRepository = new FakePushOutbox([
-			job(8, { attemptCount: 3 }),
+			job(9, { attemptCount: 3 }),
 		]);
 		expect(
 			await workerWith(exhaustedRepository, async () => {
@@ -138,7 +146,7 @@ describe("push delivery worker", () => {
 		expect(exhaustedRepository.failures[0]?.retryAt).toBeNull();
 
 		const expiringRepository = new FakePushOutbox([
-			job(9, { expiresAt: new Date(baseTime.getTime() + 1_500) }),
+			job(10, { expiresAt: new Date(baseTime.getTime() + 1_500) }),
 		]);
 		expect(
 			await workerWith(expiringRepository, async () => {

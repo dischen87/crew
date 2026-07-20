@@ -3,11 +3,23 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["TEAM_ID.com.crew.app"],
-        "paths": ["/join/*"],
+        "appIDs": ["TEAM_ID.app.crew.next"],
+        "paths": ["/join/*", "/auth/redeem", "/events", "/events/*", "/feedback/*"],
         "components": [
           {
             "/": "/join/*"
+          },
+          {
+            "/": "/auth/redeem"
+          },
+          {
+            "/": "/events"
+          },
+          {
+            "/": "/events/*"
+          },
+          {
+            "/": "/feedback/*"
           }
         ]
       }

@@ -13,6 +13,7 @@ export class PushDeliveryError extends Error {
 	constructor(
 		readonly code: string,
 		readonly retryAfterMs?: number,
+		readonly retryable = true,
 	) {
 		super("Push delivery failed");
 	}
@@ -78,10 +79,13 @@ export function createWebhookPushSender(options: {
 			throw new PushDeliveryError(
 				`provider_${response.status}`,
 				parseRetryAfter(response.headers.get("Retry-After"), Date.now()),
+				!permanentProviderStatuses.has(response.status),
 			);
 		}
 	};
 }
+
+const permanentProviderStatuses = new Set([400, 404, 410, 413, 422]);
 
 function parseRetryAfter(value: string | null, nowMs: number) {
 	if (!value) return undefined;

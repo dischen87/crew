@@ -50,6 +50,18 @@ const AttachmentWorkerConfigSchema = z
 				message:
 					"EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ENDPOINT must use HTTPS in production",
 			});
+		if (
+			value.environment === "production" &&
+			(value.databaseUrl === DEVELOPMENT_DATABASE_URL ||
+				value.objectStoreAccessKeyId === DEVELOPMENT_OBJECT_ACCESS_KEY ||
+				value.objectStoreSecretAccessKey === DEVELOPMENT_OBJECT_SECRET_KEY)
+		)
+			context.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["databaseUrl"],
+				message:
+					"Attachment worker database and object-store credentials must not use development values in production",
+			});
 	});
 
 export type AttachmentWorkerConfig = z.infer<

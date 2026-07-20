@@ -751,6 +751,9 @@ describe("configuration and contract", () => {
 		const apiDevelopment = loadConfig({
 			MAGIC_LINK_DELIVERY_URL: "https://mail.test/send",
 		});
+		expect(apiDevelopment.magicLinkAppUrl).toBe(
+			"https://crew-haus.com/auth/redeem",
+		);
 		expect(apiDevelopment.memberDirectoryServiceCurrentKey).not.toBe(
 			apiDevelopment.eventNotificationServiceCurrentKey,
 		);
@@ -776,10 +779,10 @@ describe("configuration and contract", () => {
 			PUSH_PAYLOAD_CURRENT_KEY: "eKOfuEuHFGQeOZltcgU4hlzp3jYpRNrp3xvjzwjJkSE",
 			EVENT_NOTIFICATION_SERVICE_CURRENT_KEY_ID: "production-event-1",
 			EVENT_NOTIFICATION_SERVICE_CURRENT_KEY:
-				"eKOfuEuHFGQeOZltcgU4hlzp3jYpRNrp3xvjzwjJkSE",
+				"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
 			MEMBER_DIRECTORY_SERVICE_CURRENT_KEY_ID: "production-gateway-1",
 			MEMBER_DIRECTORY_SERVICE_CURRENT_KEY:
-				"TxsYmFtlYMVPT1UZKmSGicjfoc8lhZ0kGQ3FgIZavhs",
+				"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
 		};
 		expect(() =>
 			loadConfig({
@@ -803,6 +806,12 @@ describe("configuration and contract", () => {
 		expect(() =>
 			loadConfig({
 				...apiProduction,
+				PUSH_PAYLOAD_CURRENT_KEY: apiProduction.DELIVERY_PAYLOAD_CURRENT_KEY,
+			}),
+		).toThrow("separate secret domains");
+		expect(() =>
+			loadConfig({
+				...apiProduction,
 				MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY_ID: "old",
 				MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY:
 					apiProduction.MEMBER_DIRECTORY_SERVICE_CURRENT_KEY,
@@ -813,7 +822,7 @@ describe("configuration and contract", () => {
 				...apiProduction,
 				MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY_ID: "old",
 				MEMBER_DIRECTORY_SERVICE_PREVIOUS_KEY:
-					"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+					"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
 			}).memberDirectoryServicePreviousKeyId,
 		).toBe("old");
 		expect(loadConfig(apiProduction).environment).toBe("production");
@@ -908,6 +917,14 @@ describe("configuration and contract", () => {
 				DELIVERY_PAYLOAD_PREVIOUS_KEY_ID: "old",
 			}),
 		).toThrow();
+		expect(() =>
+			loadDeliveryWorkerConfig({
+				...magicWorkerProduction,
+				DELIVERY_PAYLOAD_PREVIOUS_KEY_ID: "old",
+				DELIVERY_PAYLOAD_PREVIOUS_KEY:
+					magicWorkerProduction.DELIVERY_PAYLOAD_CURRENT_KEY,
+			}),
+		).toThrow("must differ");
 		const magicConfig = loadDeliveryWorkerConfig(magicWorkerProduction);
 		expect(magicConfig).not.toHaveProperty("refreshTokenKey");
 		expect(magicConfig).not.toHaveProperty("jwtPrivateKeyPath");
@@ -977,6 +994,14 @@ describe("configuration and contract", () => {
 				PUSH_DELIVERY_TIMEOUT_MS: "750",
 			}),
 		).toThrow("plus ack buffer");
+		expect(() =>
+			loadPushWorkerConfig({
+				...pushWorkerProduction,
+				PUSH_PAYLOAD_PREVIOUS_KEY_ID: "old",
+				PUSH_PAYLOAD_PREVIOUS_KEY:
+					pushWorkerProduction.PUSH_PAYLOAD_CURRENT_KEY,
+			}),
+		).toThrow("must differ");
 	});
 
 	test("serves probes, request IDs and the OpenAPI 3.1 identity contract", async () => {

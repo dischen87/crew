@@ -17,6 +17,7 @@ const DEVELOPMENT_EVENT_NOTIFICATION_SERVICE_AUTH_KEY =
 	"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const DEVELOPMENT_MEMBER_DIRECTORY_SERVICE_AUTH_KEY =
 	"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI";
+const DEFAULT_MAGIC_LINK_APP_URL = "https://crew-haus.com/auth/redeem";
 const PUSH_DELIVERY_ACK_BUFFER_MS = 250;
 
 const Environment = z.enum(["development", "test", "production"]);
@@ -192,6 +193,19 @@ const ConfigSchema = z
 				"memberDirectoryServiceCurrentKey",
 			);
 		}
+		const deliveryDomainKeys = [
+			value.deliveryPayloadCurrentKey,
+			value.pushPayloadCurrentKey,
+			...eventNotificationKeys,
+			...memberDirectoryKeys,
+		].filter((key): key is string => key !== undefined);
+		if (new Set(deliveryDomainKeys).size !== deliveryDomainKeys.length) {
+			issue(
+				context,
+				"Delivery, push and service-auth keys must use separate secret domains",
+				"pushPayloadCurrentKey",
+			);
+		}
 		const idempotencyKeys = [
 			value.idempotencyPayloadCurrentKey,
 			value.idempotencyPayloadPreviousKey,
@@ -353,6 +367,13 @@ const DeliveryWorkerConfigSchema = z
 				"deliveryPayloadPreviousKeyId",
 			);
 		}
+		if (value.deliveryPayloadPreviousKey === value.deliveryPayloadCurrentKey) {
+			issue(
+				context,
+				"Current and previous delivery payload keys must differ",
+				"deliveryPayloadPreviousKey",
+			);
+		}
 		validateWorkerTiming(
 			value.deliveryTimeoutMs,
 			value.deliveryWorkerLeaseMs,
@@ -363,6 +384,13 @@ const DeliveryWorkerConfigSchema = z
 			context,
 		);
 		if (value.environment !== "production") return;
+		if (value.deliveryPayloadPreviousKey === DEVELOPMENT_DELIVERY_PAYLOAD_KEY) {
+			issue(
+				context,
+				"DELIVERY_PAYLOAD_PREVIOUS_KEY must not use development material in production",
+				"deliveryPayloadPreviousKey",
+			);
+		}
 		validateProductionWorker(
 			value.databaseUrl,
 			value.magicLinkDeliveryUrl,
@@ -421,6 +449,13 @@ const PushWorkerConfigSchema = z
 				"pushPayloadPreviousKeyId",
 			);
 		}
+		if (value.pushPayloadPreviousKey === value.pushPayloadCurrentKey) {
+			issue(
+				context,
+				"Current and previous push payload keys must differ",
+				"pushPayloadPreviousKey",
+			);
+		}
 		validateWorkerTiming(
 			value.pushDeliveryTimeoutMs,
 			value.pushWorkerLeaseMs,
@@ -432,6 +467,13 @@ const PushWorkerConfigSchema = z
 			PUSH_DELIVERY_ACK_BUFFER_MS,
 		);
 		if (value.environment !== "production") return;
+		if (value.pushPayloadPreviousKey === DEVELOPMENT_PUSH_PAYLOAD_KEY) {
+			issue(
+				context,
+				"PUSH_PAYLOAD_PREVIOUS_KEY must not use development material in production",
+				"pushPayloadPreviousKey",
+			);
+		}
 		validateProductionWorker(
 			value.databaseUrl,
 			value.pushDeliveryUrl,
@@ -517,7 +559,7 @@ export function loadConfig(
 			env.IDEMPOTENCY_PAYLOAD_PREVIOUS_KEY,
 		),
 		magicLinkTtlSeconds: env.MAGIC_LINK_TTL_SECONDS ?? "900",
-		magicLinkAppUrl: env.MAGIC_LINK_APP_URL ?? "https://crew.app/auth/redeem",
+		magicLinkAppUrl: env.MAGIC_LINK_APP_URL ?? DEFAULT_MAGIC_LINK_APP_URL,
 		deliveryPayloadCurrentKeyId:
 			env.DELIVERY_PAYLOAD_CURRENT_KEY_ID ?? "development-1",
 		deliveryPayloadCurrentKey:
@@ -572,7 +614,7 @@ export function loadDeliveryWorkerConfig(
 	return DeliveryWorkerConfigSchema.parse({
 		environment: env.NODE_ENV ?? "development",
 		databaseUrl: env.DATABASE_URL ?? DEVELOPMENT_DATABASE_URL,
-		magicLinkAppUrl: env.MAGIC_LINK_APP_URL ?? "https://crew.app/auth/redeem",
+		magicLinkAppUrl: env.MAGIC_LINK_APP_URL ?? DEFAULT_MAGIC_LINK_APP_URL,
 		magicLinkDeliveryUrl: env.MAGIC_LINK_DELIVERY_URL,
 		magicLinkDeliveryBearer: env.MAGIC_LINK_DELIVERY_BEARER,
 		deliveryPayloadCurrentKeyId:

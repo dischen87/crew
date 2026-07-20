@@ -36,7 +36,7 @@ describe("event-notification service authentication", () => {
 		}
 	});
 
-	test("generically rejects wrong kid, alg, issuer, audience, subject, scope and age", async () => {
+	test("generically rejects wrong kid, alg, typ, audience profile, subject, scope and age", async () => {
 		const verifier = createEventNotificationServiceAuth({
 			issuer,
 			audience,
@@ -46,8 +46,10 @@ describe("event-notification service authentication", () => {
 		const cases = [
 			await token({ kid: "unknown" }),
 			await token({ alg: "HS384" }),
+			await token({ typ: "service+jwt" }),
 			await token({ issuer: "wrong-service" }),
 			await token({ audience: "wrong-target" }),
+			await token({ audience: [audience, "extra-target"] }),
 			await token({ subject: "user-service" }),
 			await token({ scope: "user:event-notifications:read" }),
 			await token({ expiresAt: now - 60, issuedAt: now - 120 }),
@@ -99,8 +101,9 @@ describe("member-directory service authentication", () => {
 function token(overrides: {
 	kid?: string;
 	alg?: "HS256" | "HS384";
+	typ?: string;
 	issuer?: string;
-	audience?: string;
+	audience?: string | string[];
 	subject?: string;
 	scope?: string;
 	issuedAt?: number;
@@ -113,7 +116,7 @@ function token(overrides: {
 		.setProtectedHeader({
 			alg: overrides.alg ?? "HS256",
 			kid: overrides.kid ?? currentKey.id,
-			typ: "JWT",
+			typ: overrides.typ ?? "JWT",
 		})
 		.setIssuer(overrides.issuer ?? issuer)
 		.setAudience(overrides.audience ?? audience)
@@ -129,7 +132,7 @@ function memberToken(overrides: Parameters<typeof token>[0]) {
 		.setProtectedHeader({
 			alg: overrides.alg ?? "HS256",
 			kid: overrides.kid ?? currentKey.id,
-			typ: "JWT",
+			typ: overrides.typ ?? "JWT",
 		})
 		.setIssuer(overrides.issuer ?? "crew-api-gateway")
 		.setAudience(overrides.audience ?? audience)

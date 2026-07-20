@@ -28,6 +28,16 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="crewnext" />
         </intent-filter>
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="crew-haus.com" android:pathPrefix="/join/" />
+            <data android:scheme="https" android:host="crew-haus.com" android:path="/auth/redeem" />
+            <data android:scheme="https" android:host="crew-haus.com" android:path="/events" />
+            <data android:scheme="https" android:host="crew-haus.com" android:pathPrefix="/events/" />
+            <data android:scheme="https" android:host="crew-haus.com" android:pathPrefix="/feedback/" />
+        </intent-filter>
       </activity>
     </application>
 </manifest>

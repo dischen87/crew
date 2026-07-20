@@ -189,6 +189,7 @@ describe("local API fixture bootstrap", () => {
 		];
 		let golfRoundSetup: Record<string, unknown> | undefined;
 		let golfScoreApplied = false;
+		let golfLiveFeed: Record<string, unknown> | undefined;
 		const fetcher = async (
 			input: string | URL | Request,
 			init?: RequestInit,
@@ -293,7 +294,26 @@ describe("local API fixture bootstrap", () => {
 				key.startsWith("PATCH /core/v1/event-roots/") &&
 				key.includes("/events/")
 			) {
-				return json({ event: body?.changes }, replay);
+				const eventId = url.pathname.split("/").at(-1);
+				if (
+					(body?.changes as Record<string, unknown> | undefined)
+						?.description ===
+					"Organizer confirmed the Antalya arrival meeting point."
+				) {
+					expect(headers.get("Authorization")).toBe(
+						`Bearer ${organizerAccessToken}`,
+					);
+				}
+				return json(
+					{
+						event: {
+							id: eventId,
+							...(body?.changes as Record<string, unknown>),
+							version: Number(body?.baseVersion) + 1,
+						},
+					},
+					replay,
+				);
 			}
 			if (key === `POST /core/v1/event-roots/${eventIds[0]}/events`) {
 				if (!replay && body) createdEvents.push(body);
@@ -309,6 +329,31 @@ describe("local API fixture bootstrap", () => {
 			if (key === `POST /core/v1/event-roots/${eventIds[0]}/itinerary`) {
 				if (!replay && body) itinerary.push(body);
 				return json({ item: body }, replay, 201);
+			}
+			if (
+				key ===
+				`PATCH /core/v1/event-roots/${eventIds[0]}/itinerary/iti_local_turkey_golf_transfer_in`
+			) {
+				if (
+					headers.get("Authorization") === `Bearer ${participantAccessToken}`
+				) {
+					return json({ status: 403, title: "Forbidden" }, false, 403);
+				}
+				expect(headers.get("Authorization")).toBe(
+					`Bearer ${organizerAccessToken}`,
+				);
+				const index = itinerary.findIndex(
+					(item) => item.id === "iti_local_turkey_golf_transfer_in",
+				);
+				const current = itinerary[index];
+				if (!current) throw new Error("Missing transfer fixture item");
+				const item = {
+					...current,
+					...(body?.changes as Record<string, unknown>),
+					version: 2,
+				};
+				if (!replay) itinerary[index] = item;
+				return json({ item }, replay);
 			}
 			if (key === `POST /core/v1/event-roots/${eventIds[0]}/invitations`) {
 				const invitation = body as Record<string, unknown>;
@@ -348,6 +393,40 @@ describe("local API fixture bootstrap", () => {
 			}
 			if (key.endsWith("/publish")) {
 				return json({ event: { status: "published" } }, replay);
+			}
+			if (key === `POST /core/v1/event-roots/${eventIds[0]}/feed`) {
+				expect(headers.get("Authorization")).toBe(
+					`Bearer ${organizerAccessToken}`,
+				);
+				const entry = {
+					...body,
+					authorUserId: organizerUser.id,
+					reactions: golfLiveFeed?.reactions ?? [],
+					version: 1,
+				};
+				if (!replay) golfLiveFeed = entry;
+				return json({ entry }, replay, 201);
+			}
+			if (
+				key ===
+				`PUT /core/v1/event-roots/${eventIds[0]}/feed/fed_local_turkey_golf_transfer_update/reaction`
+			) {
+				expect(headers.get("Authorization")).toBe(
+					`Bearer ${participantAccessToken}`,
+				);
+				const reaction = {
+					entryId: "fed_local_turkey_golf_transfer_update",
+					userId: participantUser.id,
+					reaction: "celebrate",
+					present: true,
+					version: 1,
+				};
+				if (!replay && golfLiveFeed) {
+					golfLiveFeed.reactions = [
+						{ reaction: "celebrate", count: 1, viewerPresent: true },
+					];
+				}
+				return json({ reaction }, replay);
 			}
 			if (key === "POST /core/v1/sync/push") {
 				const mutation = (
@@ -595,6 +674,21 @@ describe("local API fixture bootstrap", () => {
 					pageInfo: { hasMore: false, nextCursor: null },
 				});
 			}
+			if (
+				key ===
+				`GET /core/v1/event-roots/${eventIds[0]}/events/${eventIds[1]}/itinerary`
+			) {
+				return json({
+					items: itinerary.filter((item) => item.eventId === eventIds[1]),
+					pageInfo: { hasMore: false, nextCursor: null },
+				});
+			}
+			if (key === `GET /core/v1/event-roots/${eventIds[0]}/feed`) {
+				return json({
+					items: golfLiveFeed ? [golfLiveFeed] : [],
+					pageInfo: { hasMore: false, nextCursor: null },
+				});
+			}
 			if (key === `GET /core/v1/event-roots/${eventIds[0]}`) {
 				return json({ ...root, rootRevision: "48" });
 			}
@@ -619,8 +713,19 @@ describe("local API fixture bootstrap", () => {
 		expect(memberships).toHaveLength(3);
 		expect(golfRoundSetup).toBeDefined();
 		expect(golfScoreApplied).toBe(true);
+		expect(golfLiveFeed).toMatchObject({
+			id: "fed_local_turkey_golf_transfer_update",
+			authorUserId: organizerUser.id,
+			reactions: [{ reaction: "celebrate", count: 1, viewerPresent: true }],
+		});
 		expect(new Set(places.map((place) => place.id)).size).toBe(9);
 		expect(new Set(itinerary.map((item) => item.id)).size).toBe(11);
+		expect(
+			itinerary.find((item) => item.id === "iti_local_turkey_golf_transfer_in"),
+		).toMatchObject({
+			notes: "Meet at the arrivals group sign before the Belek transfer.",
+			version: 2,
+		});
 	});
 
 	test("creates the complete team-day tree, agenda and decision log through the same APIs", async () => {

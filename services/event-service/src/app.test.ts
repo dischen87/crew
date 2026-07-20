@@ -173,7 +173,7 @@ describe("event-service scaffold", () => {
 					"api-secret-does-not-authorize-worker",
 			}),
 		).toThrow();
-		const worker = loadAttachmentWorkerConfig({
+		const productionAttachmentWorker = {
 			NODE_ENV: "production",
 			EVENT_ATTACHMENT_WORKER_DATABASE_URL:
 				"postgres://worker-db.internal/crew_event",
@@ -184,12 +184,33 @@ describe("event-service scaffold", () => {
 			EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ACCESS_KEY_ID: "worker-access",
 			EVENT_ATTACHMENT_WORKER_OBJECT_STORE_SECRET_ACCESS_KEY:
 				"worker-secret-with-least-privilege",
-		});
+		};
+		const worker = loadAttachmentWorkerConfig(productionAttachmentWorker);
 		expect(worker).toMatchObject({
 			verifyMaxAttempts: 5,
 			cleanupRetentionSeconds: 86_400,
 			objectStoreAccessKeyId: "worker-access",
 		});
+		for (const developmentValue of [
+			{
+				EVENT_ATTACHMENT_WORKER_DATABASE_URL: "postgres://localhost/crew_event",
+			},
+			{
+				EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ACCESS_KEY_ID:
+					"crew-development-object-access",
+			},
+			{
+				EVENT_ATTACHMENT_WORKER_OBJECT_STORE_SECRET_ACCESS_KEY:
+					"crew-development-object-secret",
+			},
+		]) {
+			expect(() =>
+				loadAttachmentWorkerConfig({
+					...productionAttachmentWorker,
+					...developmentValue,
+				}),
+			).toThrow("must not use development values");
+		}
 		expect(() =>
 			loadEventNotificationWorkerConfig({
 				EVENT_NOTIFICATION_WORKER_LEASE_MS: "5250",
