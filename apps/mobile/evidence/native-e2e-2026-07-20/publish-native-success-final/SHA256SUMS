@@ -1,4 +1,4 @@
-21bfc16c2ef8301d9746f99d4c5fa04d84609c24547b825b09ac5a6f41572a90  ./README.md
+731f8f47d0afa37dae7b856b74d4349255263a8bd0a66810cb060cd1cc5e9b90  ./README.md
 4d52013661c97004dfdae485f515a3cd0fbb9588eb16b35d2bd67dfb3fc77468  ./api-oracle-output.json
 8431b2b215736339e78893209049d36c1679375207df52503c4bfef89fb73684  ./build-remediation-verification.json
 e823c740a6bfa9b545f7327424563202a256b711847b8672e154ad7e4e1aaef7  ./build-verification.json
@@ -51,7 +51,7 @@ b7107352b77decc77c0aead0296451dcc6cbddba44300dcb5f9fc3e50cdb0bba  ./maestro/50-r
 69ef735eed4a1c7cb4897a3d1efaf611c86b669ef078846dc6849bbb2ce4582c  ./maestro/52-second-restart.yaml
 d1d078a13833da5c77a446408294224282504bdb4897871dbd2caed55b0f7743  ./maestro/53-second-outbox.yaml
 f8ad700a7369f7213df67aa2a791691c7f07a111166483441ac6c49930c7f578  ./maestro/54-second-sync.yaml
-9623d2b93f928a050a69a5bacf2fd1f19b66ad2662c2c4f9decf7e3cf758bf05  ./manifest.json
+d84aa11e543cbef9d883816dd127ecaf140cb29619ab878d86d0b3a77b243332  ./manifest.json
 0a881a21ced10a0d04f9697296a399944e3167dd459bae7ddf9e0d6da4469be5  ./publish-idempotency-oracle-output.json
 3181d4ec99d64813cdd43efb3a5d348f9163845b640755133a317ae3478b1adf  ./publish-idempotency-oracle.mjs
 79fc28a6ae515f01d5adb7606f0c27549c839f2c75722eb2381df51b1ad0033f  ./publish-reopen-oracle-output.json

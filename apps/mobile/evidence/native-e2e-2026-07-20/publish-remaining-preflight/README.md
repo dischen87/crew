@@ -4,10 +4,10 @@ Status: **HISTORISCHER STATISCHER HARNESS; KEINE AKTUELLE ACCEPTANCE.** Die
 statische Allowlist startet selbst keine Ports, Datenbanken, Runner,
 Simulatoren oder Apps. Das vorhandene `runtime/` stammt aus einem späteren,
 partiellen Diagnoselauf, enthält auch einen fehlgeschlagenen Bericht und ist
-weder Teil von `SHA256SUMS` noch commitwürdige Evidence. Der aktuelle
-Acceptance-Kandidat entsteht separat unter
-`../../native-e2e-2026-07-22/publish-remaining-final` und bleibt bis Freeze und
-Abschlussaudit unverbindlich.
+weder Teil von `SHA256SUMS` noch commitwürdige Evidence. Die aktuelle bindende
+lokale Acceptance ist separat unter
+`../../native-e2e-2026-07-22/publish-remaining-final` eingefroren und
+abschlussauditiert.
 
 `preflight-gates.json` bewahrt die ursprünglichen Gates vom 20. Juli als
 historischen Snapshot und protokolliert zusätzlich den portfreien statischen

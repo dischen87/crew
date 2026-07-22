@@ -1,9 +1,9 @@
 {
   "status": "historical_sanitized",
   "currentAcceptance": false,
-  "supersededBy": null,
-  "currentAcceptanceCandidate": "../../native-e2e-2026-07-22/publish-remaining-final",
-  "currentAcceptanceCandidateStatus": "in_progress_not_frozen",
+  "supersededBy": "../../native-e2e-2026-07-22/publish-remaining-final",
+  "currentAcceptancePacket": "../../native-e2e-2026-07-22/publish-remaining-final",
+  "currentAcceptancePacketStatus": "frozen_final_passed",
   "reports": {
     "total": 42,
     "acceptedFailures": 0,

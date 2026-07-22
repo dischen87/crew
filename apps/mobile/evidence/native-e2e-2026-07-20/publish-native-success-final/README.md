@@ -1,6 +1,6 @@
 # Crew Publish Native Success Final
 
-Status: **HISTORISCHER, SANITISIERTER PASS für den damals belegten iOS-Publish-Slice. Nicht als aktuelle visuelle Abnahme verwenden. Der aktuelle Acceptance-Kandidat entsteht separat unter `../../native-e2e-2026-07-22/publish-remaining-final`; er ist noch in Arbeit und bis zu seinem Freeze und Abschlussaudit nicht bindend.**
+Status: **HISTORISCHER, SANITISIERTER PASS für den damals belegten iOS-Publish-Slice. Nicht als aktuelle visuelle Abnahme verwenden. Die aktuelle bindende lokale Acceptance ist separat unter `../../native-e2e-2026-07-22/publish-remaining-final` eingefroren und abschlussauditiert.**
 
 ## Ergebnis
 
