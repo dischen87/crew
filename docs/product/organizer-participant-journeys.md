@@ -657,11 +657,15 @@ action.
 - **Primary action:** `Publish recap`.
 - **System result:** Owner or organizer publishes a versioned recap. The current
   backend can then create or rotate one seven-day opaque link bound to that exact
-  published version and revoke it immediately. Its public resolver returns only
-  the recap title and contiguous titled items; bodies, media, provenance,
-  source/root IDs, and lifecycle metadata are absent. The current native manager
-  route creates the link only after a successful online response, opens the
-  platform share sheet, supports re-share, and revokes it.
+  published version and revoke it immediately. The title-only resolver returns
+  only recap/item titles. A separate exact-field resolver may return explicitly
+  selected approved bodies and, behind a server-default-off privacy/legal gate,
+  caption strings. Attachment bytes, media URLs, provenance, identities,
+  source/root/attachment IDs, and lifecycle metadata are absent. Design-2 shows
+  each exact body/caption separately; caption copy says that the description,
+  not the image, is shared. The manager route creates a link only after a
+  successful online response, opens the platform share sheet, supports re-share,
+  and revokes it.
 - **States and recovery:** Invalid or removed generated sources fail closed.
   Publication, removal, link creation, and revocation are online-only and never
   queued. Share-sheet cancellation returns to the reviewed recap; a launch
@@ -669,8 +673,11 @@ action.
 - **Acceptance evidence:** Current `API`, `DB`, `LINK`, iPhone `DEVICE`, `A11Y`,
   authorized `OFFLINE`, and native share evidence prove exact-version binding,
   token non-persistence, bounded expiry, rotation/revocation, role-safe controls,
-  and generic concealment. A deployed public consumer and real service-backed
-  both-platform recovery remain release gates.
+  and generic concealment for title/body flows. Caption backend, MobileData and
+  focused native render tests prove opaque-ref binding, ephemeral storage and
+  text-only controls; caption device evidence, privacy/legal approval, a
+  deployed public consumer and real service-backed both-platform recovery remain
+  release gates.
 
 ### `R-P-01` Revisit the event
 
@@ -679,8 +686,9 @@ action.
 - **System result:** The membership-gated published recap may adapt by
   capability: golf rounds and leaderboard for the tour; sessions, decisions,
   and team outcomes for the offsite. Participants do not create external links
-  in the current contract. A manager-issued public link resolves separately to
-  title and titled items only.
+  in the current contract. A manager-issued title link resolves separately to
+  title and titled items only; an exact-field link is a separately reviewed body
+  or caption-text selection. Caption release remains disabled by default.
 - **States and recovery:** Before publication, the past event remains accessible
   and explains that the recap is pending. Cached recap is readable offline;
   manager link operations and public resolution wait for a connection. Every

@@ -16,6 +16,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -74,6 +75,7 @@ export function Button({
 }: CrewButtonProps) {
   const inactive = disabled || loading;
   const inverse = variant === 'dark';
+  const usesLargeTextLayout = useWindowDimensions().fontScale >= 2;
 
   return (
     <Pressable
@@ -91,6 +93,7 @@ export function Button({
         { backgroundColor: buttonColors[variant] },
         elevations.control,
         style,
+        usesLargeTextLayout && styles.buttonLargeText,
         pressed && styles.controlPressed,
         pressed && elevations.pressed,
         inactive && styles.disabled,
@@ -437,7 +440,7 @@ export function TextField({
           styles.textFieldInput,
           focused && styles.textFieldInputFocused,
           error && styles.textFieldInputError,
-          disabled && styles.disabled,
+          disabled && styles.textFieldInputReadOnly,
           inputStyle,
         ]}
       />
@@ -698,6 +701,10 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'center',
   },
+  buttonLargeText: {
+    flexDirection: 'column',
+    paddingHorizontal: spacing.md,
+  },
   card: {
     borderColor: colors.border,
     borderRadius: radii.card,
@@ -842,6 +849,10 @@ const styles = StyleSheet.create({
   textFieldInputFocused: {
     borderColor: colors.focus,
     borderWidth: borders.strong,
+  },
+  textFieldInputReadOnly: {
+    backgroundColor: colors.surfaceAction,
+    color: colors.text,
   },
   textFieldLabel: {
     ...typography.label,

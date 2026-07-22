@@ -49,6 +49,10 @@ test.each([
   [colors.text, colors.surfaceBrand],
   [colors.text, colors.surfaceAccent],
   [colors.textSecondary, colors.background],
+  [colors.textSecondary, colors.surface],
+  [colors.textSecondary, colors.surfaceAction],
+  [colors.textSecondary, colors.surfaceBrand],
+  [colors.textSecondary, colors.surfaceAccent],
   [colors.textInverse, colors.text],
 ])('%s remains AA-readable on %s', (foreground, background) => {
   expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(

@@ -3,6 +3,7 @@ import type { ImageSourcePropType } from 'react-native';
 import {
   Image,
   ImageBackground,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -65,7 +66,11 @@ export function ScreenFrame({
             },
           ]}
           contentInsetAdjustmentBehavior="never"
+          keyboardDismissMode={
+            Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+          }
           keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={Keyboard.dismiss}
           showsVerticalScrollIndicator={false}
           style={[styles.scroll, { marginTop: insets.top }]}
         >

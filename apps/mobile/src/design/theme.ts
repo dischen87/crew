@@ -10,7 +10,7 @@ export const palette = {
   mint: '#C2E8D5',
   mintPressed: '#A3D4BE',
   lavender: '#D5C2E8',
-  purple: '#685898',
+  purple: '#5A487F',
   danger: '#8B1E3F',
   divider: '#A99EAE',
 } as const;

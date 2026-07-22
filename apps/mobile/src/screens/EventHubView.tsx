@@ -149,6 +149,10 @@ export type EventHubViewProps = {
   selectedTab: EventHubTab;
 };
 
+export function participantCountLabel(count: number) {
+  return count === 1 ? '1 teilnehmende Person' : `${count} Teilnehmende`;
+}
+
 export const turkeyGolfEventHubModel: EventHubModel = {
   dateRange: '20.–24. September 2026',
   dates: [
@@ -376,7 +380,15 @@ export function EventHubView({
           />
         </View>
 
-        <Text accessibilityRole="header" style={styles.eventTitle}>
+        <Text
+          accessibilityRole="header"
+          maxFontSizeMultiplier={2}
+          style={[
+            styles.eventTitle,
+            usesLargeTextLayout && styles.eventTitleLargeText,
+          ]}
+          testID="event-hub-title"
+        >
           {model.title}
         </Text>
         <View style={styles.eventMeta}>
@@ -395,7 +407,7 @@ export function EventHubView({
           maxVisible={7}
         />
         <Text style={styles.participantCount}>
-          {model.participants.length} Teilnehmende
+          {participantCountLabel(model.participants.length)}
         </Text>
         <SyncStatus
           icon={<AssetIcon name="check" size={18} />}
@@ -519,8 +531,8 @@ export function EventHubView({
             <Text style={styles.emptyTitle}>Noch nichts geplant</Text>
             <Text style={styles.emptyCopy}>
               {organizerDraft
-                ? 'Dieser private Entwurf enthält noch keine Programmpunkte. Ergänze zuerst den Plan.'
-                : 'Neue Programmpunkte erscheinen nach der nächsten Synchronisierung.'}
+                ? 'Dieser private Entwurf ist noch leer. Ergänze zuerst den Plan.'
+                : 'Neue Einträge erscheinen nach dem nächsten Abgleich.'}
             </Text>
             {primaryActionAllowed && primaryAction ? (
               <Button
@@ -550,7 +562,7 @@ export function EventHubView({
               ))
           ) : (
             <Text accessibilityLiveRegion="polite" style={styles.emptyTimeline}>
-              Für diesen Tag sind keine Programmpunkte gespeichert.
+              Für diesen Tag ist noch nichts geplant.
             </Text>
           )}
         </View>
@@ -711,6 +723,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
     marginTop: spacing.lg,
+  },
+  eventTitleLargeText: {
+    ...typography.heading,
   },
   emptyCard: {
     gap: spacing.xs,

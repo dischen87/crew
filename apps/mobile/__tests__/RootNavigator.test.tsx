@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -243,6 +244,9 @@ test('keeps public invite and auth screens available while private screens are s
 test('keeps the whole shell scrollable and its wrapping title uncapped for scaled text', async () => {
   const title =
     'Sehr lange Überschrift für grosse dynamische Schrift und schmale Geräte';
+  const dismissKeyboard = jest
+    .spyOn(Keyboard, 'dismiss')
+    .mockImplementation(() => undefined);
   let renderer: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     renderer = ReactTestRenderer.create(
@@ -260,6 +264,12 @@ test('keeps the whole shell scrollable and its wrapping title uncapped for scale
     flex: 1,
   });
   expect(scroller.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  expect(scroller.props.keyboardDismissMode).toBe(
+    Platform.OS === 'ios' ? 'interactive' : 'on-drag',
+  );
+  expect(scroller.props.onScrollBeginDrag).toBe(dismissKeyboard);
+  scroller.props.onScrollBeginDrag();
+  expect(dismissKeyboard).toHaveBeenCalledTimes(1);
   expect(
     StyleSheet.flatten(scroller.props.contentContainerStyle),
   ).toMatchObject({
@@ -287,6 +297,7 @@ test('keeps the whole shell scrollable and its wrapping title uncapped for scale
   await ReactTestRenderer.act(async () => {
     renderer!.unmount();
   });
+  dismissKeyboard.mockRestore();
 });
 
 test('enables shared keyboard avoidance on Android', async () => {

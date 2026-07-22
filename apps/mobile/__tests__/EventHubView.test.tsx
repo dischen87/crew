@@ -259,6 +259,27 @@ test('stacks the next card before large text can squeeze its content', async () 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('keeps a dynamic event title readable without consuming the large-text viewport', async () => {
+  setFontScale(3.2);
+  const { renderer } = await renderHub({
+    ...turkeyGolfEventHubModel,
+    title: 'Native Capability Recovery',
+  });
+  const title = renderer.root.findByProps({ testID: 'event-hub-title' });
+
+  expect(title.props).toMatchObject({
+    accessibilityRole: 'header',
+    maxFontSizeMultiplier: 2,
+  });
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({
+    fontSize: 24,
+    lineHeight: 28,
+  });
+  expect(title.props.numberOfLines).toBeUndefined();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('announces sync and participant truth without relying on color', async () => {
   const { renderer } = await renderHub();
 
@@ -276,6 +297,28 @@ test('announces sync and participant truth without relying on color', async () =
         node.props.accessibilityRole === 'summary' &&
         node.props.accessibilityLabel ===
           '8 Teilnehmende: Marco, Lena, Nico, Sara und weitere',
+    ),
+  ).toBeTruthy();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('uses the singular participant copy for exactly one person', async () => {
+  const model: EventHubModel = {
+    ...turkeyGolfEventHubModel,
+    participants: [turkeyGolfEventHubModel.participants[0]!],
+    participantsAccessibilityLabel: '1 teilnehmende Person: Marco',
+  };
+  const { renderer } = await renderHub(model);
+
+  expect(
+    renderer.root.findByProps({ children: '1 teilnehmende Person' }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.find(
+      node =>
+        node.props.accessibilityRole === 'summary' &&
+        node.props.accessibilityLabel === '1 teilnehmende Person: Marco',
     ),
   ).toBeTruthy();
 
@@ -365,7 +408,7 @@ test('marks a private organizer draft and exposes its review without leaking it 
     draft.renderer.root.findByProps({ accessibilityLabel: 'Privater Entwurf' }),
   ).toBeTruthy();
   expect(textInside(draft.renderer)).toContain(
-    'Dieser private Entwurf enthält noch keine Programmpunkte.',
+    'Dieser private Entwurf ist noch leer. Ergänze zuerst den Plan.',
   );
   const review = draft.renderer.root.findByProps({
     testID: 'event-hub-primary-action',
@@ -429,7 +472,10 @@ test('renders honest empty states without inventing a primary action', async () 
     .flat(Infinity)
     .join(' ');
   expect(copy).toContain('Noch nichts geplant');
-  expect(copy).toContain('keine Programmpunkte gespeichert');
+  expect(copy).toContain(
+    'Neue Einträge erscheinen nach dem nächsten Abgleich.',
+  );
+  expect(copy).toContain('Für diesen Tag ist noch nichts geplant.');
   expect(copy).toContain('Noch keine Updates');
   expect(
     renderer.root.findAllByProps({ testID: 'event-hub-primary-action' }),

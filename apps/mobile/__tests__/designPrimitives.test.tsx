@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import {
@@ -16,6 +16,21 @@ import {
   TimelineRow,
 } from '../src/design/primitives';
 import { borders, colors, componentMetrics } from '../src/design/theme';
+
+const originalWindow = Dimensions.get('window');
+const originalScreen = Dimensions.get('screen');
+
+function setFontScale(fontScale: number) {
+  Dimensions.set({
+    screen: { ...originalScreen, fontScale },
+    window: { ...originalWindow, fontScale },
+  });
+}
+
+beforeEach(() => setFontScale(1));
+afterAll(() =>
+  Dimensions.set({ screen: originalScreen, window: originalWindow }),
+);
 
 async function render(node: React.ReactElement) {
   let renderer: ReactTestRenderer.ReactTestRenderer;
@@ -55,6 +70,7 @@ test('controls expose labels, disabled state and the 48-point touch target', asy
     disabled: true,
   });
   expect(buttonStyle.minHeight).toBe(componentMetrics.control.minimumTouchSize);
+  expect(buttonStyle.flexDirection).toBe('row');
 
   const iconButton = renderer.root.find(
     node =>
@@ -72,6 +88,43 @@ test('controls expose labels, disabled state and the 48-point touch target', asy
   expect(iconStyle.width).toBe(componentMetrics.control.minimumTouchSize);
 
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('stacks the icon above the complete label for Large Text', async () => {
+  setFontScale(2);
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+  try {
+    renderer = await render(
+      <Button
+        icon={<View testID="save-icon" />}
+        label="Änderungen speichern"
+        testID="large-text-button"
+      />,
+    );
+    const button = renderer.root.find(
+      node =>
+        node.props.testID === 'large-text-button' &&
+        node.props.accessibilityRole === 'button',
+    );
+    expect(
+      StyleSheet.flatten(
+        typeof button.props.style === 'function'
+          ? button.props.style({ pressed: false })
+          : button.props.style,
+      ),
+    ).toMatchObject({
+      flexDirection: 'column',
+    });
+    const label = renderer.root.findByProps({
+      children: 'Änderungen speichern',
+    });
+    expect(label.props.children).toBe('Änderungen speichern');
+    expect(label.props.numberOfLines).toBeUndefined();
+  } finally {
+    await ReactTestRenderer.act(() => renderer?.unmount());
+    setFontScale(1);
+  }
 });
 
 test('status, card, avatars and timeline keep information beyond color', async () => {
@@ -274,6 +327,11 @@ test('text fields expose label, help, error, disabled and visible focus states',
   expect(StyleSheet.flatten(placeField.props.style).borderColor).toBe(
     colors.error,
   );
+  expect(StyleSheet.flatten(placeField.props.style)).toMatchObject({
+    backgroundColor: colors.surfaceAction,
+    color: colors.text,
+  });
+  expect(StyleSheet.flatten(placeField.props.style).opacity).toBeUndefined();
   const error = renderer.root.find(
     node =>
       node.props.accessibilityRole === 'alert' &&

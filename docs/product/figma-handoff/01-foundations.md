@@ -45,7 +45,7 @@ visual option into this system.
 | `palette/mint`           | `palette.mint`          | `#C2E8D5` |
 | `palette/mint-pressed`   | `palette.mintPressed`   | `#A3D4BE` |
 | `palette/lavender`       | `palette.lavender`      | `#D5C2E8` |
-| `palette/purple`         | `palette.purple`        | `#685898` |
+| `palette/purple`         | `palette.purple`        | `#5A487F` |
 | `palette/danger`         | `palette.danger`        | `#8B1E3F` |
 | `palette/divider`        | `palette.divider`       | `#A99EAE` |
 

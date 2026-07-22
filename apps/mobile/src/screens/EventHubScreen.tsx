@@ -33,6 +33,7 @@ import type { RootStackParamList } from '../navigation/types';
 import { reconcileRetainedAttachmentFiles } from '../media/attachmentMedia';
 import {
   EventHubView,
+  participantCountLabel,
   type EventHubDate,
   type EventHubModel,
   type EventHubPrimaryAction,
@@ -771,7 +772,7 @@ function participantLabel(
 ) {
   if (participants.length === 0) return 'Keine Teilnehmenden gespeichert';
   const visible = participants.slice(0, 4).map(({ name }) => name);
-  return `${participants.length} Teilnehmende: ${visible.join(', ')}${
+  return `${participantCountLabel(participants.length)}: ${visible.join(', ')}${
     participants.length > visible.length ? ' und weitere' : ''
   }`;
 }

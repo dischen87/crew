@@ -74,19 +74,16 @@ link to the existing-draft editor with honest local queued/synced/conflict copy.
 Template, capability, and primary-place blockers link to the current online-only
 setup-recovery route; cached blocker truth remains readable offline without a
 false write action. No native/device publish, basics-editor, or setup-recovery
-evidence is claimed. Manager create/revoke, public title-only resolve, exact-body
-field/authority grants and bounded 90-day exact-body metadata retention are
-repository-current. `crew-paq.2.15.4.3` adds repository-tested Design-2
-exact-body preview and selection, manager grant/withdraw, fail-closed exact
-share, and revoke actions with session-local outcomes only. This is not Current
-release evidence: P0 `crew-paq.2.15.4.3.2` still requires a global mutation lock
-and immutable request-selection binding, while `crew-paq.2.15.4.4` still
-requires server-owned author eligibility and reload/refresh-persistent
-author/manager decisions. The closed iOS Beads `crew-paq.3.12`, `.13` and `.14`
-separately make only Option-2 safe-area, Recap contrast, and auth-copy evidence
-Current. Participant share authority, caption, media, Privacy/Legal approval,
-deployment and a public consumer are not current. The same release boundary is
-defined by `crew-paq.2.15.4` under the
+evidence is claimed. Manager create/revoke, public title-only resolve,
+exact-field authority grants and bounded 90-day metadata retention are
+repository-current. Design-2 now has immutable Body- and Caption-Text-Auswahl,
+server-owned author/manager decisions and fail-closed share/revoke actions.
+Caption copy explicitly says the description text, not the image, is shared;
+its opaque ref is session-ephemeral and never user-visible. Caption rollout is
+still server-default-off: the existing iOS matrix covers body states, not the
+new caption device path. Participant share authority, media, Privacy/Legal
+approval, deployment, a public consumer and current caption device evidence are
+not current. The same release boundary is defined by `crew-paq.2.15.4` under the
 [external recap consent policy](../product/external-recap-consent-policy.md).
 
 Authoritative team assignments, decision lifecycle, actor-bound single
@@ -150,7 +147,7 @@ context.
 | `SCR-062` | Feedback im Event / Event feedback           | Feedback geben / Give feedback; Meldungen / Reports; Updates / Updates; Feedback aktualisieren / Refresh feedback; Zurück zum Event / Back to event. Das Öffnen einer Meldung führt zu `SCR-061`. / Opening a report routes to `SCR-061`.                                                                                                                                                                                                                                                                                                                              |
 | `SCR-070` | Rückblick / Recap                            | Rückblick prüfen / Review recap; Highlight hinzufügen / Add highlight; Rückblick ansehen / View recap; Event ansehen / View event; Änderungen prüfen / Review changes                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `SCR-071` | Rückblick prüfen / Review recap              | Rückblick veröffentlichen / Publish recap; Highlight hinzufügen / Add highlight; Erstes Problem beheben / Fix first issue; Änderungen prüfen / Review changes; Lokale Kopie behalten / Keep local copy                                                                                                                                                                                                                                                                                                                                                                 |
-| `SCR-072` | `{event}: Rückblick` / `{event}: Recap`      | Owner/organizer draft copy: Titel-Link teilen / Share title link; Auswahl prüfen und teilen / Review selection and share; Freigabe erteilen / Grant access; Freigabe zurückziehen / Withdraw access; Link erneut teilen / Share link again; Freigabe widerrufen / Revoke link. Confirmed outcomes are session-local; controls must remain release-gated until `crew-paq.2.15.4.3.2` and `crew-paq.2.15.4.4` close. Participant/viewer draft copy: Neu laden / Reload; Online prüfen / Check online. Participant sharing is not part of the current policy or contract. |
+| `SCR-072` | `{event}: Rückblick` / `{event}: Recap`      | Owner/organizer: Titel-Link teilen / Share title link; Auswahl prüfen und teilen / Review selection and share; Freigabe erteilen / Grant access; Freigabe zurückziehen / Withdraw access; Link erneut teilen / Share link again; Freigabe widerrufen / Revoke link. Caption exact field: `BILDBESCHREIBUNG {n}`; `Nur dieser Beschreibungstext – nicht das Bild – kann extern freigegeben werden:`; `Beschreibung auswählen`. Opaque refs and media metadata never appear. Caption controls remain server-default-off pending Privacy/Legal and device/release evidence. Participant/viewer: Neu laden / Reload; Online prüfen / Check online. Participant sharing is not part of the current policy or contract. |
 | `SCR-080` | Inhalt nicht verfügbar / Content unavailable | Signed-out external recap: Schliessen / Close. Authenticated private route: Zu Events / Back to events; Lokale Kopie behalten / Keep local copy; Erneut verbinden / Reconnect.                                                                                                                                                                                                                                                                                                                                                                                         |
 
 `Erneut versuchen / Try again`, role-correct back actions, and source-aware

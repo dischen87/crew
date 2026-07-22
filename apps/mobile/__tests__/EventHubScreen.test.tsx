@@ -612,6 +612,21 @@ test('uses only the root-scoped offline directory for participant and feed names
   expect(model.feedUpdate?.author).toBe('Mara Frei');
 });
 
+test('uses singular participant copy in the screen accessibility summary', () => {
+  const model = eventHubModelFromReadModels({
+    now: new Date('2026-07-18T12:00:00.000Z'),
+    phase: 'cached',
+    selectedDateId: null,
+    snapshot: snapshot(accountA, rootA, 'Einzelreise'),
+    syncStatus: null,
+  });
+
+  expect(model.participants).toHaveLength(1);
+  expect(model.participantsAccessibilityLabel).toBe(
+    '1 teilnehmende Person: Du',
+  );
+});
+
 test('makes route, date, sync, timeline and unfinished-tab callbacks safe', async () => {
   const store = storeFor(snapshot(accountA, rootA, 'Interaktive Reise'));
   const syncRoot = jest.fn(async () => syncStatus());
