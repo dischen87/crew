@@ -612,6 +612,7 @@ describe("generated gateway proxy", () => {
 		const readiness = {
 			schemaVersion: 1,
 			rootEventId: event.rootEventId,
+			rootStatus: "draft" as const,
 			rootVersion: event.version,
 			rootRevision: "3",
 			template: { id: "team-event", version: 1 },
@@ -1199,7 +1200,8 @@ describe("generated gateway proxy", () => {
 			sourceType: "feedEntry",
 			sourceId: "fed_external_edge",
 			sourceVersion: 2,
-			field: "body",
+			field: "caption",
+			fieldRef: `rcf_${"G".repeat(43)}`,
 		};
 		const shareLink = {
 			id: shareLinkId,
@@ -1210,8 +1212,13 @@ describe("generated gateway proxy", () => {
 		const publicRecap = {
 			title: "Crew trip recap",
 			items: [
-				{ ordinal: 0, title: "Arrival", body: null },
-				{ ordinal: 1, title: null, body: "Approved dinner moment" },
+				{ ordinal: 0, title: "Arrival", body: null, captions: [] },
+				{
+					ordinal: 1,
+					title: null,
+					body: null,
+					captions: ["Approved dinner moment caption"],
+				},
 			],
 		};
 		const calls: string[] = [];
@@ -1358,12 +1365,12 @@ describe("generated gateway proxy", () => {
 				...publicRecap,
 				items: [
 					publicRecap.items[0],
-					{ ordinal: 3, title: null, body: "Ordinal leak" },
+					{ ordinal: 3, title: null, body: "Ordinal leak", captions: [] },
 				],
 			},
 			{
 				...publicRecap,
-				items: [{ ordinal: 0, title: null, body: null }],
+				items: [{ ordinal: 0, title: null, body: null, captions: [] }],
 			},
 		]) {
 			const blocked = await gateway(async () =>
