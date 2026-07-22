@@ -1,0 +1,34 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/title
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-basics-title
+    direction: UP
+    timeout: 30000
+- assertVisible: Lokaler Native Konflikt
+- scrollUntilVisible:
+    element:
+      id: event-basics-description
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Lokal erhaltener Konfliktversuch
+- scrollUntilVisible:
+    element:
+      text: Lokal dauerhaft gespeichert
+    direction: UP
+    timeout: 30000
+- assertVisible: Lokal dauerhaft gespeichert
+- assertVisible: '.*Diese eine Änderung wartet auf die Serverbestätigung.*'
+- openLink: crewnext://e2e/outbox/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-evidence
+    timeout: 30000
+- assertVisible: 'Ausstehend: 1'
+- assertVisible: 'Aufmerksamkeit: 0'
+- assertVisible: PENDING

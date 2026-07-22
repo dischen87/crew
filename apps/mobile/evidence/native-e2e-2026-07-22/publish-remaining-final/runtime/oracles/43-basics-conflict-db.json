@@ -1,0 +1,34 @@
+{
+  "memberships": [
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "owner",
+      "status": "active",
+      "count": 1
+    }
+  ],
+  "phase": "basics-conflict",
+  "receipts": [
+    {
+      "clientSequence": 1,
+      "outcome": "rejected",
+      "errorCode": "VERSION_CONFLICT"
+    }
+  ],
+  "root": {
+    "status": "draft",
+    "version": 2,
+    "title": "Serverstand Native Konflikt",
+    "description": null,
+    "startsAt": null,
+    "endsAt": null,
+    "rootRevision": 4,
+    "publishedChanges": 0,
+    "successfulPublishRecords": 0
+  },
+  "streams": [
+    {
+      "nextClientSequence": 2
+    }
+  ]
+}

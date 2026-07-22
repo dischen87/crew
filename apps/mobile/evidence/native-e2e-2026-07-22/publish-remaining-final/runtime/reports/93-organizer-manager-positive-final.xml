@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Crew EventHub 2026-07-22 - iOS 26.2" tests="1" failures="0" time="18.0">
+    <testcase id="93-manager-positive" name="93-manager-positive" classname="93-manager-positive" file="apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/maestro/93-manager-positive.yaml" time="18.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

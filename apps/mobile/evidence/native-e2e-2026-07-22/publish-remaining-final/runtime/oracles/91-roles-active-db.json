@@ -1,0 +1,86 @@
+{
+  "memberships": [
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "organizer",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "owner",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "participant",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "viewer",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_role_setup_final",
+      "role": "organizer",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_role_setup_final",
+      "role": "owner",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_role_setup_final",
+      "role": "participant",
+      "status": "active",
+      "count": 1
+    },
+    {
+      "rootEventId": "evt_publish_role_setup_final",
+      "role": "viewer",
+      "status": "active",
+      "count": 1
+    }
+  ],
+  "phase": "roles-active",
+  "receipts": [
+    {
+      "clientSequence": 1,
+      "outcome": "rejected",
+      "errorCode": "VERSION_CONFLICT"
+    },
+    {
+      "clientSequence": 2,
+      "outcome": "applied",
+      "errorCode": null
+    },
+    {
+      "clientSequence": 3,
+      "outcome": "applied",
+      "errorCode": null
+    }
+  ],
+  "root": {
+    "status": "draft",
+    "version": 5,
+    "title": "Lokaler Native Konflikt",
+    "description": "Konflikt sicher aufgelöst",
+    "startsAt": "2026-10-01T07:00:00.000Z",
+    "endsAt": "2026-10-05T16:00:00.000Z",
+    "rootRevision": 13,
+    "publishedChanges": 0,
+    "successfulPublishRecords": 0
+  },
+  "streams": [
+    {
+      "nextClientSequence": 4
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Crew EventHub 2026-07-22 - iOS 26.2" tests="1" failures="0" time="10.0">
+    <testcase id="51-event-hub-large-top-final" name="51-event-hub-large-top-final" classname="51-event-hub-large-top-final" file="apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/maestro/51-event-hub-large-top-final.yaml" time="10.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

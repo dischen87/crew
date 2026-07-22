@@ -1,0 +1,64 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Lokaler Native Konflikt
+- openLink: crewnext://events/evt_publish_role_setup_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Role Setup
+- openLink: crewnext://events/evt_publish_basics_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- assertVisible: Organisator:in
+- scrollUntilVisible:
+    element:
+      id: event-publish-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Event veröffentlichen
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/title
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- assertVisible: Organisator:in
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-basics-title
+- openLink: crewnext://events/evt_publish_role_setup_final/review
+- extendedWaitUntil:
+    visible: Start-Setup fehlt
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: Setup bearbeiten
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: Setup bearbeiten
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 30000
+- assertVisible: Organisator:in
+- scrollUntilVisible:
+    element:
+      id: event-setup-template-team-event
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-setup-template-team-event
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Setup übernehmen

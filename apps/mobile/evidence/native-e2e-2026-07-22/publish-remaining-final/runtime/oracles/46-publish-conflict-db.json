@@ -1,0 +1,39 @@
+{
+  "memberships": [
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "role": "owner",
+      "status": "active",
+      "count": 1
+    }
+  ],
+  "phase": "publish-conflict",
+  "receipts": [
+    {
+      "clientSequence": 1,
+      "outcome": "rejected",
+      "errorCode": "VERSION_CONFLICT"
+    },
+    {
+      "clientSequence": 2,
+      "outcome": "applied",
+      "errorCode": null
+    }
+  ],
+  "root": {
+    "status": "draft",
+    "version": 4,
+    "title": "Lokaler Native Konflikt",
+    "description": null,
+    "startsAt": "2026-10-01T07:00:00.000Z",
+    "endsAt": "2026-10-05T16:00:00.000Z",
+    "rootRevision": 6,
+    "publishedChanges": 0,
+    "successfulPublishRecords": 0
+  },
+  "streams": [
+    {
+      "nextClientSequence": 3
+    }
+  ]
+}

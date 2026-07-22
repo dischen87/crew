@@ -1,0 +1,21 @@
+{
+  "phase": "organizer-removed",
+  "statuses": {
+    "owner": {
+      "basics": 200,
+      "setup": 200
+    },
+    "organizer": {
+      "basics": 404,
+      "setup": 404
+    },
+    "participant": {
+      "basics": 403,
+      "setup": 403
+    },
+    "viewer": {
+      "basics": 403,
+      "setup": 403
+    }
+  }
+}

@@ -1,0 +1,88 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/endsAt
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-basics-ends-at
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: event-basics-ends-at
+- eraseText: 200
+- inputText: 2026-10-05 18:00
+- pressKey: ENTER
+- assertVisible: 2026-10-05 18:00
+- scrollUntilVisible:
+    element:
+      id: event-basics-starts-at
+    direction: UP
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: event-basics-starts-at
+- eraseText: 200
+- inputText: 2026-10-01 09:00
+- pressKey: ENTER
+- assertVisible: 2026-10-01 09:00
+- scrollUntilVisible:
+    element:
+      id: event-basics-description
+    direction: UP
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: event-basics-description
+- eraseText: 200
+- inputText: Lokal erhaltener Konfliktversuch
+- scrollUntilVisible:
+    element:
+      id: event-basics-title
+    direction: UP
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: event-basics-title
+- eraseText: 200
+- inputText: Lokaler Native Konflikt
+- pressKey: ENTER
+- assertVisible: Lokaler Native Konflikt
+- scrollUntilVisible:
+    element:
+      id: event-basics-description
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Lokal erhaltener Konfliktversuch
+- scrollUntilVisible:
+    element:
+      id: event-basics-starts-at
+    direction: DOWN
+    timeout: 30000
+- assertVisible: 2026-10-01 09:00
+- scrollUntilVisible:
+    element:
+      id: event-basics-ends-at
+    direction: DOWN
+    timeout: 30000
+- assertVisible: 2026-10-05 18:00
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-basics-primary-action
+- extendedWaitUntil:
+    visible: Lokal dauerhaft gespeichert
+    timeout: 30000
+- assertVisible: Lokal gespeichert
+- scrollUntilVisible:
+    element:
+      text: '.*Diese eine Änderung wartet auf die Serverbestätigung.*'
+    direction: UP
+    timeout: 30000
+- assertVisible: '.*Diese eine Änderung wartet auf die Serverbestätigung.*'

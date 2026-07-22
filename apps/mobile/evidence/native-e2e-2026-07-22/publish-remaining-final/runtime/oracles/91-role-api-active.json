@@ -1,0 +1,21 @@
+{
+  "phase": "active",
+  "statuses": {
+    "owner": {
+      "basics": 200,
+      "setup": 200
+    },
+    "organizer": {
+      "basics": 200,
+      "setup": 200
+    },
+    "participant": {
+      "basics": 403,
+      "setup": 403
+    },
+    "viewer": {
+      "basics": 403,
+      "setup": 403
+    }
+  }
+}

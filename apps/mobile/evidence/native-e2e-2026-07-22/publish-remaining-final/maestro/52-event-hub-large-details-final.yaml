@@ -1,0 +1,35 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: event-hub-primary-action
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- swipe:
+    start: 50%, 45%
+    end: 50%, 65%
+    duration: 500
+- assertVisible:
+    id: event-hub-primary-action
+- assertVisible: Dieser private Entwurf ist noch leer. Ergänze zuerst den Plan.
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/52a-event-hub-large-action-final-1170x2532
+- scrollUntilVisible:
+    element:
+      text: Noch keine Updates
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- swipe:
+    start: 50%, 60%
+    end: 50%, 35%
+    duration: 500
+- assertVisible: Noch keine Updates
+- assertVisible: Der Feed ist offline verfügbar, sobald ein Eintrag gespeichert ist.
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/52b-event-hub-large-feed-final-1170x2532

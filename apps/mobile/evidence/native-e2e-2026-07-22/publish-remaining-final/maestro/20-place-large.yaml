@@ -1,0 +1,70 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_place_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_CAPABILITY_PLACE_REQUIRED
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-publish-fix-EVENT_CAPABILITY_PLACE_REQUIRED
+- scrollUntilVisible:
+    element:
+      text: Ort im Setup fehlt
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: Ort im Setup fehlt
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_CAPABILITY_PLACE_REQUIRED
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-publish-fix-EVENT_CAPABILITY_PLACE_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 30000
+- assertVisible: Hauptort festlegen
+- scrollUntilVisible:
+    element:
+      id: event-setup-place-query
+    direction: DOWN
+    timeout: 30000
+- assertVisible: '.*Veranstaltungsort.*'
+- tapOn:
+    id: event-setup-place-query
+- inputText: Carya
+- pressKey: ENTER
+- extendedWaitUntil:
+    visible:
+      id: event-setup-place-pcd_1e13ca178f90af118e97f076d7d6811c707d37c293d1bc5fa92f653f66f2e92d
+    timeout: 30000
+- tapOn:
+    id: event-setup-place-pcd_1e13ca178f90af118e97f076d7d6811c707d37c293d1bc5fa92f653f66f2e92d
+- scrollUntilVisible:
+    element:
+      text: 'Gewählt: Carya Golf Club'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: 'Gewählt: Carya Golf Club'
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/20a-place-selected-large-final-1170x2532
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Als Hauptort übernehmen
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: Stand passt
+    timeout: 30000
+- assertVisible: PRÜFPUNKT ERLEDIGT
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/20b-place-recovered-large-final-1170x2532

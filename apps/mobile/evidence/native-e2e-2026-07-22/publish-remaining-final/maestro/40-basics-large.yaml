@@ -1,0 +1,91 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/description
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- swipe:
+    start: 50%, 80%
+    end: 50%, 20%
+    duration: 1000
+- scrollUntilVisible:
+    element:
+      id: event-basics-title
+    direction: UP
+    timeout: 30000
+- assertVisible: Eigentümer:in
+- assertVisible: Privater Entwurf
+- scrollUntilVisible:
+    element:
+      text: Event-Basis bearbeiten
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: Event-Basis bearbeiten
+- scrollUntilVisible:
+    element:
+      id: event-basics-title
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-title
+- extendedWaitUntil:
+    notVisible: Refreshing...
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/40a-basics-title-large-final-1170x2532
+- swipe:
+    start: 50%, 65%
+    end: 50%, 45%
+    duration: 700
+- scrollUntilVisible:
+    element:
+      id: event-basics-description
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-description
+- scrollUntilVisible:
+    element:
+      text: ^Zeitzone$
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 100
+    centerElement: true
+- assertVisible:
+    text: ^Zeitzone$
+- assertVisible:
+    id: event-basics-time-zone
+- extendedWaitUntil:
+    notVisible: Refreshing...
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/40b-basics-time-zone-large-final-1170x2532
+- scrollUntilVisible:
+    element:
+      id: event-basics-back
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 100
+    centerElement: true
+- assertVisible:
+    id: event-basics-primary-action
+- assertVisible: Änderungen speichern
+- assertVisible: Zurück zur Prüfung
+- extendedWaitUntil:
+    notVisible: Refreshing...
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/40c-basics-action-large-final-1170x2532

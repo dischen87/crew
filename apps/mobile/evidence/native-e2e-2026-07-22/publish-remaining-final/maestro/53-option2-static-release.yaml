@@ -1,0 +1,16 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Turkey Golf Tour
+- assertVisible: 8 Teilnehmende
+- assertVisible:
+    id: event-hub-sync-button
+- assertVisible:
+    id: event-hub-primary-action
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/53-option2-turkey-golf-current-source-1170x2532

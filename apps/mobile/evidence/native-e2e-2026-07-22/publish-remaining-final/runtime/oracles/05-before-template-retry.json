@@ -1,0 +1,118 @@
+{
+  "readiness": {
+    "basics": {
+      "codes": [
+        "EVENT_DESCRIPTION_REQUIRED",
+        "EVENT_START_REQUIRED",
+        "EVENT_END_REQUIRED"
+      ],
+      "ready": false,
+      "rootRevision": "3",
+      "rootVersion": 1,
+      "targets": [
+        {
+          "capabilityType": null,
+          "capabilityVersion": null,
+          "code": "EVENT_DESCRIPTION_REQUIRED",
+          "eventId": null,
+          "path": "description"
+        },
+        {
+          "capabilityType": null,
+          "capabilityVersion": null,
+          "code": "EVENT_START_REQUIRED",
+          "eventId": null,
+          "path": "startsAt"
+        },
+        {
+          "capabilityType": null,
+          "capabilityVersion": null,
+          "code": "EVENT_END_REQUIRED",
+          "eventId": null,
+          "path": "endsAt"
+        }
+      ],
+      "template": "team-event"
+    },
+    "capability": {
+      "codes": [
+        "EVENT_CAPABILITY_REQUIRED"
+      ],
+      "ready": false,
+      "rootRevision": "5",
+      "rootVersion": 1,
+      "targets": [
+        {
+          "capabilityType": "travel",
+          "capabilityVersion": 2,
+          "code": "EVENT_CAPABILITY_REQUIRED",
+          "eventId": "evt_publish_capability_final",
+          "path": "capabilities"
+        }
+      ],
+      "template": "golf-tour"
+    },
+    "place": {
+      "codes": [
+        "EVENT_CAPABILITY_PLACE_REQUIRED"
+      ],
+      "ready": false,
+      "rootRevision": "5",
+      "rootVersion": 1,
+      "targets": [
+        {
+          "capabilityType": "golf",
+          "capabilityVersion": null,
+          "code": "EVENT_CAPABILITY_PLACE_REQUIRED",
+          "eventId": "evt_publish_place_round",
+          "path": "events.evt_publish_place_round.capabilities.golf.placeId"
+        }
+      ],
+      "template": "golf-tour"
+    },
+    "template": {
+      "codes": [
+        "EVENT_TEMPLATE_REQUIRED"
+      ],
+      "ready": false,
+      "rootRevision": "3",
+      "rootVersion": 1,
+      "targets": [
+        {
+          "capabilityType": null,
+          "capabilityVersion": null,
+          "code": "EVENT_TEMPLATE_REQUIRED",
+          "eventId": null,
+          "path": "template"
+        }
+      ],
+      "template": null
+    }
+  },
+  "roots": {
+    "basics": {
+      "capabilities": 1,
+      "rootRevision": "3",
+      "status": "draft",
+      "version": 1
+    },
+    "capability": {
+      "capabilities": 0,
+      "rootRevision": "5",
+      "status": "draft",
+      "version": 1
+    },
+    "place": {
+      "capabilities": 4,
+      "rootRevision": "5",
+      "status": "draft",
+      "version": 1
+    },
+    "template": {
+      "capabilities": 1,
+      "rootRevision": "3",
+      "status": "draft",
+      "version": 1
+    }
+  }
+}

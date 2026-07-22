@@ -1,0 +1,20 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/review
+- extendedWaitUntil:
+    visible: Bereit zur Freigabe
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: Vor der Freigabe
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Vor der Freigabe
+- assertVisible: Alle verbindlichen Serverprüfungen sind erfüllt.
+- scrollUntilVisible:
+    element:
+      id: event-publish-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-publish-primary-action

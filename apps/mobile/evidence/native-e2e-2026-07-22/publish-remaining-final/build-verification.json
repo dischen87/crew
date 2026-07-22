@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "sourceAnchors": {
+    "liveMetroBundleSha256": "deff05fe6a5ad68e56ac30800e7c30c75e79167f5ec78eb92ada5889e49d5192",
+    "eventHubViewSha256": "9c671973fec08038281710117220b78f6445ddfa5b1f02e490b4e5211a1dbdb2",
+    "eventHubScreenSha256": "b42f3a3fe31be7d550ad66ac771a96bc939bbada7cc39d24c77f73a9c7fed07d",
+    "screenFrameSha256": "ff7bcb292015a285f248914759542a9685bbc7981c902b4aae262b90414eea88",
+    "designPrimitivesSha256": "7c81ae2bf955385a642b2eae27b4901ff090813e46425bef299b4943c99724f2",
+    "option2EntrySha256": "3f17fe0e10a77f2cec88ef2619f3af864c28f3678226b44c2ec777a727680ba1",
+    "option2AssetManifestSha256": "8838578eb62077481a3cde1c673560ca492f1ffb2a2164820d7eb467b33ef2e2"
+  },
+  "nativeDebugApp": {
+    "executableSha256": "42ee36116aa58a03ce5c0c41d3e1f5cd075c6b81a4a4eed4f90a28dbfce37297",
+    "codesignStrict": "pass"
+  },
+  "iosProductionBundle": {
+    "bundleSha256": "7411ebafee3f0ea4abfa1f5e2fb54110070f2a6e1a7a9842a2a4ddc3485b0f57",
+    "bundleBytes": 2505527,
+    "sourceMapSha256": "951d156e5c7735ef1fec74b2f1707b1f33f6fdbd56f04ab6dbb985ed43f7e22b",
+    "singularCopyPresent": true
+  },
+  "androidReleaseEvidence": {
+    "package": "app.crew.next.evidence",
+    "versionName": "1.0.0-evidence.20260722-singular",
+    "versionCode": 20260730,
+    "minSdk": 24,
+    "targetSdk": 36,
+    "compileSdk": 36,
+    "apkSha256": "083360f3da7536eea8fda3af843b4363c6049f5fab8f5776240ab8dbba3c8593",
+    "apkBytes": 93120218,
+    "hermesSha256": "09a58d9dd0f0c2c3d77352729b17be0e3c41136eb7c9047a8cb68230d445ee21",
+    "embeddedHermesMatchesGenerated": true,
+    "hermesBytecodeVersion": 98,
+    "hermesHeader": "c6 1f bc 03 c1 03 19 1f 62 00 00 00 c5 b5 28 f5",
+    "sourceMapSha256": "eb52d61f3d1a889b16dec9acdf7cb156bbeb800b6e06a0bc983234504eb69905",
+    "compilerMapSha256": "98696838fa7df932f2a66bb251659209575abac348303a68646d6b35780f8955",
+    "packagerMapSha256": "3b747915a15e82bb98c6a52e792141587db4b03b4ca48b0da2e12ddf76b859ac",
+    "zipalign": "pass",
+    "singularCopyPresent": true
+  },
+  "option2StaticRelease": {
+    "package": "app.crew.next.option2fresh",
+    "xcodeReleaseBuild": "pass",
+    "executableSha256": "c037cdb7002b96050435ddeeee6cd20b15c164a01df4b80df1e35c2607060f2c",
+    "bundleSha256": "06f9986c0bdf349ee8e692d065c4a65b420229494774d8a930c12aed679fdd09",
+    "sameInputModel": "turkeyGolfEventHubModel",
+    "visualInspection": "pass"
+  },
+  "historicalHarnessAnchors": {
+    "preflightSha256SumsSha256": "13ee963b8ab9ae229371597269a725ebf68e236852e3ee92d0c2a90982dd7fc1",
+    "preflightControlSha256": "c3ee09e2634bb3c966e8b9502de27caf747563631b759758a23572c17c439c12",
+    "nativeSuccessControlSha256": "9c0afdee358e276a02fc638cdca9daa3b225dcbc7bba4be6a9d3995ad22f4503"
+  }
+}

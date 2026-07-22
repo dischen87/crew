@@ -1,0 +1,16 @@
+appId: ${APP_ID}
+---
+- openLink: 'crewnext://events/evt_publish_capability_final/recover/EVENT_CAPABILITY_REQUIRED?eventId=evt_publish_capability_final&capabilityType=travel'
+- extendedWaitUntil:
+    visible: OFFLINE-KOPIE
+    timeout: 30000
+- assertVisible: Serverstand nicht bestätigt
+- assertVisible: Offline-Kopie · letzte gespeicherte Prüfung
+- scrollUntilVisible:
+    element:
+      text: Erneut online prüfen
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Erneut online prüfen
+- assertNotVisible: PRÜFPUNKT ERLEDIGT
+- assertNotVisible: Stand passt

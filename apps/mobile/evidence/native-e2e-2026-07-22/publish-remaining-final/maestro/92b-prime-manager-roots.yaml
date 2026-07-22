@@ -1,0 +1,14 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Lokaler Native Konflikt
+- openLink: crewnext://events/evt_publish_role_setup_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Role Setup

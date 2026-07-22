@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "status": "current_sanitized",
+  "currentAcceptance": true,
+  "capturedAt": "2026-07-22",
+  "platform": {
+    "device": "iPhone 16e",
+    "os": "iOS 26.2",
+    "logicalViewport": "390x844",
+    "rawViewport": "1170x2532",
+    "contentSizes": ["medium", "accessibility-extra-large"]
+  },
+  "counts": {
+    "reports": 40,
+    "tests": 40,
+    "failures": 0,
+    "errors": 0,
+    "oracles": 26,
+    "rawImages": 13,
+    "logicalImages": 14
+  },
+  "privacy": {
+    "simulatorUuidRetained": false,
+    "absoluteLocalPathRetained": false,
+    "secretValueRetained": false
+  },
+  "diagnosticsExcluded": true,
+  "checksumFile": "SHA256SUMS",
+  "checksumSelfExcluded": true,
+  "allowlistFile": "FINAL-ALLOWLIST.txt",
+  "artifactVerification": "build-verification.json"
+}

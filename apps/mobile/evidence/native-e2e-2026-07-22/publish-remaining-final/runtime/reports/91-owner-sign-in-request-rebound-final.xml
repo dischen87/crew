@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Crew EventHub 2026-07-22 - iOS 26.2" tests="1" failures="0" time="6.0">
+    <testcase id="10-owner-sign-in-large" name="10-owner-sign-in-large" classname="10-owner-sign-in-large" file="apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/maestro/10-owner-sign-in-large.yaml" time="6.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

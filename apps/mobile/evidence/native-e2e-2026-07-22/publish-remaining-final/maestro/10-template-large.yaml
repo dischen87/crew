@@ -1,0 +1,91 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_template_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- openLink: crewnext://events/evt_publish_template_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: Start-Setup fehlt
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: Start-Setup fehlt
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_TEMPLATE_REQUIRED
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- tapOn:
+    id: event-publish-fix-EVENT_TEMPLATE_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 30000
+- assertVisible: Start-Setup wählen
+- assertVisible: EVENT-SETUP
+- scrollUntilVisible:
+    element:
+      text: '.*Anreise, Unterkunft und Transport.*'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: '.*Anreise, Unterkunft und Transport.*'
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/10a-template-travel-large-final-1170x2532
+- scrollUntilVisible:
+    element:
+      text: '.*Reise, Unterkunft, Transfers, Golfplätze und Runden.*'
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: '.*Reise, Unterkunft, Transfers, Golfplätze und Runden.*'
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/10b-template-golf-large-final-1170x2532
+- scrollUntilVisible:
+    element:
+      id: event-setup-template-team-event
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: '.*Ort, Agenda, Programm und Teams.*'
+- takeScreenshot: evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/10c-template-team-large-final-1170x2532
+- scrollUntilVisible:
+    element:
+      id: event-setup-template-team-event
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 100
+    centerElement: true
+- tapOn:
+    id: event-setup-template-team-event
+- scrollUntilVisible:
+    element:
+      text: 'Gewählt: Team-Event'
+    direction: DOWN
+    timeout: 30000
+- assertVisible: 'Gewählt: Team-Event'
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Setup übernehmen
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: Stand passt
+    timeout: 30000
+- assertVisible: PRÜFPUNKT ERLEDIGT
+- scrollUntilVisible:
+    element:
+      text: Zurück zur Prüfung
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 10
+- assertVisible: Zurück zur Prüfung

@@ -1,0 +1,26 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_capability_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible:
+    id: event-hub-title
+- assertVisible: Native Capability Recovery
+- assertVisible: Privater Entwurf
+- assertVisible:
+    id: event-hub-sync-button
+- runFlow:
+    when:
+      visible: Open debugger.*
+    commands:
+      - tapOn:
+          point: 92%,92%
+- extendedWaitUntil:
+    notVisible: Open debugger.*
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: Refreshing...
+    timeout: 30000
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-22/publish-remaining-final/runtime/raw/50-event-hub-normal-final-1170x2532
