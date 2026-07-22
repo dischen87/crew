@@ -1,0 +1,52 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/description
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- assertVisible: Event-Basis bearbeiten
+- assertVisible: Eigentümer:in
+- assertVisible: Privater Entwurf
+- scrollUntilVisible:
+    element:
+      id: event-basics-title
+    direction: UP
+    timeout: 30000
+- assertVisible:
+    id: event-basics-title
+- scrollUntilVisible:
+    element:
+      id: event-basics-description
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-description
+- scrollUntilVisible:
+    element:
+      id: event-basics-time-zone
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-time-zone
+- scrollUntilVisible:
+    element:
+      id: event-basics-starts-at
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-starts-at
+- scrollUntilVisible:
+    element:
+      id: event-basics-ends-at
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-basics-ends-at
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Änderungen speichern
+- assertVisible: Zurück zur Prüfung

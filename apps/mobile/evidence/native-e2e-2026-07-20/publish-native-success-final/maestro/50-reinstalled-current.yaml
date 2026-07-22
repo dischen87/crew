@@ -1,0 +1,25 @@
+appId: app.crew.next.publishfinal
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: event-evt_publish_basics_final
+    timeout: 30000
+- openLink: crewnext://events/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Publish Journey
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/description
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- assertVisible: Offline erhaltene Native Beschreibung
+- assertVisible: 2026-10-01 09:00
+- assertVisible: 2026-10-05 18:00

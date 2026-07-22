@@ -1,0 +1,12 @@
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- assertVisible: Events

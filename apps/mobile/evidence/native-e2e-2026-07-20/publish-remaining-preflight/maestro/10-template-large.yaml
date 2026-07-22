@@ -1,0 +1,45 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_template_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- assertVisible: Start-Setup fehlt
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_TEMPLATE_REQUIRED
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-publish-fix-EVENT_TEMPLATE_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 30000
+- assertVisible: Start-Setup wählen
+- assertVisible: EVENT-SETUP
+- assertVisible: '.*Anreise, Unterkunft und Transport.*'
+- assertVisible: '.*Reise, Unterkunft, Transfers, Golfplätze und Runden.*'
+- scrollUntilVisible:
+    element:
+      id: event-setup-template-team-event
+    direction: DOWN
+    timeout: 30000
+- assertVisible: '.*Ort, Agenda, Aktivitäten und Teameinteilung.*'
+- tapOn:
+    id: event-setup-template-team-event
+- assertVisible: 'Gewählt: Team-Event'
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Setup übernehmen
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: Stand passt
+    timeout: 30000
+- assertVisible: PRÜFPUNKT ERLEDIGT
+- assertVisible: Zurück zur Prüfung

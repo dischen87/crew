@@ -1,0 +1,10 @@
+appId: ${APP_ID}
+---
+- assertVisible: Abmelden?
+- tapOn:
+    point: 70%,58%
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 30000
+- assertVisible: Bitte anmelden

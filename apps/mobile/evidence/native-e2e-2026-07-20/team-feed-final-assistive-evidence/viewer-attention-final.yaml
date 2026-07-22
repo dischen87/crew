@@ -1,0 +1,35 @@
+appId: app.crew.next.evidence
+---
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 20000
+- tapOn:
+    id: event-evt_local_team_day_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 20000
+- tapOn:
+    id: event-hub-tab-feed
+- extendedWaitUntil:
+    visible:
+      id: team-feed-view
+    timeout: 20000
+- assertVisible: NUR ANSEHEN
+- assertNotVisible:
+    id: team-feed-input
+- assertNotVisible:
+    id: team-feed-submit
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-attention
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: team-feed-entry-copy-fed_.*
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: team-feed-entry-copy-fed_.*
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-20/team-feed-final-assistive-evidence/04-viewer-attention-final-1080x2400

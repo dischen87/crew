@@ -1,0 +1,17 @@
+appId: app.crew.next.evidence
+---
+- assertVisible: NUR ANSEHEN
+- assertNotVisible:
+    id: team-feed-input
+- assertNotVisible:
+    id: team-feed-submit
+- scrollUntilVisible:
+    element:
+      id: team-feed-entry-copy-fed_.*
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: team-feed-entry-copy-fed_.*
+- assertVisible:
+    id: team-feed-entry-attention
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-20/team-feed-final-assistive-evidence/05-talkback-bound-copy-overlay-1080x2400

@@ -1,0 +1,17 @@
+appId: app.crew.next.publishfinal
+---
+- eraseText: 200
+- inputText: Final offline erhaltene Beschreibung
+- tapOn:
+    point: '90%,15%'
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-basics-primary-action
+- extendedWaitUntil:
+    visible: Lokal dauerhaft gespeichert
+    timeout: 30000
+- assertVisible: Lokal gespeichert

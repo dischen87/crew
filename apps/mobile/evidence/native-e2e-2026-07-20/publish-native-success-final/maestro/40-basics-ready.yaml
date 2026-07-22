@@ -1,0 +1,23 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_basics_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 20000
+- assertVisible: Beschreibung fehlt
+- assertVisible: 3 Punkte offen
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_DESCRIPTION_REQUIRED
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-publish-fix-EVENT_DESCRIPTION_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 20000
+- assertVisible: Event-Basis bearbeiten
+- assertVisible: Eigentümer:in
+- assertVisible: Privater Entwurf

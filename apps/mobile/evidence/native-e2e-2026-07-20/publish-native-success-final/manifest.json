@@ -1,0 +1,25 @@
+{
+  "status": "historical_sanitized",
+  "currentAcceptance": false,
+  "supersededBy": null,
+  "currentAcceptanceCandidate": "../../native-e2e-2026-07-22/publish-remaining-final",
+  "currentAcceptanceCandidateStatus": "in_progress_not_frozen",
+  "reports": {
+    "total": 42,
+    "acceptedFailures": 0,
+    "acceptedPassing": 40,
+    "superseded": 2
+  },
+  "screenshots": {
+    "logical": 16,
+    "raw": 16
+  },
+  "privacy": {
+    "accessTokensPersisted": false,
+    "databaseUrlsPersisted": false,
+    "localUserPathsPersisted": false,
+    "nativeRequestIdentifiersPersisted": false,
+    "simulatorUdidsPersisted": false,
+    "stableDeviceFingerprintsPersisted": false
+  }
+}

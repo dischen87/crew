@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-20",
+  "runtime": {
+    "platform": "android",
+    "apiLevel": 36,
+    "variant": "releaseEvidence",
+    "physicalPixels": { "width": 1080, "height": 2400 },
+    "densityDpi": 420,
+    "normalizedViewportClassDp": { "width": 412, "height": 915 },
+    "debuggable": false,
+    "runAsRejected": true,
+    "finalFontScale": 2.0
+  },
+  "lifecycle": {
+    "transportDetachedBeforeSubmit": true,
+    "realProcessTerminations": 1,
+    "appDataResetUsed": false,
+    "queuedRowsBeforeProcessDeath": 1,
+    "queuedRowsAfterProcessRelaunch": 1
+  },
+  "membership": {
+    "before": {
+      "rows": 1,
+      "activeParticipantRows": 1,
+      "activeViewerRows": 0,
+      "minimumVersion": 1,
+      "maximumVersion": 1
+    },
+    "transition": { "changedRows": 1 },
+    "after": {
+      "rows": 1,
+      "activeParticipantRows": 0,
+      "activeViewerRows": 1,
+      "minimumVersion": 2,
+      "maximumVersion": 2
+    },
+    "localViewerProjection": {
+      "readOnlyBannerRows": 1,
+      "composerRows": 0,
+      "submitRows": 0
+    }
+  },
+  "facade": {
+    "operation": "sync-push",
+    "traceRows": 4,
+    "outcomes": [
+      "transport-detached",
+      "transport-detached",
+      "transport-detached",
+      "forwarded"
+    ],
+    "facadeStatuses": [503, 503, 503, 200],
+    "downstreamStatuses": [null, null, null, 200],
+    "bodyFingerprintCount": 1,
+    "requestFingerprintCount": 1
+  },
+  "eventService": {
+    "receiptRows": 1,
+    "rejectedRows": 1,
+    "forbiddenRows": 1,
+    "receiptFingerprintCount": 1,
+    "minimumClientSequence": 1,
+    "maximumClientSequence": 1
+  },
+  "serverFeed": {
+    "participantEntryRows": 0,
+    "participantRevisionRows": 0
+  },
+  "localOutboxProjection": {
+    "attentionRows": 1,
+    "visibleCopyActions": 1,
+    "rawPayloadRetainedInOracle": false
+  },
+  "copy": {
+    "nativeActionInvoked": true,
+    "systemClipboardOverlayObserved": true,
+    "talkBackBoundDuringCopy": true,
+    "announcementContractTestPassed": true
+  },
+  "accessibility": {
+    "talkBackBound": true,
+    "touchExplorationEnabled": true,
+    "queuedLiveStatusFocusObserved": true,
+    "attentionLiveRegionContractTestPassed": true,
+    "largeTextCopyActionVisible": true,
+    "largeTextReadOnlyStateVisible": true,
+    "imeReachabilityReleaseEvidenceReferenced": true
+  },
+  "privacy": {
+    "rawPayloadRetained": false,
+    "rawIdentifiersRetained": false,
+    "filesystemPathsRetained": false,
+    "tokensLinksOrBearersRetained": false
+  }
+}

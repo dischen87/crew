@@ -1,0 +1,18 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/title
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000
+- assertVisible: Lokaler Native Konflikt
+- assertVisible: Lokal erhaltener Konfliktversuch
+- assertVisible: Lokal dauerhaft gespeichert
+- openLink: crewnext://e2e/outbox/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-evidence
+    timeout: 30000
+- assertVisible: 'Ausstehend: 1'
+- assertVisible: 'Aufmerksamkeit: 0'
+- assertVisible: PENDING

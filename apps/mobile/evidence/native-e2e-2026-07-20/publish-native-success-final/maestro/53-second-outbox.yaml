@@ -1,0 +1,11 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://e2e/outbox/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-evidence
+    timeout: 20000
+- assertVisible: 'Ausstehend: 1'
+- assertVisible: 'Aufmerksamkeit: 0'
+- assertVisible: event.update
+- assertVisible: PENDING

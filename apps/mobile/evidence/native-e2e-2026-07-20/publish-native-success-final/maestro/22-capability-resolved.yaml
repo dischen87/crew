@@ -1,0 +1,12 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_capability_final/recover/EVENT_CAPABILITY_REQUIRED?eventId=evt_publish_capability_final&capabilityType=travel
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 20000
+- extendedWaitUntil:
+    visible: Aktueller Stand passt
+    timeout: 20000
+- assertVisible: Der aktuelle Serverstand bestätigt die Änderung.
+- assertVisible: PRÜFPUNKT ERLEDIGT

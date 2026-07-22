@@ -1,0 +1,13 @@
+appId: app.crew.next.publishfinal
+---
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- assertVisible: Events
+- assertVisible: '.*Rolle Eigentümer oder Eigentümerin.*'

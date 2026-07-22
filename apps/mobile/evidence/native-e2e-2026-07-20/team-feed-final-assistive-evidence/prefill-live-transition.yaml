@@ -1,0 +1,18 @@
+appId: app.crew.next.evidence
+---
+- scrollUntilVisible:
+    element:
+      id: team-feed-input
+    direction: UP
+    timeout: 20000
+- tapOn:
+    id: team-feed-input
+- inputText: 'TalkBack queued live transition accepted.'
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: team-feed-submit
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: team-feed-submit

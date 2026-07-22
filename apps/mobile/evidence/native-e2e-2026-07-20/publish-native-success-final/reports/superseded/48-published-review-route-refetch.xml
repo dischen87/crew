@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e - iOS 26.2" tests="1" failures="1" time="33.0">
+    <testcase id="48-publish" name="48-publish" classname="48-publish" file="apps/mobile/evidence/native-e2e-2026-07-20/publish-native-success-final/maestro/48-publish.yaml" time="33.0" status="ERROR">
+      <failure>Assertion is false: "Bereit für deine Crew" is visible</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

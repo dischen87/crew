@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: event-hub-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: event-hub-primary-action

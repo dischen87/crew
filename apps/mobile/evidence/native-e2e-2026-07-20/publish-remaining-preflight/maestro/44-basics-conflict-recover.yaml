@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-basics-primary-action
+- extendedWaitUntil:
+    visible: Event-Details gespeichert und vom Server bestätigt.
+    timeout: 30000
+- assertNotVisible: SERVERSTAND GEÄNDERT
+- assertVisible: Zurück zur Prüfung
+- openLink: crewnext://e2e/outbox/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-evidence
+    timeout: 30000
+- assertVisible: 'Ausstehend: 0'
+- assertVisible: 'Aufmerksamkeit: 0'

@@ -1,0 +1,8 @@
+appId: app.crew.next.publishfinal
+---
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: Aktueller Stand passt
+    timeout: 30000
+- assertVisible: PRÜFPUNKT ERLEDIGT

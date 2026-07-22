@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: ONLINE GEPRÜFT
+    timeout: 30000
+- assertVisible: Aktueller Serverstand · Änderungen nur online
+- assertVisible: Setup ergänzen
+- assertNotVisible: Serverstand nicht bestätigt
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-setup-primary-action
+- extendedWaitUntil:
+    visible: Stand passt
+    timeout: 30000
+- assertVisible: PRÜFPUNKT ERLEDIGT

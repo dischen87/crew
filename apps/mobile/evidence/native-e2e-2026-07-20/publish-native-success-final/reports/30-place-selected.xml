@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e - iOS 26.2" tests="1" failures="0" time="14.0">
+    <testcase id="30-place-selected" name="30-place-selected" classname="30-place-selected" file="apps/mobile/evidence/native-e2e-2026-07-20/publish-native-success-final/maestro/30-place-selected.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

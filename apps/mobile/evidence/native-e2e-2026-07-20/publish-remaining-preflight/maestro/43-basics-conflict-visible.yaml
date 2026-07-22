@@ -1,0 +1,18 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/title
+- extendedWaitUntil:
+    visible: Deine Angaben sind erhalten
+    timeout: 30000
+- assertVisible: Konflikt prüfen
+- assertVisible: SERVERSTAND GEÄNDERT
+- assertVisible: AKTUELL AUF DEM SERVER
+- assertVisible: '.*Serverstand Native Konflikt.*'
+- assertVisible: Lokaler Native Konflikt
+- assertVisible: Lokal erhaltener Konfliktversuch
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Aktualisierten Stand speichern

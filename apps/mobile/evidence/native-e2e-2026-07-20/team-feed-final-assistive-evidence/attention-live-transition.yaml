@@ -1,0 +1,20 @@
+appId: app.crew.next.evidence
+---
+- scrollUntilVisible:
+    element:
+      id: team-feed-refresh
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: team-feed-refresh
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-attention
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: team-feed-entry-copy-fed_.*
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: team-feed-entry-copy-fed_.*

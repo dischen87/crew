@@ -1,0 +1,41 @@
+appId: app.crew.next.publishfinal
+---
+- tapOn:
+    id: event-basics-description
+- inputText: Offline erhaltene Native Beschreibung
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-basics-starts-at
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-basics-starts-at
+- inputText: 2026-10-01 09:00
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-basics-ends-at
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-basics-ends-at
+- inputText: 2026-10-05 18:00
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-basics-primary-action
+- extendedWaitUntil:
+    visible: Lokal dauerhaft gespeichert
+    timeout: 30000
+- assertVisible: Lokal gespeichert
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 20000
+- assertVisible: Zurück zur Prüfung

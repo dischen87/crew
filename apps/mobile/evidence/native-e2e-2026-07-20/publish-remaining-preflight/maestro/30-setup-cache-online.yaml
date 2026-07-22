@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_capability_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_CAPABILITY_REQUIRED
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-publish-fix-EVENT_CAPABILITY_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 30000
+- assertVisible: ONLINE GEPRÜFT
+- assertVisible: Aktueller Serverstand · Änderungen nur online
+- assertVisible: Setup ergänzen

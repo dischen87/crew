@@ -1,0 +1,16 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_basics_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 30000
+- assertVisible: Bereit zur Veröffentlichung
+- assertVisible: '.*Team-Event.*'
+- assertVisible: Alle verbindlichen Serverprüfungen sind erfüllt.
+- scrollUntilVisible:
+    element:
+      id: event-publish-primary-action
+    direction: DOWN
+    timeout: 20000
+- assertVisible: Event veröffentlichen

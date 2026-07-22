@@ -1,0 +1,17 @@
+7dde5f6fa1321cdb6cfd3df8e20b60b1b2440dbd01a8322d29ab828774c3930d  ./01-queued-live-transition-1080x2400.png
+ee08475e2e2ab876f0ddd67f80d372885072557fab104e2336912d8e360c7f53  ./01-queued-talkback-focus-1080x2400.png
+e3e6cd221bb29282c4a36ffceca8a8f36ad3bf3ec3a06fbe3d74ba68ea9af04b  ./01b-queued-after-relaunch-1080x2400.png
+49ae48c3a75de7d0f32bd91151809f681be708f3635466b7b40ac2e10093b67a  ./04-viewer-attention-final-1080x2400.png
+41e6f9714988d25915541ff1c8be357133d000a1c58823397dd720fc1bb38198  ./05-talkback-bound-copy-overlay-1080x2400.png
+b52bbaaeaae7e2f8d44dfdff4d6f8f0a2159e780f5ccde950a3b884733e844ab  ./06-viewer-attention-large-text-1080x2400.png
+4ac5cca85aee515475239b1009c720525a4db694b836356ba84a96518b1b43fe  ./README.md
+9847a338a77d39e359aad94e80948003a4a173ba5afb2e3d0d9fb43c65c3205b  ./SOURCE_HASHES.md
+f0df23047557da1fd70bf034ace33c4f2c4d44be535878fb2b667159ac130ece  ./attention-copy-fallback.yaml
+f7ed47472dc833e9cee288974ed48440b3f833a11f2cfa93a611463f84246433  ./attention-live-transition.yaml
+d6cd5fee072f26e27ad8751e28db5aa50134b4fab7f18fccd6f52843c41a9998  ./open-team-feed.yaml
+609dbb769f7fa1d03043b637350b4c6e0dae59942e6b56c39647a288dd7084ba  ./participant-sign-in.yaml
+182db4cac3066cfab04c42cbdddf96046eef4572c752df9ed6c7a876e2b45521  ./prefill-live-transition.yaml
+5fb342f146fee9930cc82088efbb64a993a5e246f4864cd73050d2cb1dd5cf1d  ./queue-live-transition.yaml
+e67cf4966ec5fc6b3fff5b0e48bacd832d82d7f2950c3b8554de748b60751167  ./sanitized-proof.json
+7954c122e312d5e828082953684a804db737388d4e4212e864355a2a14c76160  ./viewer-attention-final.yaml
+cc986c7b410cb413f38488cf993f2dc904cd907c34b3ae5124dac639a7cb2905  ./viewer-attention-large-text-final.yaml

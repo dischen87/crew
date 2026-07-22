@@ -1,0 +1,36 @@
+{
+  "transport": "attached",
+  "basicsReadiness": {
+    "codes": ["EVENT_STATUS_NOT_DRAFT"],
+    "ready": false,
+    "rootRevision": "6",
+    "rootVersion": 4,
+    "template": "team-event"
+  },
+  "roots": {
+    "basics": {
+      "capabilities": 1,
+      "rootRevision": "6",
+      "status": "published",
+      "version": 4
+    },
+    "capability": {
+      "capabilities": 1,
+      "rootRevision": "8",
+      "status": "draft",
+      "version": 1
+    },
+    "place": {
+      "capabilities": 4,
+      "rootRevision": "7",
+      "status": "draft",
+      "version": 1
+    },
+    "template": {
+      "capabilities": 2,
+      "rootRevision": "4",
+      "status": "draft",
+      "version": 2
+    }
+  }
+}

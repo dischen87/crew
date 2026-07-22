@@ -1,0 +1,18 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/description
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: event-basics-primary-action
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-basics-primary-action
+- extendedWaitUntil:
+    notVisible: Lokal dauerhaft gespeichert
+    timeout: 30000
+- assertVisible: Offline erhaltene Native Beschreibung

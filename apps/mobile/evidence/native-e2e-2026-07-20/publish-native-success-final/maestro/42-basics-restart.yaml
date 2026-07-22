@@ -1,0 +1,10 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_basics_final/edit-basics/description
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 20000
+- assertVisible: Offline erhaltene Native Beschreibung
+- assertVisible: Lokal dauerhaft gespeichert
+- assertVisible: Lokal gespeichert

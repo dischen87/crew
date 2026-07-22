@@ -1,0 +1,61 @@
+{
+  "basics": {
+    "description": "Final offline erhaltene Beschreibung",
+    "startsAt": "2026-10-01T07:00:00.000Z",
+    "endsAt": "2026-10-05T16:00:00.000Z"
+  },
+  "roots": [
+    {
+      "rootEventId": "evt_publish_basics_final",
+      "rootRevision": "6",
+      "templateId": "team-event",
+      "status": "published",
+      "version": 4,
+      "capabilities": 1,
+      "boundCapabilities": 1,
+      "places": 1,
+      "changes": 11
+    },
+    {
+      "rootEventId": "evt_publish_capability_final",
+      "rootRevision": "8",
+      "templateId": "golf-tour",
+      "status": "draft",
+      "version": 1,
+      "capabilities": 1,
+      "boundCapabilities": 0,
+      "places": 0,
+      "changes": 16
+    },
+    {
+      "rootEventId": "evt_publish_place_final",
+      "rootRevision": "7",
+      "templateId": "golf-tour",
+      "status": "draft",
+      "version": 1,
+      "capabilities": 4,
+      "boundCapabilities": 4,
+      "places": 2,
+      "changes": 15
+    },
+    {
+      "rootEventId": "evt_publish_template_final",
+      "rootRevision": "4",
+      "templateId": "team-event",
+      "status": "draft",
+      "version": 2,
+      "capabilities": 2,
+      "boundCapabilities": 1,
+      "places": 1,
+      "changes": 8
+    }
+  ],
+  "deviceLifecycle": {
+    "distinctStreams": 2,
+    "nextClientSequences": [2, 2],
+    "receipts": 2,
+    "receiptClientSequences": [1, 1],
+    "receiptOutcomes": ["applied", "applied"],
+    "stableDeviceIdentifiersPersisted": false
+  }
+}

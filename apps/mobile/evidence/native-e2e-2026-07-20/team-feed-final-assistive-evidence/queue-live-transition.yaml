@@ -1,0 +1,9 @@
+appId: app.crew.next.evidence
+---
+- tapOn:
+    id: team-feed-submit
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-queued
+    timeout: 15000
+- takeScreenshot: apps/mobile/evidence/native-e2e-2026-07-20/team-feed-final-assistive-evidence/01-queued-live-transition-1080x2400

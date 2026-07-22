@@ -1,0 +1,72 @@
+{
+  "checkedAt": "2026-07-20T12:08:42Z",
+  "runtimeStarted": false,
+  "status": "HISTORICAL_STATIC_HARNESS",
+  "currentAcceptance": false,
+  "currentAcceptanceCandidate": "../../native-e2e-2026-07-22/publish-remaining-final",
+  "scope": {
+    "staticAllowlistFiles": 28,
+    "maestroYamlFiles": 24,
+    "runtimeDirectory": "excluded_partial_diagnostics",
+    "sha256Scope": "static_allowlist_only"
+  },
+  "historicalGates": {
+    "evidenceHarness": {
+      "command": "bun test infra/native-e2e-runner.test.ts",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 1,
+      "skipReason": "The optional PostgreSQL cleanup integration requires the explicitly isolated runtime databases; no ports were authorized for preflight."
+    },
+    "evidenceHarnessStatic": {
+      "command": "bunx biome check infra/native-e2e-runner.ts infra/native-e2e-runner.test.ts",
+      "passed": true
+    },
+    "mobileFocused": {
+      "command": "jest --runInBand EventSetupRecovery EventBasics EventPublish RootNavigator deniedRoots iosLinkingConfig",
+      "suitesPassed": 12,
+      "testsPassed": 92,
+      "failed": 0
+    },
+    "mobileTypecheck": {
+      "command": "cd apps/mobile && bun run typecheck",
+      "passed": true
+    },
+    "mobileFocusedLint": {
+      "command": "eslint focused Setup Recovery, Basics, Publish and navigation acceptance files",
+      "passed": true
+    },
+    "maestroYaml": {
+      "filesParsed": 19,
+      "failed": 0
+    },
+    "oracleBundles": {
+      "entrypoints": ["control.mjs", "event-db-oracle.mjs"],
+      "target": "bun",
+      "passed": true
+    }
+  },
+  "repairAudit": {
+    "checkedAt": "2026-07-22T18:13:08Z",
+    "maestroYaml": {
+      "filesParsed": 24,
+      "failed": 0
+    },
+    "jsonDocuments": {
+      "filesParsed": 1,
+      "failed": 0
+    },
+    "oracleEntrypoints": {
+      "nodeSyntaxPassed": 2,
+      "bunBuildPassed": 2
+    },
+    "evidenceHarness": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 1
+    },
+    "evidenceHarnessStatic": {
+      "passed": true
+    }
+  }
+}

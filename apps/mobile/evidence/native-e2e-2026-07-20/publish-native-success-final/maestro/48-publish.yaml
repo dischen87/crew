@@ -1,0 +1,15 @@
+appId: app.crew.next.publishfinal
+---
+- runFlow:
+    when:
+      visible:
+        id: event-publish-primary-action
+    commands:
+      - tapOn:
+          id: event-publish-primary-action
+- openLink: crewnext://events/evt_publish_basics_final/review
+- extendedWaitUntil:
+    visible: Bereit für deine Crew
+    timeout: 30000
+- assertVisible: '.*Server hat die Veröffentlichung bestätigt.*'
+- assertVisible: Zum Event

@@ -1,0 +1,26 @@
+{
+  "build": {
+    "configuration": "Debug",
+    "result": "BUILD SUCCEEDED",
+    "bundleIdentifier": "app.crew.next.publishfinal",
+    "architecture": "arm64",
+    "executableSha256": "9b3a107aec942d2bc94457ba163d3be4869d7715255659a61237a949a7d5b305",
+    "codeSignature": "valid on disk; satisfies its Designated Requirement",
+    "gatewayBinding": "isolated loopback runtime",
+    "nativeRequestIdentifierPersisted": false,
+    "newArchitectureEnabled": true
+  },
+  "device": {
+    "model": "iPhone 16e",
+    "os": "iOS 26.2",
+    "logicalViewport": "390x844",
+    "rawPixels": "1170x2532",
+    "restoredContentSize": "medium"
+  },
+  "isolatedPorts": {
+    "gateway": 3000,
+    "control": 3106,
+    "redis": 6380,
+    "metro": 8085
+  }
+}

@@ -1,0 +1,34 @@
+appId: ${APP_ID}
+---
+- tapOn:
+    id: event-publish-primary-action
+- extendedWaitUntil:
+    visible: Prüfung wurde aktualisiert
+    timeout: 30000
+- assertVisible: STAND GEÄNDERT
+- assertVisible: '.*GEPRÜFTER STAND.*REVISION 5.*'
+- assertVisible: Keine verbindlichen Punkte offen
+- assertVisible: '.*AKTUELLER STAND.*REVISION 6.*'
+- assertVisible: Beschreibung fehlt
+- scrollUntilVisible:
+    element:
+      id: event-publish-primary-action
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Änderungen geprüft
+- tapOn:
+    id: event-publish-primary-action
+- extendedWaitUntil:
+    visible: Der aktuelle Serverstand ist geprüft.
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_DESCRIPTION_REQUIRED
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-publish-fix-EVENT_DESCRIPTION_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-basics-view
+    timeout: 30000

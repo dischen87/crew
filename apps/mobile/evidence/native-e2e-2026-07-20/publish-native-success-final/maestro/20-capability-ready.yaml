@@ -1,0 +1,26 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_capability_final/review
+- extendedWaitUntil:
+    visible:
+      id: event-publish-view
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: event-publish-fix-EVENT_CAPABILITY_REQUIRED
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: event-publish-fix-EVENT_CAPABILITY_REQUIRED
+- extendedWaitUntil:
+    visible:
+      id: event-setup-recovery-view
+    timeout: 20000
+- assertVisible: Setup ergänzen
+- assertNotVisible: Die serverseitige Vorlage liefert die typisierte Standardkonfiguration.
+- scrollUntilVisible:
+    element:
+      id: event-setup-primary-action
+    direction: DOWN
+    timeout: 20000
+- assertVisible: Setup ergänzen

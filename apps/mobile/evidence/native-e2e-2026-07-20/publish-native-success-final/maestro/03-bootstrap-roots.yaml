@@ -1,0 +1,26 @@
+appId: app.crew.next.publishfinal
+---
+- openLink: crewnext://events/evt_publish_template_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Template Recovery
+- openLink: crewnext://events/evt_publish_capability_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Capability Recovery
+- openLink: crewnext://events/evt_publish_place_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Place Recovery
+- openLink: crewnext://events/evt_publish_basics_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Publish Journey

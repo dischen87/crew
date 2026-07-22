@@ -1,0 +1,9 @@
+{
+  "stage": "first",
+  "distinctStreams": 1,
+  "nextClientSequences": [2],
+  "receipts": 1,
+  "receiptClientSequences": [1],
+  "receiptOutcomes": ["applied"],
+  "stableDeviceIdentifiersPersisted": false
+}

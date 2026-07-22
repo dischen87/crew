@@ -1,0 +1,12 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_capability_final
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible: Native Capability Recovery
+- assertVisible:
+    id: event-hub-date-strip
+- assertVisible:
+    id: event-hub-sync-button

@@ -1,0 +1,21 @@
+{
+  "builtAt": "2026-07-20T11:33:40Z",
+  "result": "BUILD SUCCEEDED",
+  "configuration": "Debug",
+  "platform": "iOS Simulator",
+  "architecture": "arm64",
+  "bundleIdentifier": "app.crew.next.publishfinal",
+  "gatewayBinding": "isolated loopback runtime",
+  "nativeRequestIdentifierPersisted": false,
+  "metroPort": 8085,
+  "codesign": "verified-deep-strict",
+  "executableSha256": "3c5182c64898eb180a182c3d72aa67171bc0ecf4a6f055700a68b23068cf1993",
+  "eventPublishScreenSha256": "ef73722e085d8f4e8e26120969d01c2945e8ee16425458787c4bce8846eb909b",
+  "device": {
+    "model": "iPhone 16e",
+    "os": "iOS 26.2",
+    "logicalViewport": "390x844",
+    "rawViewport": "1170x2532",
+    "contentSize": "medium"
+  }
+}
