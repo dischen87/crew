@@ -369,6 +369,251 @@ describe("native E2E facade and control plane", () => {
 		).toEqual([201, 409]);
 	});
 
+	test("validates and atomically arms the exact one-shot publish barrier", async () => {
+		const plane = createNativeE2EControlPlane({
+			controlBearer,
+			fixtureBearer,
+			providerConsume: async () => new Response(null, { status: 404 }),
+			setup: async () => {
+				throw new Error("not used");
+			},
+			gatewayFetch: async () => new Response(null, { status: 204 }),
+		});
+		const requestId = "crew-e2e.ios";
+		const rootEventId = "evt_publish_basics_final";
+		const barrierPath = "/v1/barriers/events-publish-once";
+		const arm = { requestId, rootEventId };
+
+		expect((await plane.controlFetch(post(barrierPath, arm))).status).toBe(409);
+		await plane.controlFetch(
+			post("/v1/traces/allow", { requestIds: [requestId] }),
+		);
+		for (const invalid of [
+			{ requestId, rootEventId: "evt_token_secret" },
+			{ requestId, rootEventId: "wrong_root" },
+			{ ...arm, extra: true },
+		]) {
+			expect(
+				(await plane.controlFetch(post(barrierPath, invalid))).status,
+			).toBe(400);
+		}
+		expect(
+			(
+				await plane.controlFetch(
+					post(barrierPath, { requestId, rootEventId: "x".repeat(4_097) }),
+				)
+			).status,
+		).toBe(413);
+
+		const bodyGate = deferred();
+		const responses = [
+			plane.controlFetch(gatedPost(barrierPath, arm, bodyGate.promise)),
+			plane.controlFetch(gatedPost(barrierPath, arm, bodyGate.promise)),
+		];
+		bodyGate.resolve();
+		expect(
+			(await Promise.all(responses)).map(({ status }) => status).sort(),
+		).toEqual([201, 409]);
+		expect(
+			(
+				await plane.controlFetch(
+					post("/v1/barriers/events-publish-once/release"),
+				)
+			).status,
+		).toBe(409);
+		expect((await plane.controlFetch(control(barrierPath))).status).toBe(200);
+		expect(
+			await (await plane.controlFetch(control(barrierPath))).json(),
+		).toEqual({ publishBarrier: "armed" });
+		expect(
+			(await plane.controlFetch(control(barrierPath, { method: "DELETE" })))
+				.status,
+		).toBe(204);
+	});
+
+	test("holds only the exact eventsPublish request, releases it unchanged, and is one-shot", async () => {
+		const requestId = "crew-e2e.ios";
+		const rootEventId = "evt_publish_basics_final";
+		const secretBody = JSON.stringify({
+			baseRevision: "5",
+			baseVersion: 3,
+			private: "never-retain-publish-body",
+		});
+		const secretToken = "Bearer never-retain-publish-token";
+		const idempotencyKey = "never-retain-publish-idempotency";
+		const forwarded: Array<{
+			authorization: string | null;
+			body: string;
+			method: string;
+			path: string;
+		}> = [];
+		const plane = createNativeE2EControlPlane({
+			controlBearer,
+			fixtureBearer,
+			providerConsume: async () => new Response(null, { status: 404 }),
+			setup: async () => {
+				throw new Error("not used");
+			},
+			gatewayFetch: async (request) => {
+				forwarded.push({
+					authorization: request.headers.get("authorization"),
+					body: await request.text(),
+					method: request.method,
+					path: new URL(request.url).pathname,
+				});
+				return new Response(null, {
+					status: 409,
+					headers: { "X-Request-ID": requestId },
+				});
+			},
+		});
+		await plane.controlFetch(
+			post("/v1/traces/allow", { requestIds: [requestId] }),
+		);
+		expect(
+			(
+				await plane.controlFetch(
+					post("/v1/barriers/events-publish-once", {
+						requestId,
+						rootEventId,
+					}),
+				)
+			).status,
+		).toBe(201);
+
+		const publish = (id = requestId, root = rootEventId) =>
+			new Request(`http://127.0.0.1:3000/core/v1/event-roots/${root}/publish`, {
+				method: "POST",
+				headers: {
+					Authorization: secretToken,
+					"Content-Type": "application/json",
+					"Idempotency-Key": idempotencyKey,
+					"X-Request-ID": id,
+				},
+				body: secretBody,
+			});
+		const blocked = plane.publicFetch(publish());
+		expect(forwarded).toHaveLength(0);
+		const status = await plane.controlFetch(control("/v1/status"));
+		const barrierStatus = await plane.controlFetch(
+			control("/v1/barriers/events-publish-once"),
+		);
+		expect(await barrierStatus.json()).toEqual({ publishBarrier: "reached" });
+		const retained = JSON.stringify({
+			barrier: await status.json(),
+			traces: plane.traces(),
+		});
+		for (const value of [secretBody, secretToken, idempotencyKey]) {
+			expect(retained).not.toContain(value);
+		}
+		expect(plane.traces()).toHaveLength(0);
+
+		expect((await plane.publicFetch(publish())).status).toBe(503);
+		expect(forwarded).toHaveLength(0);
+		expect(
+			(
+				await plane.controlFetch(
+					post("/v1/barriers/events-publish-once/release"),
+				)
+			).status,
+		).toBe(200);
+		expect((await blocked).status).toBe(409);
+		expect(forwarded).toEqual([
+			{
+				authorization: secretToken,
+				body: secretBody,
+				method: "POST",
+				path: `/core/v1/event-roots/${rootEventId}/publish`,
+			},
+		]);
+		expect((await plane.publicFetch(publish())).status).toBe(409);
+		expect(forwarded).toHaveLength(2);
+	});
+
+	test("does not block adjacent publish routes and cancels a reached barrier fail closed", async () => {
+		const requestId = "crew-e2e.android";
+		const rootEventId = "evt_publish_basics_final";
+		let gatewayCalls = 0;
+		const plane = createNativeE2EControlPlane({
+			controlBearer,
+			fixtureBearer,
+			providerConsume: async () => new Response(null, { status: 404 }),
+			setup: async () => {
+				throw new Error("not used");
+			},
+			gatewayFetch: async () => {
+				gatewayCalls += 1;
+				return new Response(null, { status: 204 });
+			},
+		});
+		await plane.controlFetch(
+			post("/v1/traces/allow", { requestIds: [requestId] }),
+		);
+		const arm = () =>
+			plane.controlFetch(
+				post("/v1/barriers/events-publish-once", {
+					requestId,
+					rootEventId,
+				}),
+			);
+		const request = (path: string, method = "POST", id = requestId) =>
+			new Request(`http://127.0.0.1:3000${path}`, {
+				method,
+				headers: { "X-Request-ID": id },
+				body: method === "POST" ? "{}" : undefined,
+			});
+		await arm();
+		for (const adjacent of [
+			request(`/core/v1/event-roots/${rootEventId}/publish`, "GET"),
+			request("/core/v1/event-roots/evt_other/publish"),
+			request(`/core/v1/event-roots/${rootEventId}/recap/publish`),
+			request(
+				`/core/v1/event-roots/${rootEventId}/publish`,
+				"POST",
+				"crew-e2e.ios",
+			),
+		]) {
+			expect((await plane.publicFetch(adjacent)).status).toBe(204);
+		}
+		expect(gatewayCalls).toBe(4);
+
+		const exact = () => request(`/core/v1/event-roots/${rootEventId}/publish`);
+		const cancelled = plane.publicFetch(exact());
+		plane.cancelPublishBarrier();
+		expect((await cancelled).status).toBe(503);
+		expect(gatewayCalls).toBe(4);
+		expect(
+			await (await plane.controlFetch(control("/v1/status"))).json(),
+		).toMatchObject({ publishBarrier: "idle" });
+
+		await arm();
+		const cancelledByControl = plane.publicFetch(exact());
+		expect(
+			(
+				await plane.controlFetch(
+					control("/v1/barriers/events-publish-once", {
+						method: "DELETE",
+					}),
+				)
+			).status,
+		).toBe(204);
+		expect((await cancelledByControl).status).toBe(503);
+		expect(gatewayCalls).toBe(4);
+	});
+
+	test("publish barrier state has no request or credential storage fields", async () => {
+		const source = await Bun.file(
+			new URL("./native-e2e-runner.ts", import.meta.url),
+		).text();
+		const start = source.indexOf("type PublishBarrierState");
+		const end = source.indexOf("export type NativeE2EControlPlane", start);
+		expect(start).toBeGreaterThan(-1);
+		expect(end).toBeGreaterThan(start);
+		expect(source.slice(start, end)).not.toMatch(
+			/\b(?:Request|Headers|body|authorization|idempotency|token|secret)\b/i,
+		);
+	});
+
 	test("suppresses one committed success and records sanitized exact replay proof", async () => {
 		let gatewayCalls = 0;
 		const setupCalls: string[] = [];

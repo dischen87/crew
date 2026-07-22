@@ -197,9 +197,23 @@ type SetupState =
 	| { status: "ready"; value: SetupSummary }
 	| { status: "failed"; scenario: FixtureScenario };
 
+type PublishBarrierOutcome = "cancel" | "release";
+
+// Evidence-harness-only state: deliberately retains no request, headers or body.
+type PublishBarrierState =
+	| { status: "idle" }
+	| {
+			status: "armed" | "reached";
+			requestId: string;
+			rootEventId: string;
+			gate: Promise<PublishBarrierOutcome>;
+			resolve: (outcome: PublishBarrierOutcome) => void;
+	  };
+
 export type NativeE2EControlPlane = {
 	publicFetch(request: Request): Promise<Response>;
 	controlFetch(request: Request): Promise<Response>;
+	cancelPublishBarrier(): void;
 	detach(): void;
 	traces(): readonly NativeE2ETrace[];
 };
@@ -307,10 +321,32 @@ export function createNativeE2EControlPlane(
 		operation: NativeE2ETrace["operation"];
 		requestId: string;
 	} | null = null;
+	let publishBarrier: PublishBarrierState = { status: "idle" };
 	let setupState: SetupState = { status: "idle" };
 	let traceSequence = 0;
 	const allowedRequestIds = new Set<string>();
 	const traceRecords: NativeE2ETrace[] = [];
+
+	const cancelPublishBarrier = () => {
+		if (publishBarrier.status === "idle") return;
+		const { resolve } = publishBarrier;
+		publishBarrier = { status: "idle" };
+		resolve("cancel");
+	};
+
+	const armPublishBarrier = (requestId: string, rootEventId: string) => {
+		let resolve!: (outcome: PublishBarrierOutcome) => void;
+		const gate = new Promise<PublishBarrierOutcome>((done) => {
+			resolve = done;
+		});
+		publishBarrier = {
+			status: "armed",
+			requestId,
+			rootEventId,
+			gate,
+			resolve,
+		};
+	};
 
 	const recordTrace = (trace: Omit<NativeE2ETrace, "sequence">) => {
 		traceRecords.push({ sequence: ++traceSequence, ...trace });
@@ -368,6 +404,24 @@ export function createNativeE2EControlPlane(
 				});
 			}
 			return retryableResponse(id, "Transport is detached.");
+		}
+
+		const publishRootEventId = eventsPublishRootEventId(request, url);
+		if (
+			publishRootEventId !== null &&
+			id !== null &&
+			publishBarrier.status !== "idle" &&
+			publishBarrier.requestId === id &&
+			publishBarrier.rootEventId === publishRootEventId
+		) {
+			if (publishBarrier.status === "reached") {
+				return retryableResponse(id, "Publish evidence barrier is occupied.");
+			}
+			const barrier = publishBarrier;
+			publishBarrier = { ...barrier, status: "reached" };
+			if ((await barrier.gate) !== "release" || !attached) {
+				return retryableResponse(id, "Publish evidence barrier was cancelled.");
+			}
 		}
 
 		let response: Response;
@@ -449,9 +503,16 @@ export function createNativeE2EControlPlane(
 			return noStoreJson({
 				transport: attached ? "attached" : "detached",
 				fault: fault ? "armed" : "idle",
+				publishBarrier: publishBarrier.status,
 				setup: setupState.status,
 				traceCount: traceRecords.length,
 			});
+		}
+		if (
+			request.method === "GET" &&
+			url.pathname === "/v1/barriers/events-publish-once"
+		) {
+			return noStoreJson({ publishBarrier: publishBarrier.status });
 		}
 		if (request.method === "GET" && url.pathname === "/v1/traces") {
 			return noStoreJson({ traces: traceRecords });
@@ -460,12 +521,14 @@ export function createNativeE2EControlPlane(
 			traceRecords.length = 0;
 			allowedRequestIds.clear();
 			fault = null;
+			cancelPublishBarrier();
 			return new Response(null, { status: 204 });
 		}
 		if (request.method === "POST" && url.pathname === "/v1/transport/detach") {
 			const invalidBody = await requireEmptyControlBody(request);
 			if (invalidBody) return invalidBody;
 			attached = false;
+			cancelPublishBarrier();
 			return noStoreJson({ transport: "detached" });
 		}
 		if (request.method === "POST" && url.pathname === "/v1/transport/attach") {
@@ -491,6 +554,54 @@ export function createNativeE2EControlPlane(
 			}
 			for (const id of ids as string[]) allowedRequestIds.add(id);
 			return noStoreJson({ allowed: allowedRequestIds.size });
+		}
+		if (
+			request.method === "POST" &&
+			url.pathname === "/v1/barriers/events-publish-once/release"
+		) {
+			const invalidBody = await requireEmptyControlBody(request);
+			if (invalidBody) return invalidBody;
+			if (publishBarrier.status !== "reached") {
+				return noStoreJson({ error: "publish_barrier_not_reached" }, 409);
+			}
+			const { resolve } = publishBarrier;
+			publishBarrier = { status: "idle" };
+			resolve("release");
+			return noStoreJson({ publishBarrier: "idle" });
+		}
+		if (
+			request.method === "DELETE" &&
+			url.pathname === "/v1/barriers/events-publish-once"
+		) {
+			const invalidBody = await requireEmptyControlBody(request);
+			if (invalidBody) return invalidBody;
+			cancelPublishBarrier();
+			return new Response(null, { status: 204 });
+		}
+		if (
+			request.method === "POST" &&
+			url.pathname === "/v1/barriers/events-publish-once"
+		) {
+			if (publishBarrier.status !== "idle") {
+				return noStoreJson({ error: "publish_barrier_already_armed" }, 409);
+			}
+			const body = await readControlJson(request);
+			if (body instanceof Response) return body;
+			if (
+				Object.keys(body).sort().join(",") !== "requestId,rootEventId" ||
+				!safeRequestId(body.requestId) ||
+				!safeRootEventId(body.rootEventId)
+			) {
+				return noStoreJson({ error: "invalid_request" }, 400);
+			}
+			if (!allowedRequestIds.has(body.requestId)) {
+				return noStoreJson({ error: "request_id_not_allowlisted" }, 409);
+			}
+			if (publishBarrier.status !== "idle") {
+				return noStoreJson({ error: "publish_barrier_already_armed" }, 409);
+			}
+			armPublishBarrier(body.requestId, body.rootEventId);
+			return noStoreJson({ publishBarrier: "armed" }, 201);
 		}
 		const faultOperation =
 			url.pathname === "/v1/faults/sync-push-once"
@@ -550,8 +661,10 @@ export function createNativeE2EControlPlane(
 	return {
 		publicFetch,
 		controlFetch,
+		cancelPublishBarrier,
 		detach() {
 			attached = false;
+			cancelPublishBarrier();
 		},
 		traces: () => traceRecords.map((trace) => ({ ...trace })),
 	};
@@ -571,6 +684,7 @@ export async function startNativeE2ERunner(
 	let controlServer: ReturnType<typeof Bun.serve> | undefined;
 	let attachmentWorkerController: AbortController | undefined;
 	let attachmentWorkerRun: Promise<void> | undefined;
+	let controlPlane: NativeE2EControlPlane | undefined;
 	let fixtureSchemaReady = false;
 	let redisOwned = false;
 	let publicHandler = async (request: Request) =>
@@ -580,6 +694,7 @@ export async function startNativeE2ERunner(
 
 	const stop = createSharedStop(async () => {
 		const cleanupErrors: unknown[] = [];
+		controlPlane?.cancelPublishBarrier();
 		attachmentWorkerController?.abort();
 		if (attachmentWorkerRun) {
 			try {
@@ -897,7 +1012,7 @@ export async function startNativeE2ERunner(
 			maxBackoffMs: 1_000,
 		});
 
-		const controlPlane = createNativeE2EControlPlane({
+		controlPlane = createNativeE2EControlPlane({
 			controlBearer: config.controlBearer,
 			fixtureBearer: config.fixtureBearer,
 			gatewayFetch: async (request) => gateway.fetch(request),
@@ -1037,6 +1152,23 @@ function assertIsolatedRedisUrl(value: string) {
 function requestId(request: Request) {
 	const value = request.headers.get("x-request-id");
 	return safeRequestId(value) ? value : null;
+}
+
+function eventsPublishRootEventId(request: Request, url: URL) {
+	if (request.method !== "POST") return null;
+	const match =
+		/^\/core\/v1\/event-roots\/(evt_[A-Za-z0-9._:-]{1,96})\/publish$/.exec(
+			url.pathname,
+		);
+	return match && safeRootEventId(match[1]) ? match[1] : null;
+}
+
+function safeRootEventId(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		/^evt_[A-Za-z0-9._:-]{1,96}$/.test(value) &&
+		!SENSITIVE_IDENTIFIER.test(value.slice(4))
+	);
 }
 
 function safeRequestId(value: unknown): value is string {
