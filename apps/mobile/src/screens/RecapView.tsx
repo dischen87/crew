@@ -47,15 +47,22 @@ export type RecapViewAction =
 
 export type RecapViewExternalDecision = 'grant' | 'unknown' | 'withdraw';
 
+export type RecapViewExternalFieldState = {
+  actorCanDecide: readonly ('author' | 'manager')[];
+  authorDecision: RecapViewExternalDecision;
+  managerDecision: RecapViewExternalDecision;
+  requiredAuthorities: readonly ('author' | 'manager')[];
+  selected: boolean;
+};
+
 export type RecapViewItem = {
   body: string | null;
-  externalBody: {
-    actorCanDecide: readonly ('author' | 'manager')[];
-    authorDecision: RecapViewExternalDecision;
-    managerDecision: RecapViewExternalDecision;
-    requiredAuthorities: readonly ('author' | 'manager')[];
-    selected: boolean;
-  } | null;
+  externalBody: RecapViewExternalFieldState | null;
+  externalCaptions?: readonly (RecapViewExternalFieldState & {
+    attachmentOrdinal: number;
+    caption: string;
+    id: string;
+  })[];
   id: string;
   title: string | null;
 };
@@ -333,9 +340,9 @@ function RecapContent({
       ) : null}
       {model.items.map((item, index) => (
         <Card
-          accessible={!item.externalBody}
+          accessible={!item.externalBody && !item.externalCaptions?.length}
           accessibilityLabel={
-            item.externalBody
+            item.externalBody || item.externalCaptions?.length
               ? undefined
               : [`Moment ${index + 1}`, item.title ?? 'Ohne Titel', item.body]
                   .filter(Boolean)
@@ -372,6 +379,29 @@ function RecapContent({
               onSelectionToggle={onExternalSelectionToggle}
             />
           ) : null}
+          {model.phase === 'published'
+            ? item.externalCaptions?.map(caption => (
+                <ExternalTextControls
+                  activeExactShare={model.activeShareKind === 'exact-body'}
+                  busyAuthority={model.busyExternalAuthority}
+                  busyDecision={model.busyExternalDecision}
+                  busyFieldId={model.busyExternalFieldId}
+                  copy="Nur dieser Beschreibungstext – nicht das Bild – kann extern freigegeben werden:"
+                  eyebrow={`BILDBESCHREIBUNG ${caption.attachmentOrdinal + 1}`}
+                  external={caption}
+                  fieldId={caption.id}
+                  key={caption.id}
+                  manager={manager}
+                  mutationBusy={mutationBusy}
+                  online={model.online}
+                  onDecision={onExternalDecision}
+                  onSelectionToggle={onExternalSelectionToggle}
+                  preview={caption.caption}
+                  selectionLabel="Beschreibung"
+                  testId={`caption-${item.id}-${caption.attachmentOrdinal}`}
+                />
+              ))
+            : null}
         </Card>
       ))}
       {model.phase === 'published' && manager ? (
@@ -426,15 +456,71 @@ function ExternalBodyControls({
 }) {
   const external = item.externalBody;
   if (!external || !item.body) return null;
-  const busy = busyFieldId === item.id;
 
   return (
-    <View style={styles.externalField} testID={`recap-external-${item.id}`}>
-      <Text style={styles.externalEyebrow}>EXAKTE TEXTVORSCHAU</Text>
-      <Text style={styles.externalCopy}>
-        Für genau diesen Text gelten die folgenden externen Freigaben:
-      </Text>
-      <Text style={styles.externalPreview}>{item.body}</Text>
+    <ExternalTextControls
+      activeExactShare={activeExactShare}
+      busyAuthority={busyAuthority}
+      busyDecision={busyDecision}
+      busyFieldId={busyFieldId}
+      copy="Für genau diesen Text gelten die folgenden externen Freigaben:"
+      eyebrow="EXAKTE TEXTVORSCHAU"
+      external={external}
+      fieldId={item.id}
+      manager={manager}
+      mutationBusy={mutationBusy}
+      online={online}
+      onDecision={onDecision}
+      onSelectionToggle={onSelectionToggle}
+      preview={item.body}
+      selectionLabel="Text"
+      testId={item.id}
+    />
+  );
+}
+
+function ExternalTextControls({
+  activeExactShare,
+  busyAuthority,
+  busyDecision,
+  busyFieldId,
+  copy,
+  eyebrow,
+  external,
+  fieldId,
+  manager,
+  mutationBusy,
+  online,
+  onDecision,
+  onSelectionToggle,
+  preview,
+  selectionLabel,
+  testId,
+}: {
+  activeExactShare: boolean;
+  busyAuthority: RecapViewModel['busyExternalAuthority'];
+  busyDecision: RecapViewModel['busyExternalDecision'];
+  busyFieldId: string | null;
+  copy: string;
+  eyebrow: string;
+  external: RecapViewExternalFieldState;
+  fieldId: string;
+  manager: boolean;
+  mutationBusy: boolean;
+  online: boolean;
+  onDecision: RecapViewProps['onExternalDecision'];
+  onSelectionToggle: RecapViewProps['onExternalSelectionToggle'];
+  preview: string;
+  selectionLabel: string;
+  testId: string;
+}) {
+  const busy = busyFieldId === fieldId;
+
+  return (
+    <View style={styles.externalField} testID={`recap-external-${testId}`}>
+      <Text style={styles.externalEyebrow}>{eyebrow}</Text>
+      <Text style={styles.externalCopy}>{copy}</Text>
+      <Text style={styles.externalPreview}>{preview}</Text>
       {manager ? (
         <StatusChip
           label={external.selected ? 'AUSGEWÄHLT' : 'NICHT AUSGEWÄHLT'}
@@ -454,9 +540,13 @@ function ExternalBodyControls({
       {manager && online ? (
         <Button
           disabled={activeExactShare || mutationBusy}
-          label={external.selected ? 'Aus Auswahl entfernen' : 'Text auswählen'}
-          onPress={() => onSelectionToggle(item.id)}
-          testID={`recap-external-select-${item.id}`}
+          label={
+            external.selected
+              ? 'Aus Auswahl entfernen'
+              : `${selectionLabel} auswählen`
+          }
+          onPress={() => onSelectionToggle(fieldId)}
+          testID={`recap-external-select-${testId}`}
           variant="surface"
         />
       ) : null}
@@ -472,8 +562,8 @@ function ExternalBodyControls({
                   busyAuthority === authority &&
                   busyDecision === 'grant'
                 }
-                onPress={() => onDecision(item.id, authority, 'grant')}
-                testID={`recap-external-${authority}-grant-${item.id}`}
+                onPress={() => onDecision(fieldId, authority, 'grant')}
+                testID={`recap-external-${authority}-grant-${testId}`}
                 variant="action"
               />
               <Button
@@ -484,8 +574,8 @@ function ExternalBodyControls({
                   busyAuthority === authority &&
                   busyDecision === 'withdraw'
                 }
-                onPress={() => onDecision(item.id, authority, 'withdraw')}
-                testID={`recap-external-${authority}-withdraw-${item.id}`}
+                onPress={() => onDecision(fieldId, authority, 'withdraw')}
+                testID={`recap-external-${authority}-withdraw-${testId}`}
                 variant="surface"
               />
             </View>
@@ -511,11 +601,21 @@ function ExactShareCard({
   mutationBusy: boolean;
   onShareExact: RecapViewProps['onShareExact'];
 }) {
-  const fieldCount = model.items.filter(item => item.externalBody).length;
+  const fieldCount = model.items.reduce(
+    (count, item) =>
+      count +
+      (item.externalBody ? 1 : 0) +
+      (item.externalCaptions?.length ?? 0),
+    0,
+  );
   if (fieldCount === 0) return null;
-  const selectedCount = model.items.filter(
-    item => item.externalBody?.selected,
-  ).length;
+  const selectedCount = model.items.reduce(
+    (count, item) =>
+      count +
+      (item.externalBody?.selected ? 1 : 0) +
+      (item.externalCaptions?.filter(caption => caption.selected).length ?? 0),
+    0,
+  );
   const activeExactShare = model.activeShareKind === 'exact-body';
   const titleLinkInSession = model.activeShareKind === 'title-only';
   const canCreate = model.online && selectedCount > 0 && !titleLinkInSession;

@@ -859,6 +859,8 @@ function recapViewModel(
     activeShare?.kind === 'exact-body'
       ? activeShare.selectedExternalFieldIds
       : state.selectedExternalFieldIds;
+  const externalEntries =
+    state.online && snapshot ? externalFieldEntries(snapshot) : [];
   return {
     activeShareExpiresAt: activeShare?.share.shareLink.expiresAt ?? null,
     activeShareKind: activeShare?.kind ?? null,
@@ -874,28 +876,44 @@ function recapViewModel(
           item.provenance.sourceType === 'event'
             ? (['manager'] as const)
             : (['author', 'manager'] as const);
-        const consent = state.online
-          ? snapshot?.externalConsent?.fields.find(
-              field => field.ordinal === item.ordinal,
-            )
-          : undefined;
+        const bodyEntry = externalEntries.find(
+          entry =>
+            entry.consent.ordinal === item.ordinal &&
+            entry.consent.field === 'body',
+        );
+        const captions = externalEntries.filter(
+          entry =>
+            entry.consent.ordinal === item.ordinal &&
+            entry.consent.field === 'caption',
+        );
         return {
           body: item.sourceBody,
           externalBody:
             recap.state === 'published' && item.sourceBody !== null
-              ? {
-                  actorCanDecide: consent?.actorCanDecide ?? [],
-                  authorDecision: requiredAuthorities.some(
-                    authority => authority === 'author',
-                  )
-                    ? consent?.authorDecision ?? ('unknown' as const)
-                    : ('unknown' as const),
-                  managerDecision:
-                    consent?.managerDecision ?? ('unknown' as const),
+              ? externalViewState(
+                  bodyEntry?.consent,
                   requiredAuthorities,
-                  selected: selectedExternalFieldIds.includes(id),
-                }
+                  selectedExternalFieldIds.includes(id),
+                )
               : null,
+          externalCaptions:
+            recap.state === 'published'
+              ? captions.flatMap(entry => {
+                  if (entry.consent.field !== 'caption') return [];
+                  return [
+                    {
+                      ...externalViewState(
+                        entry.consent,
+                        ['author', 'manager'],
+                        selectedExternalFieldIds.includes(entry.id),
+                      ),
+                      attachmentOrdinal: entry.consent.attachmentOrdinal,
+                      caption: entry.consent.caption,
+                      id: entry.id,
+                    },
+                  ];
+                })
+              : [],
           id,
           title: item.sourceTitle,
         };
@@ -920,23 +938,18 @@ function selectedExternalSelection(state: RecapScreenState): {
   fieldIds: string[];
   fields: EventRecapExternalField[];
 } {
-  if (!state.snapshot) return { fieldIds: [], fields: [] };
+  if (!state.online || !state.snapshot) return { fieldIds: [], fields: [] };
   const selected = new Set(state.selectedExternalFieldIds);
-  return state.snapshot.recap.items.reduce<{
-    fieldIds: string[];
-    fields: EventRecapExternalField[];
-  }>(
-    (selection, item) => {
-      const itemId = externalFieldId(item.ordinal);
-      const field = externalFieldFromItem(item);
-      if (field && selected.has(itemId)) {
-        selection.fieldIds.push(itemId);
-        selection.fields.push(field);
-      }
-      return selection;
-    },
-    { fieldIds: [], fields: [] },
-  );
+  const selection = {
+    fieldIds: [] as string[],
+    fields: [] as EventRecapExternalField[],
+  };
+  for (const entry of externalFieldEntries(state.snapshot)) {
+    if (!selected.has(entry.id)) continue;
+    selection.fieldIds.push(entry.id);
+    selection.fields.push(entry.field);
+  }
+  return selection;
 }
 
 function externalDecisionTarget(
@@ -946,16 +959,70 @@ function externalDecisionTarget(
   consent: NonNullable<EventRecapSnapshot['externalConsent']>['fields'][number];
   field: EventRecapExternalField;
 } | null {
-  const item = snapshot.recap.items.find(
-    candidate => externalFieldId(candidate.ordinal) === itemId,
+  const entry = externalFieldEntries(snapshot).find(
+    candidate => candidate.id === itemId,
   );
-  const consent = item
-    ? snapshot.externalConsent?.fields.find(
-        candidate => candidate.ordinal === item.ordinal,
-      )
-    : undefined;
-  const field = item ? externalFieldFromItem(item) : null;
-  return consent && field ? { consent, field } : null;
+  return entry ? { consent: entry.consent, field: entry.field } : null;
+}
+
+type ExternalFieldEntry = {
+  consent: NonNullable<EventRecapSnapshot['externalConsent']>['fields'][number];
+  field: EventRecapExternalField;
+  id: string;
+};
+
+function externalFieldEntries(
+  snapshot: EventRecapSnapshot,
+): ExternalFieldEntry[] {
+  if (!snapshot.externalConsent) return [];
+  const items = new Map(snapshot.recap.items.map(item => [item.ordinal, item]));
+  const entries: ExternalFieldEntry[] = [];
+  for (const consent of snapshot.externalConsent.fields) {
+    const item = items.get(consent.ordinal);
+    if (!item) continue;
+    if (consent.field === 'body') {
+      const field = externalFieldFromItem(item);
+      if (field) {
+        entries.push({
+          consent,
+          field,
+          id: externalFieldId(consent.ordinal),
+        });
+      }
+      continue;
+    }
+    if (item.provenance.sourceType !== 'feedEntry') continue;
+    entries.push({
+      consent,
+      field: {
+        field: 'caption',
+        fieldRef: consent.fieldRef,
+        sourceId: item.provenance.sourceId,
+        sourceType: 'feedEntry',
+        sourceVersion: item.provenance.sourceVersion,
+      },
+      id: `caption:${consent.fieldRef}`,
+    });
+  }
+  return entries;
+}
+
+function externalViewState(
+  consent:
+    | NonNullable<EventRecapSnapshot['externalConsent']>['fields'][number]
+    | undefined,
+  requiredAuthorities: readonly ('author' | 'manager')[],
+  selected: boolean,
+) {
+  return {
+    actorCanDecide: consent?.actorCanDecide ?? [],
+    authorDecision: requiredAuthorities.includes('author')
+      ? consent?.authorDecision ?? ('unknown' as const)
+      : ('unknown' as const),
+    managerDecision: consent?.managerDecision ?? ('unknown' as const),
+    requiredAuthorities,
+    selected,
+  };
 }
 
 function externalFieldFromItem(

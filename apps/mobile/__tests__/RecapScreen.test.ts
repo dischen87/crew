@@ -19,6 +19,7 @@ import {
 const accountId = `usr_${'a'.repeat(32)}`;
 const rootA = 'evt_recap_a';
 const rootB = 'evt_recap_b';
+const captionFieldRef = `rcf_${'A'.repeat(43)}`;
 const mockGatewayClient = {};
 let mockPrivateDatabase: { accountId: string; database: object };
 let mockLifecycle: { accountId: string; status: 'ready' };
@@ -380,6 +381,64 @@ test('allows a feed author from actorCanDecide without exposing manager or share
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('uses the opaque caption reference for consent and sharing without rendering it', async () => {
+  mockController.refresh.mockResolvedValue(snapshotWithCaption(rootA));
+  const { renderer } = await renderScreen(rootA);
+  const safeTestId = 'caption-moment-1-0';
+
+  expect(renderedText(renderer)).toContain('Dinner nach der Golfrunde');
+  expect(renderedText(renderer)).toContain('nicht das Bild');
+  expect(renderedText(renderer)).not.toContain(captionFieldRef);
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({
+        testID: `recap-external-manager-grant-${safeTestId}`,
+      })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.decideExternalBody).toHaveBeenCalledWith(
+    rootA,
+    1,
+    {
+      field: 'caption',
+      fieldRef: captionFieldRef,
+      sourceId: `fed_${rootA}`,
+      sourceType: 'feedEntry',
+      sourceVersion: 4,
+    },
+    'manager',
+    'grant',
+  );
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: `recap-external-select-${safeTestId}` })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'recap-external-share-action' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.createExactBodyShareLink).toHaveBeenCalledWith(
+    rootA,
+    1,
+    [
+      {
+        field: 'caption',
+        fieldRef: captionFieldRef,
+        sourceId: `fed_${rootA}`,
+        sourceType: 'feedEntry',
+        sourceVersion: 4,
+      },
+    ],
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('forgets a previously granted decision when the required post-mutation refetch fails', async () => {
   mockController.refresh
     .mockResolvedValueOnce(snapshotWithDecision(rootA, 0, 'manager', 'grant'))
@@ -563,6 +622,23 @@ function snapshotWithDecision(
   if (!field) throw new Error('Missing recap consent fixture');
   if (authority === 'author') field.authorDecision = decision;
   else field.managerDecision = decision;
+  return value;
+}
+
+function snapshotWithCaption(rootEventId: string): EventRecapSnapshot {
+  const value = snapshot(rootEventId);
+  value.externalConsent?.fields.push({
+    actorCanDecide: ['manager'],
+    attachmentOrdinal: 0,
+    attachmentVersion: 1,
+    authorDecision: 'unknown',
+    caption: 'Dinner nach der Golfrunde',
+    field: 'caption',
+    fieldRef: captionFieldRef,
+    managerDecision: 'unknown',
+    ordinal: 1,
+    requiredAuthorities: ['author', 'manager'],
+  });
   return value;
 }
 

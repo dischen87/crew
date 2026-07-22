@@ -10,6 +10,7 @@ const metrics = {
   frame: { height: 844, width: 390, x: 0, y: 0 },
   insets: { bottom: 34, left: 0, right: 0, top: 47 },
 };
+const captionFieldRef = `rcf_${'A'.repeat(43)}`;
 
 const publishedRecapModel: RecapViewModel = {
   activeShareExpiresAt: null,
@@ -171,6 +172,67 @@ test('manager sees the exact selected text and only session-scoped authority sta
   );
   await ReactTestRenderer.act(() => share.props.onPress());
   expect(callbacks.onShareExact).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('Design 2 exposes caption text as a separate exact field without media or opaque identifiers', async () => {
+  const captionModel: RecapViewModel = {
+    ...publishedRecapModel,
+    items: publishedRecapModel.items.map((item, index) =>
+      index === 1
+        ? {
+            ...item,
+            externalCaptions: [
+              {
+                actorCanDecide: ['author', 'manager'],
+                attachmentOrdinal: 0,
+                authorDecision: 'unknown',
+                caption: 'Dinner nach der Golfrunde',
+                id: `caption:${captionFieldRef}`,
+                managerDecision: 'grant',
+                requiredAuthorities: ['author', 'manager'],
+                selected: true,
+              },
+            ],
+          }
+        : item,
+    ),
+  };
+  const { callbacks, renderer } = await render(captionModel);
+  const text = renderer.root
+    .findAllByType(Text)
+    .map(node => node.props.children)
+    .flat(Infinity)
+    .join(' ');
+
+  expect(text).toContain('BILDBESCHREIBUNG 1');
+  expect(text).toContain('Dinner nach der Golfrunde');
+  expect(text).toContain('nicht das Bild');
+  expect(text).not.toContain(captionFieldRef);
+  expect(text).not.toContain('image/');
+  expect(text).not.toContain('attachment');
+
+  const safeTestId = 'caption-recap-carya-0';
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: `recap-external-select-${safeTestId}` })
+      .props.onPress(),
+  );
+  expect(callbacks.onExternalSelectionToggle).toHaveBeenCalledWith(
+    `caption:${captionFieldRef}`,
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({
+        testID: `recap-external-author-withdraw-${safeTestId}`,
+      })
+      .props.onPress(),
+  );
+  expect(callbacks.onExternalDecision).toHaveBeenCalledWith(
+    `caption:${captionFieldRef}`,
+    'author',
+    'withdraw',
+  );
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
