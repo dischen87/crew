@@ -78,6 +78,7 @@ const rootPattern = /^evt_[A-Za-z0-9._:-]{1,96}$/;
 const shareLinkPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const idempotencyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const revisionPattern = /^(0|[1-9][0-9]*)$/;
+const captionFieldRefPattern = /^rcf_[A-Za-z0-9_-]{43}$/;
 
 export class EventRecapAccountChangedError extends Error {
 	constructor() {
@@ -126,6 +127,10 @@ export class EventRecapController {
 	readonly #isOnline: () => boolean;
 	readonly #now: () => Date;
 	readonly #queues: Map<string, Promise<void>>;
+	readonly #externalConsent = new Map<
+		string,
+		NonNullable<EventRecapExternalConsent>
+	>();
 
 	constructor(
 		private readonly database: SqlDatabase,
@@ -149,6 +154,7 @@ export class EventRecapController {
 	): Promise<EventRecapSnapshot | null> {
 		validateVersion(version);
 		return this.#runForRoot(rootEventId, async (subject, accountUserId) => {
+			this.#forgetExternalConsent(accountUserId, rootEventId);
 			const role = await this.#activeRole(subject, accountUserId, rootEventId);
 			const row = await this.database.first<RecapCacheRow>(
 				`SELECT snapshot_json, refreshed_at FROM authorized_recap_cache
@@ -191,6 +197,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		validateVersion(version);
 		return this.#runForRoot(rootEventId, async (subject, accountUserId) => {
 			const role = await this.#activeRole(subject, accountUserId, rootEventId);
+			this.#forgetExternalConsent(accountUserId, rootEventId);
 			try {
 				const response = await this.client.requestAsUser(
 					subject,
@@ -214,11 +221,18 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 					recap,
 					refreshedAt,
 				);
+				const externalConsent = validateExternalConsent(
+					response.data.externalConsent,
+					recap,
+				);
+				this.#rememberExternalConsent(
+					accountUserId,
+					rootEventId,
+					recap.version,
+					externalConsent,
+				);
 				return {
-					externalConsent: validateExternalConsent(
-						response.data.externalConsent,
-						recap,
-					),
+					externalConsent,
 					recap,
 					refreshedAt,
 					role,
@@ -371,6 +385,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 					);
 					await this.#assertSubject(subject);
 				});
+				this.#forgetExternalConsent(accountUserId, rootEventId);
 				return response.data;
 			} catch (error) {
 				return this.#handleMutationError(error, accountUserId, rootEventId);
@@ -573,7 +588,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		accountUserId: string,
 		rootEventId: string,
 	): Promise<GatewayRequest<"eventRecapsGenerate">> {
-		const [state, sources] = await Promise.all([
+		const [state, eventSources, feedSources] = await Promise.all([
 			this.database.first<GenerationStateRow>(
 				`SELECT snapshot_revision FROM root_sync_state
 WHERE account_user_id = ? AND root_event_id = ?`,
@@ -588,11 +603,19 @@ ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END,
 LIMIT 50`,
 				[accountUserId, rootEventId, rootEventId],
 			),
+			this.database.all<GenerationSourceRow>(
+				`SELECT id, version FROM feed_entries
+WHERE account_user_id = ? AND root_event_id = ?
+  AND actor_user_id = ? AND deleted_at IS NULL
+ORDER BY length(created_root_revision), created_root_revision, id
+LIMIT 50`,
+				[accountUserId, rootEventId, accountUserId],
+			),
 		]);
 		if (
 			!state?.snapshot_revision ||
 			!revisionPattern.test(state.snapshot_revision) ||
-			sources.length === 0
+			eventSources.length === 0
 		) {
 			throw new EventRecapUnavailableError();
 		}
@@ -600,12 +623,20 @@ LIMIT 50`,
 			path: { rootEventId },
 			body: {
 				baseRevision: state.snapshot_revision,
-				sources: sources.map((source) => ({
-					consentBasis: "event-publication" as const,
-					sourceId: source.id,
-					sourceVersion: Number(source.version),
-					type: "event" as const,
-				})),
+				sources: [
+					...eventSources.map((source) => ({
+						consentBasis: "event-publication" as const,
+						sourceId: source.id,
+						sourceVersion: Number(source.version),
+						type: "event" as const,
+					})),
+					...feedSources.map((source) => ({
+						consentBasis: "source-author" as const,
+						sourceId: source.id,
+						sourceVersion: Number(source.version),
+						type: "feedEntry" as const,
+					})),
+				].slice(0, 50),
 			},
 			headers: { "idempotency-key": "placeholder-key" },
 		};
@@ -647,6 +678,7 @@ WHERE account_user_id = ? AND root_event_id = ?
 		recap: EventRecap,
 		refreshedAt: string,
 	): Promise<void> {
+		this.#forgetExternalConsent(accountUserId, rootEventId);
 		await this.database.transaction(async (transaction) => {
 			await this.#assertSubject(subject);
 			await transaction.run(
@@ -829,10 +861,12 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 			rootEventId,
 			recapVersion,
 		);
+		const consent = this.#externalConsent.get(
+			externalConsentKey(accountUserId, rootEventId, recapVersion),
+		);
+		if (!consent) throw new EventRecapUnavailableError();
 		const exactFields: EventRecapExternalField[] = [];
-		for (const item of recap.items) {
-			const exactField = externalFieldFromItem(item);
-			if (!exactField) continue;
+		for (const exactField of externalFieldsFromSnapshot(recap, consent)) {
 			const key = externalFieldKey(exactField);
 			if (!requested.delete(key)) continue;
 			exactFields.push(exactField);
@@ -844,6 +878,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 	}
 
 	async #purgeRecap(accountUserId: string, rootEventId: string): Promise<void> {
+		this.#forgetExternalConsent(accountUserId, rootEventId);
 		await this.database.transaction(async (transaction) => {
 			await transaction.run(
 				`DELETE FROM authorized_recap_cache
@@ -861,6 +896,28 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 				[accountUserId, rootEventId],
 			);
 		});
+	}
+
+	#rememberExternalConsent(
+		accountUserId: string,
+		rootEventId: string,
+		recapVersion: number,
+		consent: EventRecapExternalConsent,
+	) {
+		this.#forgetExternalConsent(accountUserId, rootEventId);
+		if (consent) {
+			this.#externalConsent.set(
+				externalConsentKey(accountUserId, rootEventId, recapVersion),
+				consent,
+			);
+		}
+	}
+
+	#forgetExternalConsent(accountUserId: string, rootEventId: string) {
+		const prefix = `${accountUserId}\u0000${rootEventId}\u0000`;
+		for (const key of this.#externalConsent.keys()) {
+			if (key.startsWith(prefix)) this.#externalConsent.delete(key);
+		}
 	}
 
 	async #handleMutationError(
@@ -989,23 +1046,47 @@ function validateExternalConsent(
 	recap: EventRecap,
 ): EventRecapExternalConsent {
 	if (!value || recap.state !== "published") return null;
-	const bodyItems = new Map<
-		number,
-		EventRecap["items"][number]["provenance"]["sourceType"]
-	>();
+	if (value.fields.length > 550) return null;
+	const items = new Map(recap.items.map((item) => [item.ordinal, item]));
+	const requiredBodies = new Set<number>();
 	for (const item of recap.items) {
 		if (item.sourceBody === null) continue;
-		if (bodyItems.has(item.ordinal)) return null;
-		bodyItems.set(item.ordinal, item.provenance.sourceType);
+		if (requiredBodies.has(item.ordinal)) return null;
+		requiredBodies.add(item.ordinal);
 	}
-	if (value.fields.length !== bodyItems.size) return null;
-	const seen = new Set<number>();
+	const seenBodies = new Set<number>();
+	const seenCaptionRefs = new Set<string>();
+	const nextCaptionOrdinal = new Map<number, number>();
 	for (const field of value.fields) {
-		const sourceType = bodyItems.get(field.ordinal);
-		if (!sourceType || seen.has(field.ordinal)) return null;
-		seen.add(field.ordinal);
+		const item = items.get(field.ordinal);
+		if (!item) return null;
+		if (field.field === "body") {
+			if (item.sourceBody === null || seenBodies.has(field.ordinal))
+				return null;
+			seenBodies.add(field.ordinal);
+		} else {
+			const expectedOrdinal = nextCaptionOrdinal.get(field.ordinal) ?? 0;
+			if (
+				item.provenance.sourceType !== "feedEntry" ||
+				!captionFieldRefPattern.test(field.fieldRef) ||
+				seenCaptionRefs.has(field.fieldRef) ||
+				!Number.isSafeInteger(field.attachmentOrdinal) ||
+				field.attachmentOrdinal !== expectedOrdinal ||
+				field.attachmentOrdinal > 9 ||
+				!Number.isSafeInteger(field.attachmentVersion) ||
+				field.attachmentVersion < 1 ||
+				field.caption.trim() !== field.caption ||
+				field.caption.length < 1 ||
+				field.caption.length > 1000
+			) {
+				return null;
+			}
+			seenCaptionRefs.add(field.fieldRef);
+			nextCaptionOrdinal.set(field.ordinal, expectedOrdinal + 1);
+		}
+		const sourceType = item.provenance.sourceType;
 		const requiredAuthorities =
-			sourceType === "event"
+			field.field === "body" && sourceType === "event"
 				? (["manager"] as const)
 				: (["author", "manager"] as const);
 		if (
@@ -1013,7 +1094,9 @@ function validateExternalConsent(
 			field.requiredAuthorities.some(
 				(authority, index) => authority !== requiredAuthorities[index],
 			) ||
-			(sourceType === "event" && field.authorDecision !== "unknown")
+			(field.field === "body" &&
+				sourceType === "event" &&
+				field.authorDecision !== "unknown")
 		) {
 			return null;
 		}
@@ -1027,6 +1110,12 @@ function validateExternalConsent(
 		) {
 			return null;
 		}
+	}
+	if (
+		seenBodies.size !== requiredBodies.size ||
+		[...requiredBodies].some((ordinal) => !seenBodies.has(ordinal))
+	) {
+		return null;
 	}
 	return value;
 }
@@ -1048,7 +1137,6 @@ function externalShareScope(recapVersion: number): string {
 
 function externalFieldKey(field: EventRecapExternalField): string {
 	if (
-		field.field !== "body" ||
 		!Number.isSafeInteger(field.sourceVersion) ||
 		field.sourceVersion < 1 ||
 		(field.sourceType === "event"
@@ -1059,12 +1147,45 @@ function externalFieldKey(field: EventRecapExternalField): string {
 	) {
 		throw new TypeError("Invalid recap external field");
 	}
+	if (
+		field.field === "caption" &&
+		(field.sourceType !== "feedEntry" ||
+			!captionFieldRefPattern.test(field.fieldRef))
+	) {
+		throw new TypeError("Invalid recap external field");
+	}
 	return JSON.stringify([
 		field.sourceType,
 		field.sourceId,
 		field.sourceVersion,
 		field.field,
+		field.field === "caption" ? field.fieldRef : null,
 	]);
+}
+
+function externalFieldsFromSnapshot(
+	recap: EventRecap,
+	consent: NonNullable<EventRecapExternalConsent>,
+): EventRecapExternalField[] {
+	const items = new Map(recap.items.map((item) => [item.ordinal, item]));
+	return consent.fields.flatMap((field) => {
+		const item = items.get(field.ordinal);
+		if (!item) return [];
+		if (field.field === "body") {
+			const body = externalFieldFromItem(item);
+			return body ? [body] : [];
+		}
+		if (item.provenance.sourceType !== "feedEntry") return [];
+		return [
+			{
+				field: "caption" as const,
+				fieldRef: field.fieldRef,
+				sourceId: item.provenance.sourceId,
+				sourceType: "feedEntry" as const,
+				sourceVersion: item.provenance.sourceVersion,
+			},
+		];
+	});
 }
 
 function externalFieldFromItem(
@@ -1079,6 +1200,14 @@ function externalFieldFromItem(
 	return item.provenance.sourceType === "event"
 		? { ...field, sourceType: "event" }
 		: { ...field, sourceType: "feedEntry" };
+}
+
+function externalConsentKey(
+	accountUserId: string,
+	rootEventId: string,
+	recapVersion: number,
+) {
+	return `${accountUserId}\u0000${rootEventId}\u0000${recapVersion}`;
 }
 
 function validateRoot(rootEventId: string): void {

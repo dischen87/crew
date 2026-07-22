@@ -1007,6 +1007,7 @@ function validateReadiness(
 	if (
 		value.schemaVersion !== 1 ||
 		value.rootEventId !== rootEventId ||
+		!isRootStatus(value.rootStatus) ||
 		typeof value.ready !== "boolean" ||
 		!Number.isSafeInteger(value.rootVersion) ||
 		Number(value.rootVersion) < 1 ||
@@ -1064,7 +1065,7 @@ function validReason(value: unknown): boolean {
 }
 
 function isRootStatus(
-	value: string,
+	value: unknown,
 ): value is EventPublishSnapshot["localRootStatus"] {
 	return (
 		value === "archived" ||

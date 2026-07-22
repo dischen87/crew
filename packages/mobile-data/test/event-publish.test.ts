@@ -15,6 +15,7 @@ import {
 	type EventPublishReadiness,
 	EventPublishRootAccessDeniedError,
 	EventPublishSyncRequiredError,
+	EventPublishUnavailableError,
 	MobileSyncEngine,
 	MobileSyncPublicationInProgressError,
 	migrate,
@@ -124,6 +125,94 @@ WHERE account_user_id = ? AND root_event_id = ? AND member_user_id = ?`,
 			await database.first(
 				"SELECT 1 FROM event_publish_readiness_cache WHERE account_user_id = ?",
 				[accountA],
+			),
+		).toBeNull();
+	});
+
+	test("returns verified published status with authoritative not-draft readiness", async () => {
+		const database = await seededDatabase(accountA, "owner");
+		await database.run(
+			"UPDATE events SET status = 'published', version = 4 WHERE account_user_id = ? AND id = ?",
+			[accountA, rootEventId],
+		);
+		const readiness = readyReadiness({
+			ready: false,
+			reasons: [
+				{
+					code: "EVENT_STATUS_NOT_DRAFT",
+					message: "Only draft events can be published.",
+					path: "status",
+				},
+			],
+			rootRevision: "8",
+			rootStatus: "published",
+			rootVersion: 4,
+		});
+		const client = fakeClient();
+		client.requestAsUser.mockResolvedValueOnce({
+			data: readiness,
+			requestId: "published-readiness",
+			status: 200,
+		});
+
+		await expect(
+			eventPublishController(database, client).refresh(rootEventId),
+		).resolves.toMatchObject({
+			localRootStatus: "published",
+			readiness,
+		});
+	});
+
+	test("retains exact authoritative status when local root state is stale", async () => {
+		const database = await seededDatabase(accountA, "owner");
+		await database.run(
+			"UPDATE events SET status = 'published', version = 4 WHERE account_user_id = ? AND id = ?",
+			[accountA, rootEventId],
+		);
+		const readiness = readyReadiness({
+			ready: false,
+			reasons: [
+				{
+					code: "EVENT_STATUS_NOT_DRAFT",
+					message: "Only draft events can be published.",
+					path: "status",
+				},
+			],
+			rootRevision: "9",
+			rootStatus: "archived",
+			rootVersion: 5,
+		});
+		const client = fakeClient();
+		client.requestAsUser.mockResolvedValueOnce({
+			data: readiness,
+			requestId: "archived-readiness",
+			status: 200,
+		});
+
+		await expect(
+			eventPublishController(database, client).refresh(rootEventId),
+		).resolves.toMatchObject({
+			localRootStatus: "published",
+			readiness,
+		});
+	});
+
+	test("rejects an unknown authoritative root status before caching it", async () => {
+		const database = await seededDatabase(accountA, "owner");
+		const client = fakeClient();
+		client.requestAsUser.mockResolvedValueOnce({
+			data: { ...readyReadiness(), rootStatus: "unknown" },
+			requestId: "invalid-root-status",
+			status: 200,
+		});
+
+		await expect(
+			eventPublishController(database, client).refresh(rootEventId),
+		).rejects.toBeInstanceOf(EventPublishUnavailableError);
+		expect(
+			await database.first(
+				"SELECT 1 FROM event_publish_readiness_cache WHERE account_user_id = ? AND root_event_id = ?",
+				[accountA, rootEventId],
 			),
 		).toBeNull();
 	});
@@ -685,6 +774,7 @@ function readyReadiness(
 		reasons: [],
 		rootEventId,
 		rootRevision: "7",
+		rootStatus: "draft",
 		rootVersion: 3,
 		schemaVersion: 1,
 		template: { id: "team-event", version: 1 },

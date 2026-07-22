@@ -40,6 +40,14 @@ const feedBodyField: EventRecapExternalField = {
 	sourceType: "feedEntry",
 	sourceVersion: 2,
 };
+const captionFieldRef = `rcf_${"c".repeat(43)}`;
+const feedCaptionField: EventRecapExternalField = {
+	field: "caption",
+	fieldRef: captionFieldRef,
+	sourceId: feedBodyField.sourceId,
+	sourceType: "feedEntry",
+	sourceVersion: feedBodyField.sourceVersion,
+};
 
 class BunDatabase implements SqlDatabase {
 	readonly sqlite = new Database(":memory:", { create: true });
@@ -174,6 +182,35 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		);
 		expect(stored?.snapshot_json).not.toContain("managerDecision");
 		expect(stored?.snapshot_json).not.toContain("actorCanDecide");
+		externalConsent = recapExternalConsentWithCaption();
+		expect((await controller.refresh(rootEventId))?.externalConsent).toEqual(
+			recapExternalConsentWithCaption(),
+		);
+		const captionSafeCache = await database.first<{ snapshot_json: string }>(
+			`SELECT snapshot_json FROM authorized_recap_cache
+WHERE account_user_id = ? AND root_event_id = ?`,
+			[accountA, rootEventId],
+		);
+		expect(captionSafeCache?.snapshot_json).not.toContain(captionFieldRef);
+		expect(captionSafeCache?.snapshot_json).not.toContain(
+			"Sonnenuntergang am langen Tisch",
+		);
+		externalConsent = {
+			fields: recapExternalConsentWithCaption().fields.map((field) =>
+				field.field === "caption"
+					? { ...field, fieldRef: "rcf_invalid" }
+					: field,
+			),
+		};
+		await expect(controller.refresh(rootEventId)).rejects.toMatchObject({
+			code: "invalid_response",
+		});
+		externalConsent = {
+			fields: recapExternalConsentWithCaption().fields.map((field) =>
+				field.field === "caption" ? { ...field, attachmentOrdinal: 1 } : field,
+			),
+		};
+		expect((await controller.refresh(rootEventId))?.externalConsent).toBeNull();
 
 		externalConsent = {
 			fields: recapExternalConsent().fields.slice(0, 1),
@@ -421,7 +458,8 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 
 	test("keeps exact-field decisions and sharing stable without persisting selected IDs, bodies or tokens", async () => {
 		const database = await seededDatabase(accountA, "owner");
-		await seedPublishedRecap(database, recapWithEventAndFeedBodies());
+		const published = recapWithEventAndFeedBodies();
+		await seedPublishedRecap(database, published);
 		const calls: Array<{
 			body: Record<string, unknown>;
 			key: string;
@@ -429,6 +467,12 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		}> = [];
 		const client = gatewayClient(async (input, init) => {
 			const path = new URL(String(input)).pathname;
+			if (!init?.body) {
+				return jsonResponse(200, {
+					externalConsent: recapExternalConsent(),
+					recap: published,
+				});
+			}
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			calls.push({
 				body,
@@ -452,6 +496,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		const controller = new EventRecapController(database, client, {
 			idempotencyKey: () => `recap-external-${++keyNumber}-stable`,
 		});
+		await controller.refresh(rootEventId);
 
 		await controller.decideExternalBody(
 			rootEventId,
@@ -560,8 +605,16 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 			version: 2,
 		});
 		await seedPublishedRecap(database, version1);
+		let refreshCount = 0;
 		const client = gatewayClient(async (input, init) => {
 			const path = new URL(String(input)).pathname;
+			if (!init?.body && init?.method !== "DELETE") {
+				const current = refreshCount++ === 0 ? version1 : version2;
+				return jsonResponse(200, {
+					externalConsent: recapExternalConsent(),
+					recap: current,
+				});
+			}
 			if (path.endsWith("/external-grants")) {
 				const body = JSON.parse(String(init?.body)) as { decision: string };
 				return jsonResponse(200, { decision: body.decision });
@@ -586,6 +639,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		const controller = new EventRecapController(database, client, {
 			idempotencyKey: () => `recap-cleanup-${++keyNumber}-stable`,
 		});
+		await controller.refresh(rootEventId, 1);
 
 		await controller.decideExternalBody(
 			rootEventId,
@@ -612,6 +666,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		expect(await countExternalAttempts(database)).toBe(0);
 
 		await seedPublishedRecap(database, version2);
+		await controller.refresh(rootEventId);
 		await controller.decideExternalBody(
 			rootEventId,
 			2,
@@ -641,6 +696,12 @@ WHERE account_user_id = ? AND root_event_id = ? AND member_user_id = ?`,
 		const requestKeys: string[] = [];
 		const requestBodies: Array<Record<string, unknown>> = [];
 		const client = gatewayClient(async (input, init) => {
+			if (!init?.body) {
+				return jsonResponse(200, {
+					externalConsent: recapExternalConsent(),
+					recap: recapWithEventAndFeedBodies(),
+				});
+			}
 			requests += 1;
 			requestKeys.push(new Headers(init?.headers).get("idempotency-key") ?? "");
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -651,6 +712,7 @@ WHERE account_user_id = ? AND root_event_id = ? AND member_user_id = ?`,
 			return errorResponse(409, "RECAP_EXTERNAL_GRANTS_REQUIRED");
 		});
 		const participant = new EventRecapController(participantDatabase, client);
+		await participant.refresh(rootEventId);
 		await expect(
 			participant.decideExternalBody(
 				rootEventId,
@@ -695,6 +757,7 @@ WHERE account_user_id = ? AND root_event_id = ? AND member_user_id = ?`,
 			accountAManagerDatabase,
 			client,
 		);
+		await accountAManager.refresh(rootEventId);
 		await expect(
 			accountAManager.decideExternalBody(
 				rootEventId,
@@ -723,6 +786,138 @@ WHERE account_user_id = ? AND root_event_id = ? AND member_user_id = ?`,
 		expect(requests).toBe(2);
 		expect(requestKeys[0]).toMatch(idempotencyKeyPattern);
 		expect(requestKeys[1]).toBe(requestKeys[0]);
+	});
+
+	test("binds caption decisions to ephemeral opaque refs without persisting caption consent", async () => {
+		const database = await seededDatabase(accountA, "owner");
+		const published = recapWithEventAndFeedBodies();
+		const mutations: Array<Record<string, unknown>> = [];
+		const client = gatewayClient(async (input, init) => {
+			if (!init?.body) {
+				return jsonResponse(200, {
+					externalConsent: recapExternalConsentWithCaption(),
+					recap: published,
+				});
+			}
+			const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+			mutations.push(body);
+			if (new URL(String(input)).pathname.endsWith("/external-grants")) {
+				return jsonResponse(200, { decision: body.decision });
+			}
+			return jsonResponse(201, {
+				shareLink: {
+					createdAt: now,
+					expiresAt: "2026-07-26T10:00:00.000Z",
+					id: shareLinkId,
+					recapVersion: 1,
+				},
+				token: shareToken,
+			});
+		});
+		const controller = new EventRecapController(database, client);
+		await controller.refresh(rootEventId);
+		await controller.decideExternalBody(
+			rootEventId,
+			1,
+			feedCaptionField,
+			"author",
+			"grant",
+		);
+		await controller.createExactBodyShareLink(rootEventId, 1, [
+			feedCaptionField,
+		]);
+
+		expect(mutations[0]).toEqual({
+			...feedCaptionField,
+			authority: "author",
+			decision: "grant",
+			recapVersion: 1,
+		});
+		expect(mutations[1]).toEqual({
+			fields: [feedCaptionField],
+			projectionConsent: "exact-fields-reviewed-v1",
+			recapVersion: 1,
+		});
+		const wire = JSON.stringify(mutations);
+		expect(wire).not.toContain("Sonnenuntergang am langen Tisch");
+		expect(wire).not.toContain("attachmentOrdinal");
+		expect(wire).not.toContain("attachmentVersion");
+		const stored = JSON.stringify(
+			await database.all(
+				`SELECT snapshot_json FROM authorized_recap_cache
+WHERE account_user_id = ? AND root_event_id = ?`,
+				[accountA, rootEventId],
+			),
+		);
+		expect(stored).not.toContain(captionFieldRef);
+		expect(stored).not.toContain("Sonnenuntergang am langen Tisch");
+
+		const restarted = new EventRecapController(database, client);
+		await expect(
+			restarted.decideExternalBody(
+				rootEventId,
+				1,
+				feedCaptionField,
+				"author",
+				"grant",
+			),
+		).rejects.toBeInstanceOf(EventRecapUnavailableError);
+		expect(mutations).toHaveLength(2);
+	});
+
+	test("adds only caller-authored live feed entries to recap generation", async () => {
+		const database = await seededDatabase(accountA, "owner");
+		for (const [id, actor, version, revision] of [
+			["fed_recap_own", accountA, 2, "5"],
+			["fed_recap_other", accountB, 4, "6"],
+		] as const) {
+			await database.run(
+				`INSERT INTO feed_entries (
+  account_user_id, id, root_event_id, event_id, parent_entry_id, actor_user_id,
+  kind, payload_schema_version, payload_json, root_revision,
+  created_root_revision, revision_ordinal, version, created_at, updated_at,
+  deleted_at
+) VALUES (?, ?, ?, ?, NULL, ?, 'message', 1, '{"text":"recap"}', ?, ?,
+  NULL, ?, ?, ?, NULL)`,
+				[
+					accountA,
+					id,
+					rootEventId,
+					rootEventId,
+					actor,
+					revision,
+					revision,
+					version,
+					now,
+					now,
+				],
+			);
+		}
+		let generatedBody: Record<string, unknown> | null = null;
+		const client = gatewayClient(async (_input, init) => {
+			generatedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			return jsonResponse(201, { recap: recap("draft") });
+		});
+		await new EventRecapController(database, client).generate(rootEventId);
+		const requestBody = generatedBody as unknown as Record<string, unknown>;
+		expect(requestBody).toEqual({
+			baseRevision: "7",
+			sources: [
+				{
+					consentBasis: "event-publication",
+					sourceId: rootEventId,
+					sourceVersion: 3,
+					type: "event",
+				},
+				{
+					consentBasis: "source-author",
+					sourceId: "fed_recap_own",
+					sourceVersion: 2,
+					type: "feedEntry",
+				},
+			],
+		});
+		expect(JSON.stringify(requestBody)).not.toContain("fed_recap_other");
 	});
 });
 
@@ -851,6 +1046,29 @@ function recapExternalConsent(): NonNullable<
 				authorDecision: "withdraw",
 				field: "body",
 				managerDecision: "grant",
+				ordinal: 1,
+				requiredAuthorities: ["author", "manager"],
+			},
+		],
+	};
+}
+
+function recapExternalConsentWithCaption(): NonNullable<
+	EventRecapSnapshot["externalConsent"]
+> {
+	const consent = recapExternalConsent();
+	return {
+		fields: [
+			...consent.fields,
+			{
+				actorCanDecide: ["author"],
+				attachmentOrdinal: 0,
+				attachmentVersion: 1,
+				authorDecision: "unknown",
+				caption: "Sonnenuntergang am langen Tisch",
+				field: "caption",
+				fieldRef: captionFieldRef,
+				managerDecision: "unknown",
 				ordinal: 1,
 				requiredAuthorities: ["author", "manager"],
 			},
