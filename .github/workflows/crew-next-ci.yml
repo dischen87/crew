@@ -294,6 +294,49 @@ jobs:
             event_migrations="$(find services/event-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
             test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_user --tuples-only --no-align --command 'SELECT count(*) FROM user_schema_migrations')" -eq "$user_migrations"
             test "$(docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command 'SELECT count(*) FROM event_schema_migrations')" -eq "$event_migrations"
+            event_attachment_acl="$(
+              docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command "
+                SELECT
+                  has_table_privilege('crew_event_api', 'event_attachments', 'SELECT'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'INSERT'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'UPDATE'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'DELETE'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'TRUNCATE'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'REFERENCES'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'TRIGGER'),
+                  has_table_privilege('crew_event_api', 'event_attachments', 'MAINTAIN'),
+                  has_function_privilege('crew_event_api', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'SELECT'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'INSERT'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'UPDATE'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'DELETE'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'TRUNCATE'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'REFERENCES'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'TRIGGER'),
+                  has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'MAINTAIN'),
+                  has_function_privilege('crew_event_attachment_worker', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE'),
+                  has_function_privilege('crew_event_notification_worker', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE'),
+                  has_function_privilege('crew_event_recap_retention_worker', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE'),
+                  has_function_privilege('public', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE')
+              "
+            )"
+            test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"
+            runtime_default_acl_count="$(
+              docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command "
+                SELECT count(*)
+                FROM pg_default_acl AS default_acl
+                CROSS JOIN LATERAL aclexplode(default_acl.defaclacl) AS expanded_acl
+                LEFT JOIN pg_roles AS grantee ON grantee.oid = expanded_acl.grantee
+                WHERE expanded_acl.grantee = 0
+                  OR grantee.rolname IN (
+                    'crew_event_api',
+                    'crew_event_attachment_worker',
+                    'crew_event_notification_worker',
+                    'crew_event_recap_retention_worker'
+                  )
+              "
+            )"
+            test "$runtime_default_acl_count" -eq 0
             docker compose --profile tools run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
             worker_logs="$(docker compose logs --no-color magic-worker push-worker attachment-worker notification-worker recap-retention-worker)"
             ! grep -Eq 'worker tick failed|permission denied' <<<"$worker_logs"

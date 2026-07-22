@@ -19,6 +19,13 @@ const platformDockerfileSource = await Bun.file(
 const runtimeGrantSource = await Bun.file(
 	new URL("infra/postgres/grant-runtime.sql", repositoryRoot),
 ).text();
+const attachmentApiGrant =
+	"GRANT SELECT, INSERT ON TABLE event_attachments TO crew_event_api;";
+const attachmentCleanupFunctionRevoke = `REVOKE EXECUTE ON FUNCTION delete_claimed_feedback_attachment(
+	TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT
+) FROM
+	PUBLIC, crew_event_api, crew_event_notification_worker,
+	crew_event_recap_retention_worker;`;
 const checkoutSha = "34e114876b0b11c390a56381ad16ebd13914f8d5";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
@@ -96,6 +103,14 @@ describe("Crew Next GitHub Actions workflow", () => {
 				"          true #",
 			],
 			["          docker compose config --quiet\n", "          true #\n"],
+			[
+				'            test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"\n',
+				"            true # removed attachment ACL oracle\n",
+			],
+			[
+				'            test "$runtime_default_acl_count" -eq 0\n',
+				"            true # removed default ACL oracle\n",
+			],
 			[
 				"          docker compose up --wait --wait-timeout 180\n",
 				"          true #\n",
@@ -228,22 +243,163 @@ describe("Crew Next GitHub Actions workflow", () => {
 	});
 
 	test("grants each runtime worker the database operations it executes", () => {
-		for (const required of [
-			"GRANT SELECT, UPDATE, DELETE ON TABLE user_delivery_outbox",
-			"GRANT SELECT, UPDATE, DELETE ON TABLE user_push_outbox",
-			"event_attachment_cleanup_jobs,\n\tevent_attachment_uploads",
-			"GRANT SELECT, UPDATE, DELETE ON TABLE event_attachments",
-			"GRANT SELECT ON TABLE event_feedback_attachments",
-			"GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox",
-			"GRANT UPDATE (root_event_id) ON TABLE event_roots",
+		validateRuntimeGrants(runtimeGrantSource);
+		for (const drifted of [
+			runtimeGrantSource.replace(
+				"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
+				"AND tablename <> 'event_schema_migrations'",
+			),
+			runtimeGrantSource.replace(
+				attachmentCleanupFunctionRevoke,
+				"-- missing sensitive function revoke",
+			),
+			runtimeGrantSource.replace(
+				`${attachmentCleanupFunctionRevoke}\nREVOKE ALL ON TABLE event_recap_external_retention_state FROM crew_event_api;`,
+				`REVOKE ALL ON TABLE event_recap_external_retention_state FROM crew_event_api;\n${attachmentCleanupFunctionRevoke}`,
+			),
+			`${runtimeGrantSource}\nGRANT DELETE ON event_attachments TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT TRUNCATE ON event_attachments TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT ALL PRIVILEGES ON TABLE event_attachments TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT UPDATE ON TABLE public."event_attachments" TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT DELETE ON TABLE "public"."event_attachments" TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT ALL ON ALL TABLES IN SCHEMA public TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT INSERT ON ALL TABLES IN SCHEMA public TO crew_event_attachment_worker;\n`,
+			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO PUBLIC;\n`,
+			`${runtimeGrantSource}\nGRANT EXECUTE ON FUNCTION public.delete_claimed_feedback_attachment(TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT ALL ON ALL ROUTINES IN SCHEMA public TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC;\n`,
+			`${runtimeGrantSource}\nSELECT format(\n\t'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO crew_event_api',\n\tschemaname,\n\ttablename\n)\nFROM pg_tables\nWHERE tablename = 'event_attachments'\n\\gexec\n`,
+			runtimeGrantSource.replace(
+				"GRANT SELECT ON TABLE event_attachments\nTO crew_event_attachment_worker;",
+				"GRANT SELECT, DELETE ON TABLE event_attachments\nTO crew_event_attachment_worker;",
+			),
+			runtimeGrantSource.replace(
+				"GRANT SELECT ON TABLE event_attachments\nTO crew_event_attachment_worker;",
+				"GRANT SELECT, TRUNCATE ON TABLE event_attachments\nTO crew_event_attachment_worker;",
+			),
 		]) {
-			expect(runtimeGrantSource).toContain(required);
+			expect(drifted).not.toBe(runtimeGrantSource);
+			expect(() => validateRuntimeGrants(drifted)).toThrow();
 		}
-		expect(runtimeGrantSource).not.toMatch(
-			/GRANT\s+[^;]*INSERT[^;]*TO\s+crew_(?:user|event)_[a-z_]+_worker/,
-		);
 	});
 });
+
+function validateRuntimeGrants(source: string) {
+	const blanketEventApiGrant =
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO crew_event_api";
+	const dynamicApiGrantFormats = Array.from(
+		source.matchAll(/'(\s*GRANT\b[^']*\bcrew_event_[a-z_]+\b[^']*)'/gi),
+		(match) => normalizeSql(match[1] as string),
+	);
+	expect(dynamicApiGrantFormats).toEqual([normalizeSql(blanketEventApiGrant)]);
+	expect(source).toContain(
+		"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
+	);
+	const statements = privilegeStatements(source);
+	const runtimeStatements = statements.filter((statement) =>
+		/\bto\b[^;]*\bcrew_event_(?:api|attachment_worker|notification_worker|recap_retention_worker)\b/.test(
+			statement,
+		),
+	);
+	const apiStatements = statements.filter((statement) =>
+		/\bto\b[^;]*\bcrew_event_api\b/.test(statement),
+	);
+	expect(
+		runtimeStatements.filter((statement) =>
+			/\bon all tables in schema\b/.test(statement),
+		),
+	).toEqual([]);
+	expect(
+		statements.filter(
+			(statement) =>
+				statement.startsWith("alter default privileges ") &&
+				/\bon (?:tables|functions|routines)\b/.test(statement) &&
+				/\bto\b[^;]*(?:\bpublic\b|\bcrew_event_(?:api|attachment_worker|notification_worker|recap_retention_worker)\b)/.test(
+					statement,
+				),
+		),
+	).toEqual([]);
+	const normalizedAttachmentApiGrant = normalizeSql(attachmentApiGrant);
+	expect(
+		apiStatements.filter((statement) =>
+			statement.includes("event_attachments"),
+		),
+	).toEqual([normalizedAttachmentApiGrant]);
+
+	const grantAllFunctions =
+		"grant execute on all functions in schema public to crew_event_api;";
+	const grantAllFunctionIndexes = statements.flatMap((statement, index) =>
+		statement === grantAllFunctions ? [index] : [],
+	);
+	expect(grantAllFunctionIndexes).toHaveLength(1);
+	expect(
+		runtimeStatements.filter((statement) =>
+			/\bon all (?:functions|routines) in schema\b/.test(statement),
+		),
+	).toEqual([grantAllFunctions]);
+	const grantAllFunctionsIndex = grantAllFunctionIndexes[0] as number;
+	expect(statements[grantAllFunctionsIndex + 1]).toBe(
+		normalizeSql(attachmentCleanupFunctionRevoke),
+	);
+	const sensitiveFunctionGrants = statements.filter(
+		(statement) =>
+			statement.startsWith("grant ") &&
+			statement.includes("delete_claimed_feedback_attachment"),
+	);
+	expect(sensitiveFunctionGrants).toEqual([
+		"grant execute on function delete_claimed_feedback_attachment(text,text,text,text,text,bigint)to crew_event_attachment_worker;",
+	]);
+	for (const required of [
+		"GRANT SELECT, UPDATE, DELETE ON TABLE user_delivery_outbox",
+		"GRANT SELECT, UPDATE, DELETE ON TABLE user_push_outbox",
+		"event_attachment_cleanup_jobs,\n\tevent_attachment_uploads",
+		"GRANT SELECT ON TABLE event_attachments",
+		"GRANT SELECT ON TABLE event_feedback_attachments",
+		"GRANT EXECUTE ON FUNCTION delete_claimed_feedback_attachment(",
+		"GRANT SELECT, UPDATE, DELETE ON TABLE event_notification_outbox",
+		"GRANT UPDATE (root_event_id) ON TABLE event_roots",
+	]) {
+		expect(source).toContain(required);
+	}
+	expect(
+		statements.filter(
+			(statement) =>
+				statement.includes("event_attachments") &&
+				/\bto\b[^;]*\bcrew_event_attachment_worker\b/.test(statement),
+		),
+	).toEqual([
+		"grant select on table event_attachments to crew_event_attachment_worker;",
+	]);
+	expect(statements).not.toEqual(
+		expect.arrayContaining([
+			expect.stringMatching(
+				/^grant\b[^;]*\binsert\b[^;]*\bto\b[^;]*\bcrew_(?:user|event)_[a-z_]+_worker\b/,
+			),
+		]),
+	);
+}
+
+function privilegeStatements(source: string) {
+	return Array.from(
+		source.matchAll(
+			/^[\t ]*(?:GRANT|REVOKE|ALTER DEFAULT PRIVILEGES)\b[\s\S]*?;/gim,
+		),
+		(match) => normalizeSql(match[0]),
+	);
+}
+
+function normalizeSql(statement: string) {
+	return statement
+		.replaceAll('"', "")
+		.replace(/\s+/g, " ")
+		.replace(/\s*([(),;.])\s*/g, "$1")
+		.trim()
+		.toLowerCase();
+}
 
 function validateWorkflow(source: string) {
 	expect(source).not.toMatch(/latest/i);
@@ -473,6 +629,18 @@ function validateWorkflow(source: string) {
 		"docker compose --profile tools run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap",
 		"SELECT count(*) FROM user_schema_migrations",
 		"SELECT count(*) FROM event_schema_migrations",
+		"has_table_privilege('crew_event_api', 'event_attachments', 'UPDATE')",
+		"has_table_privilege('crew_event_api', 'event_attachments', 'TRUNCATE')",
+		"has_table_privilege('crew_event_api', 'event_attachments', 'MAINTAIN')",
+		"has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'INSERT')",
+		"has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'TRUNCATE')",
+		"has_function_privilege('crew_event_api', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE')",
+		'test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"',
+		"FROM pg_default_acl AS default_acl",
+		"aclexplode(default_acl.defaclacl)",
+		"LEFT JOIN pg_roles AS grantee",
+		"WHERE expanded_acl.grantee = 0",
+		'test "$runtime_default_acl_count" -eq 0',
 		"http://127.0.0.1:3000/internal/ready",
 		'test -z "$(git status --porcelain)"',
 	]) {
