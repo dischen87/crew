@@ -341,6 +341,51 @@ test('manager keeps stable user IDs while nullable directory names get generic a
   expect(model.teams[1]?.members[0]?.id).toBe(otherUserId);
 });
 
+test('assignment projection drops a resolved private roster after a dynamic viewer downgrade', async () => {
+  let role: 'owner' | 'viewer' = 'owner';
+  let releasePeople!: () => void;
+  let markPeopleReadStarted!: () => void;
+  const peopleReadStarted = new Promise<void>(resolve => {
+    markPeopleReadStarted = resolve;
+  });
+  const peopleReady = new Promise<void>(resolve => {
+    releasePeople = resolve;
+  });
+  const controller = new TeamCollaborationController({
+    accountUserId,
+    deviceId: 'device-team-ui',
+    resolvePerson: async id => {
+      markPeopleReadStarted();
+      await peopleReady;
+      return { id, name: id === accountUserId ? 'Lena' : 'Fremde Person' };
+    },
+    role: () => role,
+    store: {
+      getAssignments: jest.fn(async () => assignmentReadModel()),
+      getDecision: jest.fn(async () => decisionReadModel()),
+    },
+    sync: syncMock(),
+  });
+
+  const pending = controller.loadAssignments({
+    capacityPerTeam: 2,
+    deliveryState: 'synced',
+    eventId,
+    eventTitle: 'Team Retreat',
+    rootEventId,
+  });
+  await peopleReadStarted;
+  role = 'viewer';
+  releasePeople();
+
+  await expect(pending).resolves.toEqual(
+    expect.objectContaining({ access: 'read', ownTeam: null, role: 'viewer' }),
+  );
+  const result = await pending;
+  expect(JSON.stringify(result)).not.toContain('members');
+  expect(JSON.stringify(result)).not.toContain(otherUserId);
+});
+
 test('manager adapter sends assignments and decision through the typed outbox seams', async () => {
   const sync = syncMock();
   const controller = new TeamCollaborationController({
@@ -494,6 +539,151 @@ test('pre-write account guard runs after each async read and before either outbo
     ),
   ).rejects.toThrow('account switched');
   expect(sync.enqueueTeamResponse).not.toHaveBeenCalled();
+
+  activeAccount = accountUserId;
+  await expect(
+    controller.replaceDecision(
+      {
+        decisionId,
+        eventId,
+        options: [],
+        rootEventId,
+        state: 'open',
+        title: 'Nicht schreiben',
+      },
+      assertActive,
+    ),
+  ).rejects.toThrow('account switched');
+  expect(sync.enqueueTeamDecision).not.toHaveBeenCalled();
+});
+
+test('assignment write fence rechecks a dynamic role after the device identity resolves', async () => {
+  let role: 'owner' | 'viewer' = 'owner';
+  let releaseDeviceId!: (value: string) => void;
+  let markDeviceReadStarted!: () => void;
+  const deviceReadStarted = new Promise<void>(resolve => {
+    markDeviceReadStarted = resolve;
+  });
+  const deviceId = new Promise<string>(resolve => {
+    releaseDeviceId = resolve;
+  });
+  const sync = syncMock();
+  const controller = new TeamCollaborationController({
+    accountUserId,
+    deviceId: () => {
+      markDeviceReadStarted();
+      return deviceId;
+    },
+    resolvePerson: id => ({ id, name: 'Lena' }),
+    role: () => role,
+    store: {
+      getAssignments: jest.fn(async () => assignmentReadModel()),
+      getDecision: jest.fn(async () => decisionReadModel()),
+    },
+    sync,
+  });
+
+  const write = controller.publishAssignments({
+    eventId,
+    rootEventId,
+    teams: [],
+  });
+  const outcome = write.catch(error => error as Error);
+  await deviceReadStarted;
+  role = 'viewer';
+  releaseDeviceId('device-after-role-change');
+
+  await expect(outcome).resolves.toMatchObject({
+    message: 'Team management requires an owner or organizer',
+  });
+  expect(sync.enqueueTeamAssignments).not.toHaveBeenCalled();
+});
+
+test('response write fence rechecks a dynamic role after the device identity resolves', async () => {
+  let role: 'participant' | 'viewer' = 'participant';
+  let releaseDeviceId!: (value: string) => void;
+  let markDeviceReadStarted!: () => void;
+  const deviceReadStarted = new Promise<void>(resolve => {
+    markDeviceReadStarted = resolve;
+  });
+  const deviceId = new Promise<string>(resolve => {
+    releaseDeviceId = resolve;
+  });
+  const sync = syncMock();
+  const controller = new TeamCollaborationController({
+    accountUserId,
+    deviceId: () => {
+      markDeviceReadStarted();
+      return deviceId;
+    },
+    resolvePerson: id => ({ id, name: 'Lena' }),
+    role: () => role,
+    store: {
+      getAssignments: jest.fn(async () => assignmentReadModel()),
+      getDecision: jest.fn(async () => decisionReadModel()),
+    },
+    sync,
+  });
+
+  const write = controller.submitResponse({
+    decisionId,
+    optionId: 'tdo_fish',
+    rootEventId,
+  });
+  const outcome = write.catch(error => error as Error);
+  await deviceReadStarted;
+  role = 'viewer';
+  releaseDeviceId('device-after-role-change');
+
+  await expect(outcome).resolves.toMatchObject({
+    message: 'Viewers cannot answer team decisions',
+  });
+  expect(sync.enqueueTeamResponse).not.toHaveBeenCalled();
+});
+
+test('decision write fence rechecks a dynamic manager role after the device identity resolves', async () => {
+  let role: 'owner' | 'viewer' = 'owner';
+  let releaseDeviceId!: (value: string) => void;
+  let markDeviceReadStarted!: () => void;
+  const deviceReadStarted = new Promise<void>(resolve => {
+    markDeviceReadStarted = resolve;
+  });
+  const deviceId = new Promise<string>(resolve => {
+    releaseDeviceId = resolve;
+  });
+  const sync = syncMock();
+  const controller = new TeamCollaborationController({
+    accountUserId,
+    deviceId: () => {
+      markDeviceReadStarted();
+      return deviceId;
+    },
+    resolvePerson: id => ({ id, name: 'Lena' }),
+    role: () => role,
+    store: {
+      getAssignments: jest.fn(async () => assignmentReadModel()),
+      getDecision: jest.fn(async () => decisionReadModel()),
+    },
+    sync,
+  });
+
+  const write = controller.replaceDecision({
+    decisionId,
+    eventId,
+    options: [],
+    rootEventId,
+    state: 'open',
+    title: 'Nicht nach Downgrade',
+  });
+  const outcome = write.catch(error => error as Error);
+  await deviceReadStarted;
+  role = 'viewer';
+  releaseDeviceId('device-after-role-change');
+
+  await expect(outcome).resolves.toMatchObject({
+    message: 'Team management requires an owner or organizer',
+  });
+  expect(sync.enqueueTeamDecision).not.toHaveBeenCalled();
 });
 
 test('controller coalesces concurrent response taps and replays the same choice as a no-op', async () => {
@@ -580,9 +770,9 @@ function expectSafeScrollViewport(
     flex: 1,
     marginTop: metrics.insets.top,
   });
-  expect(StyleSheet.flatten(scroller.props.contentContainerStyle)).toMatchObject(
-    { paddingTop: 0 },
-  );
+  expect(
+    StyleSheet.flatten(scroller.props.contentContainerStyle),
+  ).toMatchObject({ paddingTop: 0 });
 }
 
 function managerAssignments(): TeamAssignmentsViewModel {

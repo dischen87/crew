@@ -89,7 +89,7 @@ export class TeamProductionRuntime {
   readonly #randomUUID: () => string;
   readonly #rootEventId: string;
   readonly #sync: MobileSyncEngine;
-  readonly role: TeamRole;
+  readonly #role: { current: TeamRole };
 
   private constructor(input: {
     accountUserId: string;
@@ -101,7 +101,7 @@ export class TeamProductionRuntime {
     deviceId(): Promise<string>;
     directory: MemberDirectoryStore;
     randomUUID: () => string;
-    role: TeamRole;
+    role: { current: TeamRole };
     rootEventId: string;
     sync: MobileSyncEngine;
   }) {
@@ -116,7 +116,11 @@ export class TeamProductionRuntime {
     this.#randomUUID = input.randomUUID;
     this.#rootEventId = input.rootEventId;
     this.#sync = input.sync;
-    this.role = input.role;
+    this.#role = input.role;
+  }
+
+  get role(): TeamRole {
+    return this.#role.current;
   }
 
   static async create(
@@ -132,7 +136,7 @@ export class TeamProductionRuntime {
         item.rootEventId === options.rootEventId &&
         item.status === 'active',
     );
-    if (!membership) return null;
+    if (!membership || !isTeamRole(membership.role)) return null;
     assertActive(options);
 
     const deviceIds = options.deviceIdStore ?? secureDeviceIdStore;
@@ -178,6 +182,7 @@ export class TeamProductionRuntime {
           ),
       },
     );
+    const role = { current: membership.role };
     const controller = new TeamCollaborationController({
       accountUserId: options.accountUserId,
       deviceId,
@@ -191,7 +196,7 @@ export class TeamProductionRuntime {
           ? { id: entry.userId, name: entry.displayName }
           : null;
       },
-      role: membership.role,
+      role: () => role.current,
       store: team,
       sync,
     });
@@ -205,7 +210,7 @@ export class TeamProductionRuntime {
       deviceId,
       directory,
       randomUUID,
-      role: membership.role,
+      role,
       rootEventId: options.rootEventId,
       sync,
     });
@@ -216,18 +221,22 @@ export class TeamProductionRuntime {
   ): Promise<TeamAssignmentsViewModel | null> {
     this.#assertActive();
     const eventTitle = await this.#eventTitle(eventId);
+    this.#assertActive();
     if (!eventTitle) return null;
     const deliveryState = assignmentDeliveryState(
       await this.#sync.listOutbox(this.#accountUserId, this.#rootEventId),
       eventId,
     );
-    return this.#controller.loadAssignments({
+    this.#assertActive();
+    const model = await this.#controller.loadAssignments({
       capacityPerTeam: null,
       deliveryState,
       eventId,
       eventTitle,
       rootEventId: this.#rootEventId,
     });
+    this.#assertActive();
+    return model;
   }
 
   async loadDecision(
@@ -325,6 +334,7 @@ export class TeamProductionRuntime {
       force: true,
     });
     this.#assertActive();
+    await this.#refreshRole();
     let verificationId: string | null = null;
     try {
       verificationId = await deniedRootRegistry.arm(
@@ -386,13 +396,37 @@ export class TeamProductionRuntime {
         parentEntryId: null,
       },
     };
+    const deviceId = await this.#deviceId();
+    // Authority can change while the event title or device identity is read.
+    // Keep the final synchronous step before enqueue fail-closed.
+    this.#assertActive();
+    this.#assertCanPost();
     return this.#sync.enqueueMutation(
       this.#accountUserId,
       this.#rootEventId,
-      await this.#deviceId(),
+      deviceId,
       command,
       command,
     );
+  }
+
+  async #refreshRole(): Promise<void> {
+    // A completed sync may have replaced the local membership snapshot. Keep
+    // writes fail-closed while that new authority is read and validated.
+    this.#role.current = 'viewer';
+    const membership = (
+      await this.#data.listMemberships(this.#accountUserId, this.#rootEventId)
+    ).find(
+      item =>
+        item.memberUserId === this.#accountUserId &&
+        item.rootEventId === this.#rootEventId &&
+        item.status === 'active',
+    );
+    this.#assertActive();
+    if (!membership || !isTeamRole(membership.role)) {
+      throw new MobileSyncRootAccessDeniedError();
+    }
+    this.#role.current = membership.role;
   }
 
   async #eventTitle(eventId: string): Promise<string | null> {
@@ -410,6 +444,12 @@ export class TeamProductionRuntime {
   #assertActive() {
     if (this.#activeAccountUserId() !== this.#accountUserId) {
       throw new Error('Active account changed during team route');
+    }
+  }
+
+  #assertCanPost() {
+    if (this.role === 'viewer') {
+      throw new Error('Viewers cannot post to the team feed');
     }
   }
 }
@@ -528,6 +568,12 @@ function feedDelivery(state: OutboxItem['state']): {
 
 function deliveryRank(state: TeamFeedDeliveryState) {
   return { attention: 0, sending: 1, queued: 2, converged: 3 }[state];
+}
+
+function isTeamRole(value: unknown): value is TeamRole {
+  return ['owner', 'organizer', 'participant', 'viewer'].includes(
+    value as TeamRole,
+  );
 }
 
 function assignmentDeliveryState(

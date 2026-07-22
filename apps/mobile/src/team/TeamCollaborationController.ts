@@ -82,11 +82,8 @@ type TeamWriter = Pick<
 type TeamCollaborationControllerOptions = {
   accountUserId: string;
   deviceId: string | (() => Promise<string>);
-  resolvePerson(userId: string):
-    | Promise<TeamPerson | null>
-    | TeamPerson
-    | null;
-  role: TeamRole;
+  resolvePerson(userId: string): Promise<TeamPerson | null> | TeamPerson | null;
+  role: TeamRole | (() => TeamRole);
   store: TeamReader;
   sync: TeamWriter;
 };
@@ -95,7 +92,7 @@ export class TeamCollaborationController {
   readonly #accountUserId: string;
   readonly #deviceId: () => Promise<string>;
   readonly #resolvePerson: TeamCollaborationControllerOptions['resolvePerson'];
-  readonly #role: TeamRole;
+  readonly #role: () => TeamRole;
   readonly #store: TeamReader;
   readonly #sync: TeamWriter;
   readonly #responseInFlight = new Map<string, Promise<OutboxItem | null>>();
@@ -106,7 +103,8 @@ export class TeamCollaborationController {
     this.#deviceId =
       typeof deviceId === 'string' ? async () => deviceId : deviceId;
     this.#resolvePerson = options.resolvePerson;
-    this.#role = options.role;
+    const role = options.role;
+    this.#role = typeof role === 'function' ? role : () => role;
     this.#store = options.store;
     this.#sync = options.sync;
   }
@@ -126,21 +124,20 @@ export class TeamCollaborationController {
     );
     if (!assignment) return null;
 
+    const role = this.#role();
     const base = {
       deliveryLabel: assignmentDeliveryLabel(input.deliveryState),
       deliveryState: input.deliveryState,
       eventId: assignment.eventId,
       eventTitle: input.eventTitle,
       rootEventId: assignment.rootEventId,
-      role: this.#role,
+      role,
       version: assignment.version,
     };
-    if (manager(this.#role) && assignment.canManage && assignment.roster) {
+    if (manager(role) && assignment.canManage && assignment.roster) {
       const people = new Map<string, TeamPerson>();
       const userIds = [
-        ...new Set(
-          assignment.roster.flatMap(team => [...team.memberUserIds]),
-        ),
+        ...new Set(assignment.roster.flatMap(team => [...team.memberUserIds])),
       ].sort(compareText);
       await Promise.all(
         userIds.map(async (userId, index) => {
@@ -157,11 +154,24 @@ export class TeamCollaborationController {
           );
         }),
       );
+      const currentRole = this.#role();
+      if (!manager(currentRole)) {
+        return {
+          ...base,
+          access: 'read',
+          ownTeam:
+            currentRole === 'viewer' || assignment.ownTeam === null
+              ? null
+              : publicTeam(assignment.ownTeam),
+          role: currentRole,
+          teams: assignment.teams.map(publicTeam),
+        };
+      }
       return {
         ...base,
         access: 'manage',
         hasLocalChanges: input.hasLocalChanges ?? false,
-        role: this.#role,
+        role: currentRole,
         teams: assignment.roster.map(team => ({
           ...publicTeam(team),
           capacity: input.capacityPerTeam,
@@ -173,7 +183,7 @@ export class TeamCollaborationController {
       ...base,
       access: 'read',
       ownTeam:
-        this.#role === 'viewer' || assignment.ownTeam === null
+        role === 'viewer' || assignment.ownTeam === null
           ? null
           : publicTeam(assignment.ownTeam),
       teams: assignment.teams.map(publicTeam),
@@ -192,10 +202,11 @@ export class TeamCollaborationController {
     );
     if (!decision) return null;
     const delivery = decisionDelivery(decision);
+    const role = this.#role();
     return {
       authoritativeOptionId: decision.authoritativeOptionId,
       canRespond:
-        this.#role !== 'viewer' &&
+        role !== 'viewer' &&
         decision.canRespond &&
         decision.authoritativeOptionId === null &&
         decision.responseMutationId === null,
@@ -209,7 +220,7 @@ export class TeamCollaborationController {
       options: decision.options,
       responseCount: decision.responseCount,
       responseMutationId: decision.responseMutationId,
-      role: this.#role,
+      role,
       rootEventId: decision.rootEventId,
       selectedOptionId: decision.selectedOptionId,
       title: decision.title,
@@ -235,11 +246,13 @@ export class TeamCollaborationController {
       input.rootEventId,
       input.eventId,
     );
+    const deviceId = await this.#deviceId();
     assertBeforeWrite?.();
+    this.#assertManager();
     return this.#sync.enqueueTeamAssignments(
       this.#accountUserId,
       input.rootEventId,
-      await this.#deviceId(),
+      deviceId,
       {
         baseVersion: current.version,
         eventId: input.eventId,
@@ -251,24 +264,30 @@ export class TeamCollaborationController {
     );
   }
 
-  async replaceDecision(input: {
-    decisionId: string;
-    eventId: string;
-    options: readonly { id: string; label: string }[];
-    rootEventId: string;
-    state: TeamDecisionReadModel['state'];
-    title: string;
-  }): Promise<OutboxItem> {
+  async replaceDecision(
+    input: {
+      decisionId: string;
+      eventId: string;
+      options: readonly { id: string; label: string }[];
+      rootEventId: string;
+      state: TeamDecisionReadModel['state'];
+      title: string;
+    },
+    assertBeforeWrite?: () => void,
+  ): Promise<OutboxItem> {
     this.#assertManager();
     const current = await this.#store.getDecision(
       this.#accountUserId,
       input.rootEventId,
       input.decisionId,
     );
+    const deviceId = await this.#deviceId();
+    assertBeforeWrite?.();
+    this.#assertManager();
     return this.#sync.enqueueTeamDecision(
       this.#accountUserId,
       input.rootEventId,
-      await this.#deviceId(),
+      deviceId,
       {
         baseVersion: current?.version ?? 0,
         decisionId: input.decisionId,
@@ -288,7 +307,7 @@ export class TeamCollaborationController {
     },
     assertBeforeWrite?: () => void,
   ): Promise<OutboxItem | null> {
-    if (this.#role === 'viewer') {
+    if (this.#role() === 'viewer') {
       return Promise.reject(new Error('Viewers cannot answer team decisions'));
     }
     const key = `${input.rootEventId}:${input.decisionId}`;
@@ -334,11 +353,13 @@ export class TeamCollaborationController {
       if (current.selectedOptionId === input.optionId) return null;
       throw new Error('Team response is already queued');
     }
+    const deviceId = await this.#deviceId();
     assertBeforeWrite?.();
+    this.#assertResponder();
     return this.#sync.enqueueTeamResponse(
       this.#accountUserId,
       input.rootEventId,
-      await this.#deviceId(),
+      deviceId,
       {
         baseVersion: 0,
         decisionId: current.id,
@@ -361,8 +382,14 @@ export class TeamCollaborationController {
   }
 
   #assertManager() {
-    if (!manager(this.#role)) {
+    if (!manager(this.#role())) {
       throw new Error('Team management requires an owner or organizer');
+    }
+  }
+
+  #assertResponder() {
+    if (this.#role() === 'viewer') {
+      throw new Error('Viewers cannot answer team decisions');
     }
   }
 }

@@ -1,6 +1,8 @@
 import {
+  MemberDirectoryStore,
   MobileDataStore,
   MobileSyncEngine,
+  MobileSyncRootAccessDeniedError,
   type EventTreeNode,
   type FeedRecord,
   type MembershipRecord,
@@ -10,6 +12,7 @@ import type React from 'react';
 import {
   AccessibilityInfo,
   Clipboard,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
@@ -242,6 +245,68 @@ test('runtime rechecks the active account after the event read and performs no f
   expect(enqueue).not.toHaveBeenCalled();
 });
 
+test('feed write fence rejects an enqueue when a parallel refresh completes with viewer authority', async () => {
+  let releaseDeviceId!: (value: string) => void;
+  let markDeviceReadStarted!: () => void;
+  const deviceReadStarted = new Promise<void>(resolve => {
+    markDeviceReadStarted = resolve;
+  });
+  const pendingDeviceId = new Promise<string>(resolve => {
+    releaseDeviceId = resolve;
+  });
+  const getOrCreate = jest
+    .fn()
+    .mockResolvedValueOnce('dvc_initial')
+    .mockImplementationOnce(() => {
+      markDeviceReadStarted();
+      return pendingDeviceId;
+    });
+  jest
+    .spyOn(MobileDataStore.prototype, 'listMemberships')
+    .mockResolvedValueOnce([membership('participant')])
+    .mockResolvedValueOnce([membership('viewer')]);
+  jest
+    .spyOn(MobileDataStore.prototype, 'listEventTree')
+    .mockResolvedValue(eventTree());
+  jest.spyOn(MobileSyncEngine.prototype, 'syncRoot').mockResolvedValue({
+    attentionCount: 0,
+    nextAttemptAt: null,
+    pendingCount: 0,
+    state: 'synced',
+    summary: 'Synchronisiert',
+  });
+  jest.spyOn(MemberDirectoryStore.prototype, 'refresh').mockResolvedValue({
+    accountUserId,
+    cacheVersion: 2,
+    refreshedAt: '2026-07-20T12:00:00.000Z',
+    rootEventId,
+  });
+  const enqueue = jest.spyOn(MobileSyncEngine.prototype, 'enqueueMutation');
+  const runtime = await TeamProductionRuntime.create({
+    accountUserId,
+    activeAccountUserId: () => accountUserId,
+    client: mockGatewayClient as never,
+    database: mockDatabase as never,
+    deviceIdStore: { getOrCreate },
+    randomUUID: () => '00000000-0000-4000-8000-000000000002',
+    rootEventId,
+  });
+  if (!runtime) throw new Error('Team runtime missing');
+
+  const write = runtime.createFeedEntry(eventId, 'Nicht nach Downgrade');
+  const outcome = write.catch(error => error as Error);
+  await deviceReadStarted;
+  await runtime.refresh();
+  expect(runtime.role).toBe('viewer');
+  releaseDeviceId('dvc_after_refresh');
+
+  await expect(outcome).resolves.toMatchObject({
+    message: 'Viewers cannot post to the team feed',
+  });
+  expect(getOrCreate).toHaveBeenCalledTimes(2);
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
 test('viewer runtime exposes the feed read-only and rejects every post', async () => {
   const runtime = await productionRuntime('viewer');
   jest
@@ -261,8 +326,106 @@ test('viewer runtime exposes the feed read-only and rejects every post', async (
   expect(enqueue).not.toHaveBeenCalled();
 });
 
+test('refresh immediately adopts a participant-to-viewer snapshot and blocks another enqueue', async () => {
+  jest
+    .spyOn(MobileDataStore.prototype, 'listMemberships')
+    .mockResolvedValueOnce([membership('participant')])
+    .mockResolvedValueOnce([membership('viewer')]);
+  jest.spyOn(MobileSyncEngine.prototype, 'syncRoot').mockResolvedValue({
+    attentionCount: 1,
+    nextAttemptAt: null,
+    pendingCount: 0,
+    state: 'needs_attention',
+    summary: 'Aktion erforderlich',
+  });
+  jest.spyOn(MemberDirectoryStore.prototype, 'refresh').mockResolvedValue({
+    accountUserId,
+    cacheVersion: 2,
+    refreshedAt: '2026-07-20T12:00:00.000Z',
+    rootEventId,
+  });
+  jest
+    .spyOn(MobileDataStore.prototype, 'listEventTree')
+    .mockResolvedValue(eventTree());
+  jest.spyOn(MobileDataStore.prototype, 'listFeed').mockResolvedValue([]);
+  jest
+    .spyOn(MobileSyncEngine.prototype, 'listOutbox')
+    .mockResolvedValue([
+      outbox('dead_letter', 'fed_rejected', 'Bleibt lokal', 1),
+    ]);
+  const enqueue = jest.spyOn(MobileSyncEngine.prototype, 'enqueueMutation');
+  const runtime = await TeamProductionRuntime.create({
+    accountUserId,
+    activeAccountUserId: () => accountUserId,
+    client: mockGatewayClient as never,
+    database: mockDatabase as never,
+    deviceIdStore: {
+      getOrCreate: async () => 'dvc_00000000-0000-4000-8000-000000000001',
+    },
+    randomUUID: () => '00000000-0000-4000-8000-000000000002',
+    rootEventId,
+  });
+  if (!runtime) throw new Error('Team runtime missing');
+
+  await runtime.refresh();
+
+  await expect(runtime.loadFeed(eventId)).resolves.toMatchObject({
+    canPost: false,
+    entries: [expect.objectContaining({ deliveryState: 'attention' })],
+    role: 'viewer',
+  });
+  await expect(
+    runtime.createFeedEntry(eventId, 'Darf nicht erneut queued werden'),
+  ).rejects.toThrow('Viewers cannot post');
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+test('refresh keeps feed writes fail-closed when the new local membership scope is missing', async () => {
+  jest
+    .spyOn(MobileDataStore.prototype, 'listMemberships')
+    .mockResolvedValueOnce([membership('participant')])
+    .mockResolvedValueOnce([]);
+  jest.spyOn(MobileSyncEngine.prototype, 'syncRoot').mockResolvedValue({
+    attentionCount: 0,
+    nextAttemptAt: null,
+    pendingCount: 0,
+    state: 'synced',
+    summary: 'Synchronisiert',
+  });
+  const directoryRefresh = jest.spyOn(
+    MemberDirectoryStore.prototype,
+    'refresh',
+  );
+  const enqueue = jest.spyOn(MobileSyncEngine.prototype, 'enqueueMutation');
+  const runtime = await TeamProductionRuntime.create({
+    accountUserId,
+    activeAccountUserId: () => accountUserId,
+    client: mockGatewayClient as never,
+    database: mockDatabase as never,
+    deviceIdStore: {
+      getOrCreate: async () => 'dvc_00000000-0000-4000-8000-000000000001',
+    },
+    randomUUID: () => '00000000-0000-4000-8000-000000000002',
+    rootEventId,
+  });
+  if (!runtime) throw new Error('Team runtime missing');
+
+  await expect(runtime.refresh()).rejects.toBeInstanceOf(
+    MobileSyncRootAccessDeniedError,
+  );
+  expect(runtime.role).toBe('viewer');
+  await expect(
+    runtime.createFeedEntry(eventId, 'Darf den Scope nicht verlassen'),
+  ).rejects.toThrow('Viewers cannot post');
+  expect(directoryRefresh).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
 test('Option-2 view hardens long German, emoji, delivery truth, keyboard and accessibility', async () => {
   const onSubmit = jest.fn();
+  const dismissKeyboard = jest
+    .spyOn(Keyboard, 'dismiss')
+    .mockImplementation(() => undefined);
   const entries: TeamFeedEntryViewModel[] = [
     entry('attention', 'Bitte prüfen.'),
     entry('sending', 'Wird gesendet'),
@@ -293,10 +456,15 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
     multiline: true,
     testID: 'team-feed-input',
   });
-  expect(renderer.root.findByType(ScrollView).props).toMatchObject({
+  const scroller = renderer.root.findByType(ScrollView);
+  expect(scroller.props).toMatchObject({
     automaticallyAdjustKeyboardInsets: true,
+    keyboardDismissMode: 'interactive',
     keyboardShouldPersistTaps: 'handled',
   });
+  expect(scroller.props.onScrollBeginDrag).toBe(dismissKeyboard);
+  scroller.props.onScrollBeginDrag();
+  expect(dismissKeyboard).toHaveBeenCalledTimes(1);
   const heading = renderer.root.findByProps({
     accessibilityRole: 'header',
     children: 'Team Retreat',
@@ -409,6 +577,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
   await ReactTestRenderer.act(() => submit.props.onPress());
   expect(onSubmit).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
+  dismissKeyboard.mockRestore();
 });
 
 test.each([
