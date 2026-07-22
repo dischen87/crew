@@ -10,10 +10,26 @@ appId: app.crew.next.feedbackfinal
 - tapOn:
     id: feedback-compose-title
 - inputText: 'Native Screenshot Erfolg'
+- assertVisible:
+    id: feedback-compose-title
+    text: Native Screenshot Erfolg
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
 - tapOn:
     id: feedback-compose-body
+    enabled: true
+    point: 20%,20%
 - inputText: 'Echter iOS Capture Preview Upload Commit Nachweis.'
-- hideKeyboard
+- assertVisible:
+    id: feedback-compose-body
+    text: Echter iOS Capture Preview Upload Commit Nachweis.
+    enabled: true
 - scrollUntilVisible:
     element:
       id: feedback-screenshot-consent
@@ -23,7 +39,10 @@ appId: app.crew.next.feedbackfinal
     centerElement: true
 - tapOn:
     id: feedback-screenshot-consent
-- assertVisible: AUSGEWÄHLT
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: true
+    enabled: true
 - scrollUntilVisible:
     element:
       id: feedback-compose-submit
@@ -31,9 +50,7 @@ appId: app.crew.next.feedbackfinal
     timeout: 30000
     visibilityPercentage: 60
     centerElement: true
-- tapOn:
+- assertVisible: Feedback mit Screenshot senden
+- assertVisible:
     id: feedback-compose-submit
-- extendedWaitUntil:
-    visible: Feedback wurde zugestellt.
-    timeout: 90000
-- assertVisible: ZUGESTELLT
+    enabled: true

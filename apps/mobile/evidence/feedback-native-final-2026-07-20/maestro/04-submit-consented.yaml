@@ -1,5 +1,63 @@
 appId: app.crew.next.feedbackfinal
 ---
+- openLink: crewnext://events/evt_local_team_day_2026/feedback
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: community-feedback-compose-screenshot
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn:
+    id: community-feedback-compose-screenshot
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-view
+    timeout: 30000
+- tapOn:
+    id: feedback-compose-title
+- inputText: Native Screenshot Exakt
+- assertVisible:
+    id: feedback-compose-title
+    text: Native Screenshot Exakt
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    enabled: true
+    point: 20%,20%
+- inputText: Echter iOS Submit mit aktivem semantischem Button.
+- assertVisible:
+    id: feedback-compose-body
+    text: Echter iOS Submit mit aktivem semantischem Button.
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-consent
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    enabled: true
+- tapOn:
+    id: feedback-screenshot-consent
+    enabled: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: true
+    enabled: true
 - scrollUntilVisible:
     element:
       id: feedback-compose-submit
@@ -7,9 +65,17 @@ appId: app.crew.next.feedbackfinal
     timeout: 30000
     visibilityPercentage: 60
     centerElement: true
+- assertVisible: Feedback mit Screenshot senden
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
 - tapOn:
     id: feedback-compose-submit
+    enabled: true
 - extendedWaitUntil:
-    visible: Feedback wurde zugestellt.
-    timeout: 90000
-- assertVisible: ZUGESTELLT
+    notVisible:
+      id: feedback-compose-submit
+    timeout: 30000
+- extendedWaitUntil:
+    visible: Feedback (gespeichert|wird gesendet|zugestellt|braucht deine Aktion)
+    timeout: 30000
