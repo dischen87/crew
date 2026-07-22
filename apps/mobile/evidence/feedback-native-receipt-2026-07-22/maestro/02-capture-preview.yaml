@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- tapOn:
+    id: community-feedback-compose-screenshot
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-preview
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-preview
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: false
+    enabled: true

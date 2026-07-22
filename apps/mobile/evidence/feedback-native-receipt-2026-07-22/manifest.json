@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "platform": "ios",
+  "runDate": "2026-07-22",
+  "result": "passed",
+  "artifacts": [
+    "README.md",
+    "manifest.json",
+    "sanitized-proof.json",
+    "source-manifest.sha256",
+    "SHA256SUMS",
+    "ios/01-consent-ready.png",
+    "ios/02-local-receipt.png",
+    "maestro/01-open-feedback.yaml",
+    "maestro/02-capture-preview.yaml",
+    "maestro/03-fill-consent.yaml",
+    "maestro/04-submit-receipt.yaml",
+    "reports/01-open-feedback.xml",
+    "reports/02-capture-preview.xml",
+    "reports/03-fill-consent.xml",
+    "reports/04-submit-receipt.xml"
+  ],
+  "boundaries": {
+    "uploadDeliveryProven": false,
+    "androidRun": false,
+    "accountSwitchRun": false
+  }
+}

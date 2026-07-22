@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Dedicated iOS simulator" tests="1" failures="0" time="5.0">
+    <testcase id="01-open-feedback" name="01-open-feedback" classname="01-open-feedback" file="apps/mobile/evidence/feedback-native-receipt-2026-07-22/maestro/01-open-feedback.yaml" time="5.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

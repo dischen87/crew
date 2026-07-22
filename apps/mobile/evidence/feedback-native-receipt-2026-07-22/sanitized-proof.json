@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "result": {
+    "nativeCapture": true,
+    "consentInitiallyUncheckedAndEnabled": true,
+    "consentSelectedBeforeSubmit": true,
+    "transportDetachedBeforeSubmit": true,
+    "submitTapCount": 1,
+    "localPendingReceipt": true,
+    "markerCounts": {
+      "inserted": 1,
+      "transactionReturned": 1,
+      "requiredReceipt": 1
+    },
+    "markerOrderValid": true,
+    "sourceRestored": true,
+    "uploadDeliveryProven": false,
+    "androidRun": false,
+    "accountSwitchRun": false
+  },
+  "source": {
+    "baselineSha256": "9682b4c8a73695be19df9b21a98684833e9bd2b94cfbe29324898714daa09229",
+    "instrumentedSha256": "8fb81969c19dee73211e0a46d1754df781d3d413d66a271057114ae76d1cc92f",
+    "restoredSha256": "9682b4c8a73695be19df9b21a98684833e9bd2b94cfbe29324898714daa09229"
+  }
+}
