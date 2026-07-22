@@ -165,7 +165,7 @@ test('Setup evidence distinguishes no results, results and a working selection',
       .findByProps({ testID: 'event-setup-primary-action' })
       .props.onPress(),
   );
-  expect(textInside(renderer)).toContain('Aktueller Stand passt');
+  expect(textInside(renderer)).toContain('Stand passt');
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 

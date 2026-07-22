@@ -138,7 +138,9 @@ export function EventPublishScreen({ navigation, route }: Props) {
       }
       if (cancelled) return;
       if (cached) {
-        publish(reviewState(scopeKey, cached, onlineRef.current, null));
+        publish(
+          snapshotState(scopeKey, cached, onlineRef.current, null, false),
+        );
       }
       if (!onlineRef.current) {
         if (!cached) {
@@ -151,7 +153,9 @@ export function EventPublishScreen({ navigation, route }: Props) {
       }
       try {
         const snapshot = await controller.refresh(rootEventId);
-        if (!cancelled) publish(reviewState(scopeKey, snapshot, true, null));
+        if (!cancelled) {
+          publish(snapshotState(scopeKey, snapshot, true, null, true));
+        }
       } catch (error) {
         if (cancelled) return;
         if (concealsPublish(error)) {
@@ -160,11 +164,12 @@ export function EventPublishScreen({ navigation, route }: Props) {
         }
         if (cached) {
           publish(
-            reviewState(
+            snapshotState(
               scopeKey,
               cached,
               onlineRef.current,
               safePublishMessage(error),
+              false,
             ),
           );
         } else {
@@ -207,7 +212,7 @@ export function EventPublishScreen({ navigation, route }: Props) {
         try {
           if (action === 'refresh') {
             const snapshot = await controller.refresh(rootEventId);
-            publish(reviewState(scopeKey, snapshot, true, null));
+            publish(snapshotState(scopeKey, snapshot, true, null, true));
             return;
           }
           if (action === 'acknowledge_conflict') {
@@ -215,28 +220,28 @@ export function EventPublishScreen({ navigation, route }: Props) {
             const snapshot = await controller.getCached(rootEventId);
             if (!snapshot) throw new EventPublishUnavailableError();
             publish(
-              reviewState(
+              snapshotState(
                 scopeKey,
                 snapshot,
                 onlineRef.current,
                 'Der aktuelle Serverstand ist geprüft. Veröffentliche ihn erst nach einer erneuten Online-Prüfung.',
+                false,
               ),
             );
             return;
           }
           const result = await controller.publish(rootEventId);
-          publish({
-            busyAction: null,
-            eventTitle: result.event.title,
-            key: scopeKey,
-            message: result.refreshPending
-              ? 'Der Server hat die Veröffentlichung bestätigt. Die lokale Aktualisierung wird bei der nächsten Verbindung fortgesetzt.'
-              : null,
-            online: onlineRef.current,
-            phase: 'published',
-            snapshot: null,
-            syncRequired: result.refreshPending,
-          });
+          publish(
+            publishedState(
+              scopeKey,
+              result.event.title,
+              onlineRef.current,
+              result.refreshPending
+                ? 'Der Server hat die Veröffentlichung bestätigt. Die lokale Aktualisierung wird bei der nächsten Verbindung fortgesetzt.'
+                : null,
+              result.refreshPending,
+            ),
+          );
         } catch (error) {
           if (
             scopeRef.current !== scopeKey ||
@@ -271,11 +276,12 @@ export function EventPublishScreen({ navigation, route }: Props) {
             return;
           }
           publish({
-            ...reviewState(
+            ...snapshotState(
               scopeKey,
               snapshot,
               onlineRef.current,
               safePublishMessage(error),
+              false,
             ),
             syncRequired: error instanceof EventPublishSyncRequiredError,
           });
@@ -434,12 +440,29 @@ function unavailableState(
   };
 }
 
-function reviewState(
+function snapshotState(
   key: string,
   snapshot: EventPublishSnapshot,
   online: boolean,
   message: string | null,
+  rootStatusVerified: boolean,
 ): EventPublishScreenState {
+  const verifiedPublished =
+    rootStatusVerified &&
+    snapshot.readiness.rootStatus === 'published' &&
+    snapshot.readiness.ready !== true &&
+    snapshot.readiness.reasons.some(
+      reason => reason.code === 'EVENT_STATUS_NOT_DRAFT',
+    );
+  if (verifiedPublished) {
+    return publishedState(key, snapshot.eventTitle, online, null, false);
+  }
+  if (rootStatusVerified && snapshot.readiness.rootStatus !== 'draft') {
+    return unavailableState(key, online);
+  }
+  if (snapshot.localRootStatus !== 'draft') {
+    return unavailableState(key, online);
+  }
   return {
     busyAction: null,
     eventTitle: snapshot.eventTitle,
@@ -449,6 +472,25 @@ function reviewState(
     phase: 'review',
     snapshot,
     syncRequired: false,
+  };
+}
+
+function publishedState(
+  key: string,
+  eventTitle: string,
+  online: boolean,
+  message: string | null,
+  syncRequired: boolean,
+): EventPublishScreenState {
+  return {
+    busyAction: null,
+    eventTitle,
+    key,
+    message,
+    online,
+    phase: 'published',
+    snapshot: null,
+    syncRequired,
   };
 }
 

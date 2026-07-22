@@ -71,6 +71,7 @@ test('shows the participant-faithful preview and one publish action at 390x844',
   expect(text).toContain('VORSCHAU FÜR DEINE CREW');
   expect(text).toContain('Crew Retreat Zürich');
   expect(text).toContain('Gemeinsamer Start');
+  expect(text).toContain('Team-Event');
   expect(text).toContain('Alle verbindlichen Serverprüfungen sind erfüllt.');
   expect(text).toContain('Keine optionalen Hinweise');
 
@@ -78,6 +79,7 @@ test('shows the participant-faithful preview and one publish action at 390x844',
     testID: 'event-publish-primary-action',
   });
   expect(primary.props.label).toBe('Event veröffentlichen');
+  expect(primary.props.accessibilityLabel).toBe('Event veröffentlichen');
   expect(
     renderer.root.findAll(
       node =>
@@ -103,16 +105,13 @@ test('renders one exact action for each supported basics and setup blocker', asy
       'EVENT_DESCRIPTION_REQUIRED',
       'EVENT_CAPABILITY_PLACE_REQUIRED',
     ],
-    blockerTargets: [
-      null,
-      { capabilityType: 'golf', eventId: 'evt_round' },
-    ],
+    blockerTargets: [null, { capabilityType: 'golf', eventId: 'evt_round' }],
     planItemCount: 0,
     planItems: [],
     ready: false,
   });
   const text = textInside(renderer);
-  expect(text).toContain('Vor Veröffentlichung');
+  expect(text).toContain('Vor der Freigabe');
   expect(text).toContain('Beschreibung fehlt');
   expect(text).toContain('Ort im Setup fehlt');
   expect(text).toContain('Optional verbessern');

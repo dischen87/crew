@@ -1,6 +1,19 @@
 import type { ImageSourcePropType } from 'react-native';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, StatusChip, SyncStatus, TextField } from '../design/primitives';
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import {
+  Button,
+  Card,
+  StatusChip,
+  SyncStatus,
+  TextField,
+} from '../design/primitives';
 import {
   borders,
   colors,
@@ -17,6 +30,7 @@ import type {
   EventSetupRecoverySnapshot,
   EventSetupTemplateId,
 } from './EventSetupRecoveryRuntime';
+import { eventTemplateCopy } from './EventTemplateCopy';
 
 const icons = {
   arrowRight: require('../assets/icons/arrow-right.png'),
@@ -70,7 +84,7 @@ export function EventSetupRecoveryView({
   return (
     <ScreenFrame
       description={presentation.description}
-      eyebrow="EVENT SETUP"
+      eyebrow="EVENT-SETUP"
       icon={presentation.icon}
       key={model.phase}
       liveRegion={presentation.liveRegion}
@@ -195,10 +209,7 @@ function ReadyState({
     <>
       <View style={styles.metaRow}>
         <StatusChip label={roleLabel(snapshot.role)} tone="surface" />
-        <StatusChip
-          label={templateLabel(snapshot.template)}
-          tone="lavender"
-        />
+        <StatusChip label={templateLabel(snapshot.template)} tone="lavender" />
       </View>
       <SyncStatus
         icon={
@@ -227,10 +238,7 @@ function ReadyState({
       ) : null}
 
       {snapshot.intent.code === 'EVENT_TEMPLATE_REQUIRED' ? (
-        <TemplateRecovery
-          model={model}
-          onSelectTemplate={onSelectTemplate}
-        />
+        <TemplateRecovery model={model} onSelectTemplate={onSelectTemplate} />
       ) : null}
       {snapshot.intent.code === 'EVENT_CAPABILITY_REQUIRED' ? (
         <CapabilityRecovery snapshot={snapshot} />
@@ -245,7 +253,11 @@ function ReadyState({
       ) : null}
 
       {model.message ? (
-        <Card accessibilityLiveRegion="polite" style={styles.notice} tone="brand">
+        <Card
+          accessibilityLiveRegion="polite"
+          style={styles.notice}
+          tone="brand"
+        >
           <Text style={styles.body}>{model.message}</Text>
         </Card>
       ) : null}
@@ -294,24 +306,29 @@ function TemplateRecovery({
         eingegebenen Event-Details bleiben erhalten.
       </Text>
       <View accessibilityRole="radiogroup" style={styles.optionList}>
-        {model.snapshot.templates.map(template => (
-          <OptionCard
-            disabled={Boolean(model.busyAction) || model.snapshot.source !== 'online'}
-            icon={templateIcon(template.id)}
-            key={template.id}
-            label={`${templateLabel(template.id)}. ${template.summary}`}
-            onPress={() => onSelectTemplate(template.id)}
-            selected={model.selectedTemplateId === template.id}
-            subtitle={template.summary}
-            testID={`event-setup-template-${template.id}`}
-            title={templateLabel(template.id)}
-          />
-        ))}
+        {model.snapshot.templates.map(template => {
+          const copy = eventTemplateCopy[template.id];
+          return (
+            <OptionCard
+              disabled={
+                Boolean(model.busyAction) || model.snapshot.source !== 'online'
+              }
+              icon={templateIcon(template.id)}
+              key={template.id}
+              label={`${copy.title}. ${copy.summary}`}
+              onPress={() => onSelectTemplate(template.id)}
+              selected={model.selectedTemplateId === template.id}
+              subtitle={copy.summary}
+              testID={`event-setup-template-${template.id}`}
+              title={copy.title}
+            />
+          );
+        })}
       </View>
       {model.snapshot.source === 'online' && model.selectedTemplateId ? (
         <Card style={styles.notice} tone="lavender">
           <Text style={styles.cardTitle}>
-            Ausgewählt: {templateLabel(model.selectedTemplateId)}
+            Gewählt: {templateLabel(model.selectedTemplateId)}
           </Text>
           <Text style={styles.body}>
             Die bestehende Event-Basis bleibt erhalten. Neue Bausteine werden
@@ -333,7 +350,7 @@ function CapabilityRecovery({
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>
-        Fehlendes Setup wiederherstellen
+        Fehlendes Setup ergänzen
       </Text>
       <Card style={styles.capabilityCard} tone="lavender">
         <View style={styles.cardHeading}>
@@ -344,9 +361,6 @@ function CapabilityRecovery({
           </View>
         </View>
         <Text style={styles.body}>{capabilitySummary(target.type)}</Text>
-        <Text style={styles.note}>
-          Die serverseitige Vorlage liefert die typisierte Standardkonfiguration.
-        </Text>
       </Card>
     </View>
   );
@@ -392,7 +406,7 @@ function PlaceRecovery({
         disabled={
           model.snapshot.source !== 'online' || Boolean(model.busyAction)
         }
-        helpText="Suche nach Ort, Golfplatz oder Venue."
+        helpText="Suche nach Ort, Golfplatz oder Veranstaltungsort."
         label="Hauptort suchen"
         maxLength={120}
         onChangeText={onPlaceQueryChange}
@@ -413,8 +427,7 @@ function PlaceRecovery({
           {model.placeResults.map(result => (
             <OptionCard
               disabled={
-                Boolean(model.busyAction) ||
-                model.snapshot.source !== 'online'
+                Boolean(model.busyAction) || model.snapshot.source !== 'online'
               }
               icon={icons.location}
               key={result.id}
@@ -430,7 +443,7 @@ function PlaceRecovery({
       ) : null}
       {selected ? (
         <Card style={styles.notice} tone="action">
-          <Text style={styles.cardTitle}>Ausgewählt: {selected.name}</Text>
+          <Text style={styles.cardTitle}>Gewählt: {selected.name}</Text>
           <Text style={styles.body}>
             Der Ort wird zuerst sicher im Event angelegt und danach nur im
             betroffenen Setup als Hauptort verbunden.
@@ -460,6 +473,7 @@ function OptionCard({
   testID: string;
   title: string;
 }) {
+  const largeText = useWindowDimensions().fontScale >= 2;
   return (
     <Pressable
       accessibilityHint="Wählt diesen Eintrag aus."
@@ -475,22 +489,32 @@ function OptionCard({
         <Card
           style={[
             styles.optionCard,
+            largeText && styles.optionCardLargeText,
             selected && styles.optionSelected,
             disabled && styles.optionDisabled,
             pressed && styles.optionPressed,
             pressed && elevations.pressed,
           ]}
+          testID={`${testID}-card`}
           tone={selected ? 'action' : 'surface'}
         >
           <RoundIcon source={icon} />
-          <View style={styles.copy}>
+          <View
+            style={[styles.copy, largeText && styles.copyLargeText]}
+            testID={`${testID}-copy`}
+          >
             <Text style={styles.optionTitle}>{title}</Text>
             <Text style={styles.body}>{subtitle}</Text>
           </View>
           <View
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            style={[styles.radio, selected && styles.radioSelected]}
+            style={[
+              styles.radio,
+              largeText && styles.radioLargeText,
+              selected && styles.radioSelected,
+            ]}
+            testID={`${testID}-radio`}
           >
             {selected ? <View style={styles.radioDot} /> : null}
           </View>
@@ -544,7 +568,7 @@ function primaryAction(model: EventSetupRecoveryViewModel): {
       action: 'restore_capability',
       hint: 'Stellt die typisierte Fähigkeit mit der aktuellen Serverversion wieder her.',
       icon: icons.check,
-      label: 'Setup wiederherstellen',
+      label: 'Setup ergänzen',
     };
   }
   if (snapshot.intent.code === 'EVENT_CAPABILITY_PLACE_REQUIRED') {
@@ -596,7 +620,7 @@ function framePresentation(model: EventSetupRecoveryViewModel) {
       icon: cached ? icons.cloudOffline : icons.check,
       liveRegion: 'polite' as const,
       statusLabel: cached ? 'GESPEICHERTE PRÜFUNG' : 'PRÜFPUNKT ERLEDIGT',
-      title: cached ? 'Gespeicherter Stand passt' : 'Aktueller Stand passt',
+      title: 'Stand passt',
       tone: cached ? ('brand' as const) : ('action' as const),
     };
   }
@@ -610,12 +634,13 @@ function framePresentation(model: EventSetupRecoveryViewModel) {
         ? icons.flag
         : icons.calendar,
     liveRegion: 'polite' as const,
-    statusLabel: model.snapshot?.source === 'online' ? 'ONLINE GEPRÜFT' : 'OFFLINE-KOPIE',
+    statusLabel:
+      model.snapshot?.source === 'online' ? 'ONLINE GEPRÜFT' : 'OFFLINE-KOPIE',
     title:
       code === 'EVENT_CAPABILITY_PLACE_REQUIRED'
         ? 'Hauptort festlegen'
         : code === 'EVENT_CAPABILITY_REQUIRED'
-        ? 'Setup wiederherstellen'
+        ? 'Setup fehlt'
         : 'Start-Setup wählen',
     tone: 'surface' as const,
   };
@@ -636,7 +661,7 @@ function sourceLabel(snapshot: EventSetupRecoverySnapshot) {
 
 function templateLabel(value: EventSetupTemplateId | null) {
   if (value === 'golf-tour') return 'Golfreise';
-  if (value === 'team-event') return 'Teamevent';
+  if (value === 'team-event') return 'Team-Event';
   if (value === 'travel') return 'Reise';
   return 'Setup offen';
 }
@@ -650,11 +675,15 @@ function capabilityLabel(type: EventSetupCapabilityType) {
 }
 
 function capabilitySummary(type: EventSetupCapabilityType) {
-  if (type === 'golf') return 'Stableford, Abschlag und Handicap bleiben typisiert.';
-  if (type === 'lodging') return 'Check-in, Check-out und Zimmervergabe bleiben typisiert.';
-  if (type === 'team') return 'Zuteilung, Kapazität und Moderation bleiben typisiert.';
-  if (type === 'transport') return 'Treffpunkt und Anreisemodus bleiben typisiert.';
-  return 'Heimatort und Reisereferenz bleiben typisiert.';
+  if (type === 'golf')
+    return 'Stableford, Abschlag und Handicap bleiben typisiert.';
+  if (type === 'lodging')
+    return 'Check-in, Check-out und Zimmervergabe bleiben typisiert.';
+  if (type === 'team')
+    return 'Zuteilung, Kapazität und Moderation bleiben typisiert.';
+  if (type === 'transport')
+    return 'Treffpunkt und Anreisemodus bleiben typisiert.';
+  return 'Heimatort und Reise-Referenz bleiben klar getrennt.';
 }
 
 function templateIcon(id: EventSetupTemplateId) {
@@ -701,6 +730,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     minWidth: 0,
   },
+  copyLargeText: {
+    alignSelf: 'stretch',
+    flex: 0,
+  },
   iconImage: {
     height: 24,
     width: 24,
@@ -711,10 +744,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  note: {
-    ...typography.caption,
-    color: colors.text,
-  },
   notice: {
     gap: spacing.sm,
   },
@@ -724,6 +753,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     minHeight: 96,
     padding: spacing.lg,
+  },
+  optionCardLargeText: {
+    alignItems: 'stretch',
+    flexDirection: 'column',
   },
   optionList: {
     gap: spacing.md,
@@ -759,6 +792,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     height: 12,
     width: 12,
+  },
+  radioLargeText: {
+    alignSelf: 'flex-end',
   },
   radioSelected: {
     borderColor: colors.focus,

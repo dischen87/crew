@@ -409,7 +409,7 @@ test('uses controlled German copy for all three API templates and builds no inve
   ).toEqual([
     {
       id: 'travel',
-      summary: 'Anreise, Unterkunft und gemeinsamer Transport.',
+      summary: 'Anreise, Unterkunft und Transport.',
       title: 'Reise',
     },
     {
@@ -419,7 +419,7 @@ test('uses controlled German copy for all three API templates and builds no inve
     },
     {
       id: 'team-event',
-      summary: 'Ort, Agenda, Aktivitäten und Teameinteilung.',
+      summary: 'Ort, Agenda, Programm und Teams.',
       title: 'Team-Event',
     },
     {

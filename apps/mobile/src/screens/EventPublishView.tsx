@@ -276,7 +276,7 @@ export function EventPublishView({
 
       <View style={styles.section}>
         <Text accessibilityRole="header" style={styles.sectionTitle}>
-          Vor Veröffentlichung
+          Vor der Freigabe
         </Text>
         <Text style={styles.sectionCopy}>
           {blockerCount === 0
@@ -355,6 +355,9 @@ export function EventPublishView({
       <View style={styles.actions}>
         {primary ? (
           <Button
+            accessibilityLabel={
+              primary.action === 'publish' ? 'Event veröffentlichen' : undefined
+            }
             accessibilityHint={primary.hint}
             icon={<ScreenIcon source={primary.icon} />}
             label={primary.label}
@@ -482,7 +485,7 @@ function isActionableSetupBlocker(
 
 function reviewStatus(model: EventPublishViewModel) {
   if (!model.online) return 'Offline-Kopie';
-  if (model.ready) return 'Bereit zur Veröffentlichung';
+  if (model.ready) return 'Bereit zur Freigabe';
   const count = model.blockerCodes.length;
   return `${count} ${count === 1 ? 'Punkt offen' : 'Punkte offen'}`;
 }
@@ -513,7 +516,7 @@ function roleLabel(role: EventPublishViewModel['role']) {
 
 function templateLabel(template: EventPublishViewModel['template']) {
   if (template === 'golf-tour') return 'Golfreise';
-  if (template === 'team-event') return 'Teamevent';
+  if (template === 'team-event') return 'Team-Event';
   if (template === 'travel') return 'Reise';
   return 'Setup offen';
 }

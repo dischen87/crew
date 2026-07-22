@@ -94,7 +94,9 @@ test('shows only the account-scoped cached context while offline', async () => {
 test('keeps an online cached fallback untrusted and ignores its stale mutation control', async () => {
   const cached = templateSnapshot('cached');
   mockRuntime.loadCached.mockResolvedValue(cached);
-  mockRuntime.refresh.mockRejectedValue(new EventSetupRecoveryConnectionError());
+  mockRuntime.refresh.mockRejectedValue(
+    new EventSetupRecoveryConnectionError(),
+  );
   const { renderer } = await renderScreen('EVENT_TEMPLATE_REQUIRED');
 
   expect(textInside(renderer)).toContain('Serverstand nicht bestätigt');
@@ -141,7 +143,7 @@ test('locks a double restore and ignores Back until the mutation settles', async
     restoration.resolve(resolvedSnapshot());
     await flush();
   });
-  expect(textInside(renderer)).toContain('Aktueller Stand passt');
+  expect(textInside(renderer)).toContain('Stand passt');
   expect(textInside(renderer)).toContain('Serverstand bestätigt');
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -167,6 +169,33 @@ test('reports another client resolving the blocker without claiming our action s
   expect(textInside(renderer)).not.toContain(
     'Serverstand bestätigt die Änderung',
   );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('keeps an authoritative active blocker after a version conflict', async () => {
+  mockRuntime.refresh.mockResolvedValue(snapshot());
+  mockRuntime.restoreCapability.mockRejectedValue(
+    new EventSetupRecoveryConflictError(),
+  );
+  const { renderer } = await renderScreen();
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(renderer)).toContain(
+    'Serverstand hat sich geändert. Prüfe den aktuellen Stand und versuche es erneut.',
+  );
+  expect(textInside(renderer)).not.toContain(
+    'Serverstand meldet diesen Prüfpunkt nicht mehr als offen',
+  );
+  expect(
+    renderer.root
+      .findAllByProps({ testID: 'event-setup-primary-action' })
+      .some(node => node.props.label === 'Setup ergänzen'),
+  ).toBe(true);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 

@@ -1,5 +1,5 @@
 import ReactTestRenderer from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Dimensions, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { EventSetupRecoverySnapshot } from '../src/screens/EventSetupRecoveryRuntime';
 import {
@@ -11,13 +11,28 @@ const metrics = {
   frame: { height: 844, width: 390, x: 0, y: 0 },
   insets: { bottom: 34, left: 0, right: 0, top: 47 },
 };
+const originalWindow = Dimensions.get('window');
+const originalScreen = Dimensions.get('screen');
 const onBack = jest.fn();
 const onPlaceQueryChange = jest.fn();
 const onPrimaryAction = jest.fn();
 const onSelectPlace = jest.fn();
 const onSelectTemplate = jest.fn();
 
-beforeEach(() => jest.clearAllMocks());
+function setFontScale(fontScale: number) {
+  Dimensions.set({
+    screen: { ...originalScreen, fontScale },
+    window: { ...originalWindow, fontScale },
+  });
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  setFontScale(1);
+});
+afterAll(() =>
+  Dimensions.set({ screen: originalScreen, window: originalWindow }),
+);
 
 test('shows honest cached context without any offline write action', async () => {
   const renderer = await render(
@@ -29,12 +44,16 @@ test('shows honest cached context without any offline write action', async () =>
   const text = textInside(renderer);
   expect(text).toContain('Nur sichere Offline-Kopie');
   expect(text).toContain('weder vorgemerkt noch geändert');
-  expect(renderer.root.findAllByProps({ testID: 'event-setup-primary-action' })).toHaveLength(0);
+  expect(
+    renderer.root.findAllByProps({ testID: 'event-setup-primary-action' }),
+  ).toHaveLength(0);
   expect(
     renderer.root.findByProps({ testID: 'event-setup-place-query' }).props
       .disabled,
   ).toBe(true);
-  renderer.root.findByProps({ testID: 'event-setup-back-action' }).props.onPress();
+  renderer.root
+    .findByProps({ testID: 'event-setup-back-action' })
+    .props.onPress();
   expect(onBack).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -83,6 +102,7 @@ test('exposes exactly one place action while searching and while binding', async
     .filter(node => typeof node.props.label === 'string');
   expect(searchButtons).toHaveLength(1);
   expect(textInside(searching)).toContain('Orte suchen');
+  expect(textInside(searching)).toContain('Veranstaltungsort');
   await ReactTestRenderer.act(() => searchButtons[0]?.props.onPress());
   expect(onPrimaryAction).toHaveBeenCalledWith('search_places');
 
@@ -99,6 +119,8 @@ test('exposes exactly one place action while searching and while binding', async
       .findAllByProps({ testID: 'event-setup-primary-action' })
       .filter(node => typeof node.props.label === 'string'),
   ).toHaveLength(1);
+  expect(textInside(binding)).toMatch(/Gewählt:\s+Carya Golf Club/);
+  expect(textInside(binding)).not.toContain('Ausgewählt:');
   expect(textInside(binding)).toContain('Als Hauptort übernehmen');
   await ReactTestRenderer.act(() =>
     binding.root
@@ -114,7 +136,13 @@ test('renders the typed capability recovery with one restore action', async () =
   const renderer = await render(
     model({ snapshot: snapshot('EVENT_CAPABILITY_REQUIRED', 'online') }),
   );
-  expect(textInside(renderer)).toContain('Stableford, Abschlag und Handicap');
+  const text = textInside(renderer);
+  expect(text).toContain('EVENT-SETUP');
+  expect(text).toContain('Setup fehlt');
+  expect(text).toContain('Stableford, Abschlag und Handicap');
+  expect(text).not.toContain(
+    'Die serverseitige Vorlage liefert die typisierte Standardkonfiguration.',
+  );
   const primary = renderer.root.findByProps({
     testID: 'event-setup-primary-action',
   });
@@ -123,26 +151,75 @@ test('renders the typed capability recovery with one restore action', async () =
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('uses readable Large-Text copy for the travel capability', async () => {
+  const travel = snapshot('EVENT_CAPABILITY_REQUIRED', 'online');
+  if (!travel.target) throw new Error('Expected capability target');
+  travel.target = {
+    ...travel.target,
+    capability: null,
+    defaultCapability: travelCapability(),
+    type: 'travel',
+  };
+  const renderer = await render(model({ snapshot: travel }));
+
+  expect(textInside(renderer)).toContain(
+    'Heimatort und Reise-Referenz bleiben klar getrennt.',
+  );
+  expect(textInside(renderer)).not.toContain('Reisereferenz');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('shows template adoption only after an authoritative option is selected', async () => {
   const templateSnapshot = snapshot('EVENT_TEMPLATE_REQUIRED', 'online');
   templateSnapshot.templates = [
     {
+      id: 'travel',
+      logicalKeys: ['root', 'arrival', 'lodging'],
+      summary: 'Arrival, lodging and participant transport.',
+      title: 'Travel',
+      version: 1,
+    },
+    {
       id: 'golf-tour',
       logicalKeys: ['root', 'round'],
-      summary: 'Reise, Unterkunft und Golfrunden.',
+      summary: 'Travel, lodging, transport, courses and golf rounds.',
       title: 'Golf tour',
       version: 1,
     },
     {
       id: 'team-event',
       logicalKeys: ['root', 'agenda', 'activity'],
-      summary: 'Venue, Agenda und Teams.',
+      summary: 'Venue, agenda, activities and team assignment.',
       title: 'Team event',
       version: 1,
     },
   ];
   const renderer = await render(model({ snapshot: templateSnapshot }));
-  expect(renderer.root.findAllByProps({ testID: 'event-setup-primary-action' })).toHaveLength(0);
+  expect(
+    ['travel', 'golf-tour', 'team-event'].map(
+      id =>
+        renderer.root
+          .findAllByProps({ testID: `event-setup-template-${id}` })
+          .find(node => typeof node.props.accessibilityLabel === 'string')
+          ?.props.accessibilityLabel,
+    ),
+  ).toEqual([
+    'Reise. Anreise, Unterkunft und Transport.',
+    'Golfreise. Reise, Unterkunft, Transfers, Golfplätze und Runden.',
+    'Team-Event. Ort, Agenda, Programm und Teams.',
+  ]);
+  const renderedCopy = textInside(renderer);
+  expect(renderedCopy).toContain('Anreise, Unterkunft und Transport.');
+  expect(renderedCopy).toContain(
+    'Reise, Unterkunft, Transfers, Golfplätze und Runden.',
+  );
+  expect(renderedCopy).toContain('Ort, Agenda, Programm und Teams.');
+  expect(renderedCopy).not.toMatch(
+    /Arrival, lodging|Travel, lodging|Venue, agenda/,
+  );
+  expect(
+    renderer.root.findAllByProps({ testID: 'event-setup-primary-action' }),
+  ).toHaveLength(0);
   await ReactTestRenderer.act(() =>
     renderer.root
       .findByProps({ testID: 'event-setup-template-golf-tour' })
@@ -157,6 +234,8 @@ test('shows template adoption only after an authoritative option is selected', a
       snapshot: templateSnapshot,
     }),
   );
+  expect(textInside(selected)).toMatch(/Gewählt:\s+Golfreise/);
+  expect(textInside(selected)).not.toContain('Ausgewählt:');
   expect(textInside(selected)).toContain('Setup übernehmen');
   await ReactTestRenderer.act(() =>
     selected.root
@@ -168,6 +247,52 @@ test('shows template adoption only after an authoritative option is selected', a
   await ReactTestRenderer.act(() => selected.unmount());
 });
 
+test('gives template copy full width at Large Text without changing the normal row', async () => {
+  const templateSnapshot = snapshot('EVENT_TEMPLATE_REQUIRED', 'online');
+  templateSnapshot.templates = [
+    {
+      id: 'team-event',
+      logicalKeys: ['root', 'agenda', 'activity'],
+      summary: 'Venue, agenda, activities and team assignment.',
+      title: 'Team event',
+      version: 1,
+    },
+  ];
+
+  const normal = await render(model({ snapshot: templateSnapshot }));
+  expect(
+    StyleSheet.flatten(
+      normal.root.findByProps({
+        testID: 'event-setup-template-team-event-card',
+      }).props.style,
+    ),
+  ).toMatchObject({ alignItems: 'center', flexDirection: 'row' });
+  await ReactTestRenderer.act(() => normal.unmount());
+
+  setFontScale(2);
+  const large = await render(model({ snapshot: templateSnapshot }));
+  expect(
+    StyleSheet.flatten(
+      large.root.findByProps({ testID: 'event-setup-template-team-event-card' })
+        .props.style,
+    ),
+  ).toMatchObject({ alignItems: 'stretch', flexDirection: 'column' });
+  expect(
+    StyleSheet.flatten(
+      large.root.findByProps({ testID: 'event-setup-template-team-event-copy' })
+        .props.style,
+    ),
+  ).toMatchObject({ alignSelf: 'stretch', flex: 0 });
+  expect(
+    StyleSheet.flatten(
+      large.root.findByProps({
+        testID: 'event-setup-template-team-event-radio',
+      }).props.style,
+    ),
+  ).toMatchObject({ alignSelf: 'flex-end' });
+  await ReactTestRenderer.act(() => large.unmount());
+});
+
 test('disables option and back controls while a setup mutation is busy', async () => {
   const templateSnapshot = snapshot('EVENT_TEMPLATE_REQUIRED', 'online');
   templateSnapshot.templates = [
@@ -175,7 +300,7 @@ test('disables option and back controls while a setup mutation is busy', async (
       id: 'golf-tour',
       logicalKeys: ['root', 'round'],
       summary: 'Reise, Unterkunft und Golfrunden.',
-      title: 'Golf tour',
+      title: 'Golfreise',
       version: 1,
     },
   ];
@@ -210,7 +335,7 @@ test('returns resolved authoritative state through one primary action', async ()
   const renderer = await render(
     model({ phase: 'resolved', snapshot: resolved }),
   );
-  expect(textInside(renderer)).toContain('Aktueller Stand passt');
+  expect(textInside(renderer)).toContain('Stand passt');
   await ReactTestRenderer.act(() =>
     renderer.root
       .findByProps({ testID: 'event-setup-primary-action' })
@@ -266,8 +391,7 @@ function snapshot(
     checkedAt: '2026-07-19T12:00:00.000Z',
     eventTitle: 'Turkey Golf Tour',
     intent: {
-      capabilityType:
-        code === 'EVENT_TEMPLATE_REQUIRED' ? undefined : 'golf',
+      capabilityType: code === 'EVENT_TEMPLATE_REQUIRED' ? undefined : 'golf',
       code,
       eventId: code === 'EVENT_TEMPLATE_REQUIRED' ? undefined : 'evt_round',
       rootEventId: 'evt_root',
@@ -282,8 +406,7 @@ function snapshot(
         : {
             capability:
               code === 'EVENT_CAPABILITY_REQUIRED' ? null : capability,
-            capabilityVersion:
-              code === 'EVENT_CAPABILITY_REQUIRED' ? 0 : 3,
+            capabilityVersion: code === 'EVENT_CAPABILITY_REQUIRED' ? 0 : 3,
             currentPlaceName: null,
             defaultCapability: capability,
             eventId: 'evt_round',
@@ -306,6 +429,17 @@ function golfCapability() {
     },
     schemaVersion: 1 as const,
     type: 'golf' as const,
+  };
+}
+
+function travelCapability() {
+  return {
+    config: {
+      homePlaceId: null,
+      travelerReferenceLabel: 'Travel reference',
+    },
+    schemaVersion: 1 as const,
+    type: 'travel' as const,
   };
 }
 

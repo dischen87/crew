@@ -24,6 +24,7 @@ import {
   type EventCreateOption,
   type EventCreateViewState,
 } from './EventCreateView';
+import { eventTemplateCopy } from './EventTemplateCopy';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateEvent'>;
 type EventTemplate =
@@ -38,21 +39,6 @@ const blankOption: EventCreateOption = {
     'Ein leerer Entwurf. Struktur, Termine und Inhalte ergänzt du später.',
   title: 'Leeres Event',
 };
-
-const templateCopy = {
-  travel: {
-    summary: 'Anreise, Unterkunft und gemeinsamer Transport.',
-    title: 'Reise',
-  },
-  'golf-tour': {
-    summary: 'Reise, Unterkunft, Transfers, Golfplätze und Runden.',
-    title: 'Golfreise',
-  },
-  'team-event': {
-    summary: 'Ort, Agenda, Aktivitäten und Teameinteilung.',
-    title: 'Team-Event',
-  },
-} as const;
 
 const unavailableGatewayClient = {
   request: (() =>
@@ -594,7 +580,7 @@ export function eventCreateOptions(
   templates: readonly EventTemplate[],
 ): readonly EventCreateOption[] {
   const options = templates.flatMap<EventCreateOption>(template => {
-    const copy = templateCopy[template.id];
+    const copy = eventTemplateCopy[template.id];
     const root = template.events.find(
       event => event.logicalKey === 'root' && event.parentLogicalKey === null,
     );

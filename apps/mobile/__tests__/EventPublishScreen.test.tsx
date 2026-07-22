@@ -107,6 +107,106 @@ test('conceals the route for non-managers and authoritative missing roots', asyn
   await ReactTestRenderer.act(() => missing.renderer.unmount());
 });
 
+test('renders a verified published root after read-only reopen without publishing again', async () => {
+  mockController.refresh.mockResolvedValue(publishedSnapshot());
+  const { navigation, renderer } = await renderScreen();
+
+  const text = textInside(renderer);
+  expect(text).toContain('Bereit für deine Crew');
+  expect(text).toContain('Veröffentlicht');
+  expect(text).not.toContain('Kein privater Entwurf');
+  expect(mockController.publish).not.toHaveBeenCalled();
+  const primary = renderer.root.findByProps({
+    testID: 'event-publish-primary-action',
+  });
+  expect(primary.props.label).toBe('Zum Event');
+  await ReactTestRenderer.act(() => primary.props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith('EventInbound', {
+    rootEventId,
+  });
+  expect(mockController.publish).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('never treats a cached published snapshot as a current server confirmation', async () => {
+  mockController.getCached.mockResolvedValue(publishedSnapshot());
+  mockController.refresh.mockImplementation(() => new Promise(() => {}));
+  const { renderer } = await renderScreen();
+
+  expect(textInside(renderer)).toContain('Prüfung nicht verfügbar');
+  expect(textInside(renderer)).not.toContain('Bereit für deine Crew');
+  expect(textInside(renderer)).not.toContain('Crew Retreat');
+  expect(mockController.publish).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test.each([
+  {
+    label: 'missing authoritative reason',
+    readiness: { ready: false, reasons: [] },
+  },
+  {
+    label: 'unrelated readiness reason',
+    readiness: {
+      ready: false,
+      reasons: [
+        {
+          code: 'EVENT_DESCRIPTION_REQUIRED',
+          message: 'Add an event description.',
+          path: 'description',
+        },
+      ],
+    },
+  },
+  {
+    label: 'contradictory ready response',
+    readiness: {
+      ready: true,
+      reasons: [
+        {
+          code: 'EVENT_STATUS_NOT_DRAFT',
+          message: 'Only draft events can be published.',
+          path: 'status',
+        },
+      ],
+    },
+  },
+] as const)(
+  'fails closed for a locally published root with $label',
+  async ({ readiness }) => {
+    const value = publishedSnapshot();
+    mockController.refresh.mockResolvedValue({
+      ...value,
+      readiness: { ...value.readiness, ...readiness },
+    });
+    const { renderer } = await renderScreen();
+
+    expect(textInside(renderer)).toContain('Prüfung nicht verfügbar');
+    expect(textInside(renderer)).not.toContain('Crew Retreat');
+    expect(textInside(renderer)).not.toContain('Bereit für deine Crew');
+    expect(mockController.publish).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer.unmount());
+  },
+);
+
+test.each(['archived', 'cancelled', 'unknown'] as const)(
+  'fails closed when exact server status is %s despite stale local published state',
+  async rootStatus => {
+    const value = publishedSnapshot();
+    mockController.refresh.mockResolvedValue({
+      ...value,
+      readiness: { ...value.readiness, rootStatus: rootStatus as never },
+    });
+    const { renderer } = await renderScreen();
+
+    expect(textInside(renderer)).toContain('Prüfung nicht verfügbar');
+    expect(textInside(renderer)).not.toContain('Crew Retreat');
+    expect(textInside(renderer)).not.toContain('Bereit für deine Crew');
+    expect(mockController.publish).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(() => renderer.unmount());
+  },
+);
+
 test('locks double publish, reports confirmed success, and keeps refresh pending truthful', async () => {
   mockController.getCached.mockResolvedValue(snapshot());
   const publication = deferred<{
@@ -447,6 +547,7 @@ function snapshot(): EventPublishSnapshot {
       reasons: [],
       rootEventId,
       rootRevision: '7',
+      rootStatus: 'draft',
       rootVersion: 3,
       schemaVersion: 1,
       template: { id: 'team-event', version: 1 },
@@ -457,6 +558,28 @@ function snapshot(): EventPublishSnapshot {
       endsAt: '2026-09-21T17:00:00.000Z',
       startsAt: '2026-09-20T08:00:00.000Z',
       timeZone: 'Europe/Zurich',
+    },
+  };
+}
+
+function publishedSnapshot(): EventPublishSnapshot {
+  const value = snapshot();
+  return {
+    ...value,
+    localRootStatus: 'published',
+    readiness: {
+      ...value.readiness,
+      ready: false,
+      reasons: [
+        {
+          code: 'EVENT_STATUS_NOT_DRAFT',
+          message: 'Only draft events can be published.',
+          path: 'status',
+        },
+      ],
+      rootRevision: '8',
+      rootStatus: 'published',
+      rootVersion: 4,
     },
   };
 }

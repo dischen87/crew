@@ -204,7 +204,7 @@ test('restores the exact template capability with baseVersion zero and refetches
   );
 });
 
-test('restores the server-targeted root capability from authoritative readiness meta', async () => {
+test('restores a tombstoned server-targeted capability from its authoritative readiness version', async () => {
   const rootCapabilityIntent: EventSetupRecoveryIntent = {
     capabilityType: 'travel',
     code: 'EVENT_CAPABILITY_REQUIRED',
@@ -215,7 +215,7 @@ test('restores the server-targeted root capability from authoritative readiness 
   const requestAsUser = jest.fn(async (_subject, operationId, options) => {
     if (operationId === 'eventCapabilitiesReplace') {
       expect(options).toMatchObject({
-        body: { baseVersion: 0, capability: travelInput(null) },
+        body: { baseVersion: 2, capability: travelInput(null) },
         path: {
           capabilityType: 'travel',
           eventId: rootEventId,
@@ -223,11 +223,12 @@ test('restores the server-targeted root capability from authoritative readiness 
         },
       });
       restored = true;
-      return response({ capability: remoteTravelCapability(1) });
+      return response({ capability: remoteTravelCapability(3) });
     }
     return onlineResponse(operationId, {
       blocker: restored ? null : rootCapabilityIntent,
-      capabilities: restored ? [remoteTravelCapability(1)] : [],
+      capabilities: restored ? [remoteTravelCapability(3)] : [],
+      capabilityVersion: restored ? undefined : 2,
       revision: restored ? '13' : '12',
     });
   });
@@ -773,6 +774,7 @@ function onlineResponse(
     revision: string;
     rootVersion?: number;
     templates?: ReturnType<typeof templates>;
+    capabilityVersion?: number;
   },
 ) {
   if (operationId === 'eventTemplatesList') {
@@ -798,6 +800,7 @@ function onlineResponse(
         options.readinessRevision ?? options.revision,
         options.blocker,
         options.rootVersion,
+        options.capabilityVersion,
       ),
     );
   }
@@ -835,6 +838,7 @@ function readiness(
   revision: string,
   blocker: EventSetupRecoveryIntent | null,
   rootVersion = 7,
+  capabilityVersion?: number,
 ) {
   return {
     ready: blocker === null,
@@ -849,6 +853,9 @@ function readiness(
                 : {
                     capabilityType: blocker.capabilityType,
                     eventId: blocker.eventId,
+                    ...(capabilityVersion === undefined
+                      ? {}
+                      : { capabilityVersion }),
                   },
             path: 'setup',
           },
@@ -856,6 +863,7 @@ function readiness(
       : [],
     rootEventId,
     rootRevision: revision,
+    rootStatus: 'draft',
     rootVersion,
     schemaVersion: 1,
     template:

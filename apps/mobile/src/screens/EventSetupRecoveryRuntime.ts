@@ -887,7 +887,7 @@ function remoteSnapshot(
     throw new EventSetupRecoveryUnavailableError();
   }
   const template = templateForReadiness(templates, readiness);
-  const target = remoteTarget(intent, tree, template, places);
+  const target = remoteTarget(intent, tree, readiness, template, places);
   return {
     blockerActive: readinessHasIntent(readiness, intent),
     checkedAt: now.toISOString(),
@@ -912,6 +912,7 @@ function remoteSnapshot(
 function remoteTarget(
   intent: EventSetupRecoveryIntent,
   tree: EventTree,
+  readiness: Readiness,
   template: Template | null,
   places: readonly RemotePlace[],
 ): EventSetupRecoveryTarget | null {
@@ -929,9 +930,15 @@ function remoteTarget(
   }
   const input = capability ? capabilityInput(capability) : null;
   const placeId = input ? primaryPlaceId(input) : null;
+  const readinessCapabilityVersion = readiness.reasons.find(
+    reason =>
+      reason.code === 'EVENT_CAPABILITY_REQUIRED' &&
+      reason.meta?.eventId === intent.eventId &&
+      reason.meta?.capabilityType === intent.capabilityType,
+  )?.meta?.capabilityVersion;
   return {
     capability: input,
-    capabilityVersion: capability?.version ?? 0,
+    capabilityVersion: capability?.version ?? readinessCapabilityVersion ?? 0,
     currentPlaceName: placeId
       ? places.find(place => place.id === placeId)?.name ?? null
       : null,
@@ -1324,6 +1331,10 @@ function validReadiness(
   return (
     value.schemaVersion === 1 &&
     value.rootEventId === rootEventId &&
+    (value.rootStatus === 'draft' ||
+      value.rootStatus === 'published' ||
+      value.rootStatus === 'cancelled' ||
+      value.rootStatus === 'archived') &&
     typeof value.ready === 'boolean' &&
     Number.isSafeInteger(value.rootVersion) &&
     Number(value.rootVersion) >= 1 &&
@@ -1363,7 +1374,10 @@ function validCachedReason(value: unknown): boolean {
       value.meta.capabilityType === 'lodging' ||
       value.meta.capabilityType === 'transport' ||
       value.meta.capabilityType === 'golf' ||
-      value.meta.capabilityType === 'team')
+      value.meta.capabilityType === 'team') &&
+    (value.meta.capabilityVersion === undefined ||
+      (Number.isSafeInteger(value.meta.capabilityVersion) &&
+        Number(value.meta.capabilityVersion) >= 0))
   );
 }
 

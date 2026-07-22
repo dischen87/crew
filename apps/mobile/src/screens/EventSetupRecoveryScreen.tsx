@@ -273,7 +273,9 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
               publish({
                 ...snapshotState(scopeKey, snapshot, true),
                 message:
-                  'Der Serverstand meldet diesen Prüfpunkt nicht mehr als offen. Prüfe die aktuellen Angaben erneut.',
+                  snapshot.blockerActive === false
+                    ? 'Der Serverstand meldet diesen Prüfpunkt nicht mehr als offen. Prüfe die aktuellen Angaben erneut.'
+                    : 'Der Serverstand hat sich geändert. Prüfe den aktuellen Stand und versuche es erneut.',
               });
               return;
             } catch (refreshError) {

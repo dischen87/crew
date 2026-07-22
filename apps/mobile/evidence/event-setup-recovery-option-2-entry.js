@@ -216,7 +216,7 @@ export function EventSetupRecoveryEvidenceApp({
           }
           setModel(current => ({
             ...current,
-            message: 'Aktueller Stand passt. Zurück zur Event-Prüfung.',
+            message: 'Stand passt. Zurück zur Event-Prüfung.',
             phase: 'resolved',
             snapshot: current.snapshot
               ? { ...current.snapshot, blockerActive: false }
