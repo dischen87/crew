@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:7d671342e6239120d55fed23d8ac067d64de85abeab97043cbf54cd293808cbc. Do not edit.
+ * Pin: sha256:1614fb982a39a7ff7ee19d810f2f673064b8746eb045486d70a9f4418b833a54. Do not edit.
  */
 export type GatewayOperationId = "eventAttachmentsDownload" | "eventAttachmentUploadsFinalize" | "eventAttachmentUploadsPrepare" | "eventCapabilitiesRemove" | "eventCapabilitiesReplace" | "eventChildrenCreate" | "eventChildrenReorder" | "eventFeedbackCommentsCreate" | "eventFeedbackDuplicateSuggestionsList" | "eventFeedbackFollowsSet" | "eventFeedbackGet" | "eventFeedbackList" | "eventFeedbackUpdatesList" | "eventFeedbackVotesSet" | "eventFeedEntriesCreate" | "eventFeedEntriesGet" | "eventFeedEntriesList" | "eventFeedEntriesRemove" | "eventFeedEntriesRevise" | "eventFeedReactionsSet" | "eventInvitationsCreate" | "eventInvitationsList" | "eventInvitationsPreview" | "eventInvitationsRedeem" | "eventInvitationsRevoke" | "eventItineraryItemsCreate" | "eventItineraryItemsList" | "eventItineraryItemsReorder" | "eventItineraryItemsUpdate" | "eventMemberDirectoryGet" | "eventMembershipsList" | "eventMembershipsUpdate" | "eventOwnershipTransfer" | "eventPlacesCreate" | "eventPlacesList" | "eventPlacesUpdate" | "eventPublishReadinessGet" | "eventRecapExternalGrantsDecide" | "eventRecapExternalShareLinksCreate" | "eventRecapExternalShareLinksResolve" | "eventRecapsGenerate" | "eventRecapsGet" | "eventRecapShareLinksCreate" | "eventRecapShareLinksResolve" | "eventRecapShareLinksRevoke" | "eventRecapsPublish" | "eventRecapsRemove" | "eventRootsList" | "eventsArchive" | "eventsCreate" | "eventsDelete" | "eventsGet" | "eventsPublish" | "eventsReparent" | "eventsTreeGet" | "eventsUpdate" | "eventTemplateAdopt" | "eventTemplatesList" | "feedbackCommentsCreate" | "feedbackCreate" | "feedbackDuplicateMark" | "feedbackGet" | "feedbackStatusSet" | "feedbackVotesSet" | "identityMagicLinksCreate" | "identityMagicLinksRedeem" | "identitySessionsRefresh" | "identitySessionsRevoke" | "placeEnrichmentJobsCreate" | "placeEnrichmentJobsGet" | "placeEnrichmentJobsRetry" | "placesSearch" | "syncBootstrapRead" | "syncChangesList" | "syncMutationsApply" | "usersDevicesDelete" | "usersDevicesList" | "usersDevicesUpsert" | "usersMeGet" | "usersMeUpdate" | "usersSessionGet";
 
@@ -1361,6 +1361,15 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
         "type": "string",
         "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
       },
+      "rootStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published",
+          "cancelled",
+          "archived"
+        ]
+      },
       "rootVersion": {
         "type": "integer",
         "exclusiveMinimum": 0
@@ -1410,6 +1419,7 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
     "required": [
       "schemaVersion",
       "rootEventId",
+      "rootStatus",
       "rootVersion",
       "rootRevision",
       "template",
@@ -1460,6 +1470,11 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
               "golf",
               "team"
             ]
+          },
+          "capabilityVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "additionalProperties": false
@@ -1610,7 +1625,7 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
         "items": {
           "$ref": "#/components/schemas/EventServiceEventRecapExternalConsentField"
         },
-        "maxItems": 50
+        "maxItems": 550
       }
     },
     "required": [
@@ -1619,68 +1634,159 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
     "additionalProperties": false
   },
   "EventServiceEventRecapExternalConsentField": {
-    "type": "object",
-    "properties": {
-      "ordinal": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 49
-      },
-      "field": {
-        "type": "string",
-        "enum": [
-          "body"
-        ]
-      },
-      "requiredAuthorities": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": [
-            "author",
-            "manager"
-          ]
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 49
+          },
+          "requiredAuthorities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "author",
+                "manager"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "authorDecision": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "withdraw",
+              "unknown"
+            ]
+          },
+          "managerDecision": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "withdraw",
+              "unknown"
+            ]
+          },
+          "actorCanDecide": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "author",
+                "manager"
+              ]
+            },
+            "maxItems": 2
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "body"
+            ]
+          }
         },
-        "minItems": 1,
-        "maxItems": 2
+        "required": [
+          "ordinal",
+          "requiredAuthorities",
+          "authorDecision",
+          "managerDecision",
+          "actorCanDecide",
+          "field"
+        ],
+        "additionalProperties": false
       },
-      "authorDecision": {
-        "type": "string",
-        "enum": [
-          "grant",
-          "withdraw",
-          "unknown"
-        ]
-      },
-      "managerDecision": {
-        "type": "string",
-        "enum": [
-          "grant",
-          "withdraw",
-          "unknown"
-        ]
-      },
-      "actorCanDecide": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": [
-            "author",
-            "manager"
-          ]
+      {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 49
+          },
+          "requiredAuthorities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "author",
+                "manager"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "authorDecision": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "withdraw",
+              "unknown"
+            ]
+          },
+          "managerDecision": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "withdraw",
+              "unknown"
+            ]
+          },
+          "actorCanDecide": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "author",
+                "manager"
+              ]
+            },
+            "maxItems": 2
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "caption"
+            ]
+          },
+          "fieldRef": {
+            "type": "string",
+            "pattern": "^rcf_[A-Za-z0-9_-]{43}$"
+          },
+          "attachmentOrdinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9
+          },
+          "attachmentVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647
+          },
+          "caption": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
         },
-        "maxItems": 2
+        "required": [
+          "ordinal",
+          "requiredAuthorities",
+          "authorDecision",
+          "managerDecision",
+          "actorCanDecide",
+          "field",
+          "fieldRef",
+          "attachmentOrdinal",
+          "attachmentVersion",
+          "caption"
+        ],
+        "additionalProperties": false
       }
-    },
-    "required": [
-      "ordinal",
-      "field",
-      "requiredAuthorities",
-      "authorDecision",
-      "managerDecision",
-      "actorCanDecide"
-    ],
-    "additionalProperties": false
+    ]
   },
   "EventServiceEventRecapExternalShare": {
     "type": "object",
@@ -1714,6 +1820,15 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
             "minimum": 0,
             "maximum": 49
           },
+          "captions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 10
+          },
           "title": {
             "type": "string",
             "minLength": 1,
@@ -1730,6 +1845,7 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
         },
         "required": [
           "ordinal",
+          "captions",
           "title",
           "body"
         ],
@@ -1743,6 +1859,15 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
             "minimum": 0,
             "maximum": 49
           },
+          "captions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 10
+          },
           "title": {
             "type": "null"
           },
@@ -1754,6 +1879,40 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
         },
         "required": [
           "ordinal",
+          "captions",
+          "title",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 49
+          },
+          "captions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "title": {
+            "type": "null"
+          },
+          "body": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "ordinal",
+          "captions",
           "title",
           "body"
         ],

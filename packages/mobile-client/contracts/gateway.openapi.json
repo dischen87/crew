@@ -6913,6 +6913,11 @@
                   "golf",
                   "team"
                 ]
+              },
+              "capabilityVersion": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "additionalProperties": false
@@ -6937,6 +6942,16 @@
           "rootEventId": {
             "type": "string",
             "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+          },
+          "rootStatus": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "cancelled",
+              "archived"
+            ],
+            "description": "Authoritative current root status from the same locked readiness read."
           },
           "rootVersion": {
             "type": "integer",
@@ -6990,6 +7005,7 @@
         "required": [
           "schemaVersion",
           "rootEventId",
+          "rootStatus",
           "rootVersion",
           "rootRevision",
           "template",
@@ -7259,71 +7275,166 @@
         "additionalProperties": false
       },
       "EventServiceEventRecapExternalConsentField": {
-        "type": "object",
-        "properties": {
-          "ordinal": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 49
-          },
-          "field": {
-            "type": "string",
-            "enum": [
-              "body"
-            ]
-          },
-          "requiredAuthorities": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "author",
-                "manager"
-              ]
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 49
+              },
+              "requiredAuthorities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "author",
+                    "manager"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 2,
+                "description": "Event bodies require manager; feed bodies and attachment captions require author then manager."
+              },
+              "authorDecision": {
+                "type": "string",
+                "enum": [
+                  "grant",
+                  "withdraw",
+                  "unknown"
+                ],
+                "description": "Current exact source-author or attachment-creator decision. Event bodies report unknown because author authority is not required."
+              },
+              "managerDecision": {
+                "type": "string",
+                "enum": [
+                  "grant",
+                  "withdraw",
+                  "unknown"
+                ]
+              },
+              "actorCanDecide": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "author",
+                    "manager"
+                  ]
+                },
+                "maxItems": 2,
+                "description": "Authority kinds the active caller may decide; contains no actor identity."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "body"
+                ]
+              }
             },
-            "minItems": 1,
-            "maxItems": 2,
-            "description": "Event bodies require only manager; feed bodies require author then manager."
-          },
-          "authorDecision": {
-            "type": "string",
-            "enum": [
-              "grant",
-              "withdraw",
-              "unknown"
+            "required": [
+              "ordinal",
+              "requiredAuthorities",
+              "authorDecision",
+              "managerDecision",
+              "actorCanDecide",
+              "field"
             ],
-            "description": "Current exact source-author decision. Event bodies report unknown because author authority is not required."
+            "additionalProperties": false
           },
-          "managerDecision": {
-            "type": "string",
-            "enum": [
-              "grant",
-              "withdraw",
-              "unknown"
-            ]
-          },
-          "actorCanDecide": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "author",
-                "manager"
-              ]
+          {
+            "type": "object",
+            "properties": {
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 49
+              },
+              "requiredAuthorities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "author",
+                    "manager"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 2,
+                "description": "Event bodies require manager; feed bodies and attachment captions require author then manager."
+              },
+              "authorDecision": {
+                "type": "string",
+                "enum": [
+                  "grant",
+                  "withdraw",
+                  "unknown"
+                ],
+                "description": "Current exact source-author or attachment-creator decision. Event bodies report unknown because author authority is not required."
+              },
+              "managerDecision": {
+                "type": "string",
+                "enum": [
+                  "grant",
+                  "withdraw",
+                  "unknown"
+                ]
+              },
+              "actorCanDecide": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "author",
+                    "manager"
+                  ]
+                },
+                "maxItems": 2,
+                "description": "Authority kinds the active caller may decide; contains no actor identity."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "caption"
+                ]
+              },
+              "fieldRef": {
+                "type": "string",
+                "pattern": "^rcf_[A-Za-z0-9_-]{43}$",
+                "description": "Opaque exact-caption reference. Current refs are issued on reads; a bounded previous HMAC key may validate older refs during rotation without exposing attachment identity."
+              },
+              "attachmentOrdinal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9
+              },
+              "attachmentVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 2147483647
+              },
+              "caption": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
             },
-            "maxItems": 2,
-            "description": "Authority kinds the active caller may decide; contains no actor identity."
+            "required": [
+              "ordinal",
+              "requiredAuthorities",
+              "authorDecision",
+              "managerDecision",
+              "actorCanDecide",
+              "field",
+              "fieldRef",
+              "attachmentOrdinal",
+              "attachmentVersion",
+              "caption"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ordinal",
-          "field",
-          "requiredAuthorities",
-          "authorDecision",
-          "managerDecision",
-          "actorCanDecide"
-        ],
-        "additionalProperties": false
+        ]
       },
       "EventServiceEventRecapExternalConsent": {
         "type": [
@@ -7336,14 +7447,14 @@
             "items": {
               "$ref": "#/components/schemas/EventServiceEventRecapExternalConsentField"
             },
-            "maxItems": 50
+            "maxItems": 550
           }
         },
         "required": [
           "fields"
         ],
         "additionalProperties": false,
-        "description": "Current exact-body consent state, or null for a draft, old, archived, removed or source-drifted recap."
+        "description": "Current exact body and caption consent state, or null for a draft, old, archived, removed or source-drifted recap. Caption projection never includes media bytes, URLs, hashes or metadata."
       },
       "EventServiceEventRecapShareLink": {
         "type": "object",
@@ -7396,7 +7507,7 @@
         "additionalProperties": false
       },
       "EventServiceRecapExternalGrantDecision": {
-        "oneOf": [
+        "anyOf": [
           {
             "type": "object",
             "properties": {
@@ -7505,11 +7616,71 @@
               "decision"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "recapVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 2147483647
+              },
+              "sourceType": {
+                "type": "string",
+                "enum": [
+                  "feedEntry"
+                ]
+              },
+              "sourceId": {
+                "type": "string",
+                "pattern": "^fed_[A-Za-z0-9._:-]{1,96}$"
+              },
+              "sourceVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 2147483647
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "caption"
+                ]
+              },
+              "fieldRef": {
+                "type": "string",
+                "pattern": "^rcf_[A-Za-z0-9_-]{43}$"
+              },
+              "authority": {
+                "type": "string",
+                "enum": [
+                  "author",
+                  "manager"
+                ]
+              },
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "grant",
+                  "withdraw"
+                ]
+              }
+            },
+            "required": [
+              "recapVersion",
+              "sourceType",
+              "sourceId",
+              "sourceVersion",
+              "field",
+              "fieldRef",
+              "authority",
+              "decision"
+            ],
+            "additionalProperties": false
           }
         ]
       },
       "EventServiceRecapExternalField": {
-        "oneOf": [
+        "anyOf": [
           {
             "type": "object",
             "properties": {
@@ -7573,6 +7744,44 @@
               "sourceId",
               "sourceVersion",
               "field"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sourceType": {
+                "type": "string",
+                "enum": [
+                  "feedEntry"
+                ]
+              },
+              "sourceId": {
+                "type": "string",
+                "pattern": "^fed_[A-Za-z0-9._:-]{1,96}$"
+              },
+              "sourceVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 2147483647
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "caption"
+                ]
+              },
+              "fieldRef": {
+                "type": "string",
+                "pattern": "^rcf_[A-Za-z0-9_-]{43}$"
+              }
+            },
+            "required": [
+              "sourceType",
+              "sourceId",
+              "sourceVersion",
+              "field",
+              "fieldRef"
             ],
             "additionalProperties": false
           }
@@ -7660,6 +7869,15 @@
                 "minimum": 0,
                 "maximum": 49
               },
+              "captions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "maxItems": 10
+              },
               "title": {
                 "type": "string",
                 "minLength": 1,
@@ -7676,6 +7894,7 @@
             },
             "required": [
               "ordinal",
+              "captions",
               "title",
               "body"
             ],
@@ -7689,6 +7908,15 @@
                 "minimum": 0,
                 "maximum": 49
               },
+              "captions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "maxItems": 10
+              },
               "title": {
                 "type": "null"
               },
@@ -7700,6 +7928,40 @@
             },
             "required": [
               "ordinal",
+              "captions",
+              "title",
+              "body"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 49
+              },
+              "captions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "minItems": 1,
+                "maxItems": 10
+              },
+              "title": {
+                "type": "null"
+              },
+              "body": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "ordinal",
+              "captions",
               "title",
               "body"
             ],
@@ -20407,8 +20669,8 @@
         "tags": [
           "events"
         ],
-        "summary": "Grant or withdraw one exact external recap body field",
-        "description": "Appends one exact recap-version, source-version and body-field decision. Event bodies require manager authority; feed bodies require separate source-author and manager decisions. No source content is copied into the decision record.",
+        "summary": "Grant or withdraw one exact external recap text field",
+        "description": "Appends one exact recap/source-version body or attachment-caption decision. Event bodies require manager authority; feed bodies and captions require separate author/creator and manager decisions. No source content is copied into the decision record.",
         "security": [
           {
             "userBearer": []
@@ -20738,7 +21000,7 @@
           "events"
         ],
         "summary": "Create a reviewed exact-field external recap link",
-        "description": "After all exact body fields have current source-author and manager grants, creates one seven-day link bound to those immutable field identities and rotates every prior active recap link. Identifiable media remains unavailable.",
+        "description": "After all exact body and caption fields have current source-author or attachment-creator and manager grants, creates one seven-day text-only link bound to those immutable field identities and rotates every prior active recap link. Media bytes, URLs, hashes and metadata remain unavailable.",
         "security": [
           {
             "userBearer": []
@@ -21623,7 +21885,7 @@
           "events"
         ],
         "summary": "Resolve one reviewed exact-field external recap token",
-        "description": "Returns only the public recap title, event item titles and explicitly selected body fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.",
+        "description": "Returns only the public recap title, event item titles and explicitly selected body or attachment-caption text fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. Caption selection returns text only, never the image or attachment metadata. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.",
         "security": [],
         "x-idempotency": "none",
         "requestBody": {
@@ -40350,10 +40612,10 @@
       "sourceState": "committed"
     },
     "event-service": {
-      "digest": "sha256:b09563d2cdcd9e76981f9dcdf4b50b24be80ac07350db0a4fd198268e89fab66",
+      "digest": "sha256:f3e30aee684056f2fd228483535c859fd36fe9ec053391d334658551b5acde68",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": "8981694ef4f445ace48572166ac56ca8072142b6",
+      "sourceCommit": "333fd702ec5574560181d546d52d5c00e438c7a6",
       "sourceState": "committed"
     }
   }

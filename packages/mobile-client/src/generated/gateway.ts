@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:7d671342e6239120d55fed23d8ac067d64de85abeab97043cbf54cd293808cbc
+ * Pin: sha256:1614fb982a39a7ff7ee19d810f2f673064b8746eb045486d70a9f4418b833a54
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -708,8 +708,8 @@ export type paths = {
         get?: never;
         put?: never;
         /**
-         * Grant or withdraw one exact external recap body field
-         * @description Appends one exact recap-version, source-version and body-field decision. Event bodies require manager authority; feed bodies require separate source-author and manager decisions. No source content is copied into the decision record.
+         * Grant or withdraw one exact external recap text field
+         * @description Appends one exact recap/source-version body or attachment-caption decision. Event bodies require manager authority; feed bodies and captions require separate author/creator and manager decisions. No source content is copied into the decision record.
          */
         post: operations["eventRecapExternalGrantsDecide"];
         delete?: never;
@@ -729,7 +729,7 @@ export type paths = {
         put?: never;
         /**
          * Create a reviewed exact-field external recap link
-         * @description After all exact body fields have current source-author and manager grants, creates one seven-day link bound to those immutable field identities and rotates every prior active recap link. Identifiable media remains unavailable.
+         * @description After all exact body and caption fields have current source-author or attachment-creator and manager grants, creates one seven-day text-only link bound to those immutable field identities and rotates every prior active recap link. Media bytes, URLs, hashes and metadata remain unavailable.
          */
         post: operations["eventRecapExternalShareLinksCreate"];
         delete?: never;
@@ -1128,7 +1128,7 @@ export type paths = {
         put?: never;
         /**
          * Resolve one reviewed exact-field external recap token
-         * @description Returns only the public recap title, event item titles and explicitly selected body fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.
+         * @description Returns only the public recap title, event item titles and explicitly selected body or attachment-caption text fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. Caption selection returns text only, never the image or attachment metadata. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.
          */
         post: operations["eventRecapExternalShareLinksResolve"];
         delete?: never;
@@ -1572,6 +1572,11 @@ export type components = {
             rootEventId: string;
             /** @description Aggregate revision covering readiness-affecting capability, place and graph changes; send it as baseRevision when publishing. */
             rootRevision: string;
+            /**
+             * @description Authoritative current root status from the same locked readiness read.
+             * @enum {string}
+             */
+            rootStatus: "draft" | "published" | "cancelled" | "archived";
             /** @description Optimistic version of the root event row; send it as baseVersion when publishing. */
             rootVersion: number;
             /** @enum {number} */
@@ -1590,6 +1595,7 @@ export type components = {
             meta?: {
                 /** @enum {string} */
                 capabilityType?: "travel" | "lodging" | "transport" | "golf" | "team";
+                capabilityVersion?: number;
                 eventId?: string;
             };
             path: string;
@@ -1625,7 +1631,7 @@ export type components = {
             /** @description Immutable recap snapshot version. */
             version: number;
         };
-        /** @description Current exact-body consent state, or null for a draft, old, archived, removed or source-drifted recap. */
+        /** @description Current exact body and caption consent state, or null for a draft, old, archived, removed or source-drifted recap. Caption projection never includes media bytes, URLs, hashes or metadata. */
         EventServiceEventRecapExternalConsent: {
             fields: components["schemas"]["EventServiceEventRecapExternalConsentField"][];
         } | null;
@@ -1633,7 +1639,7 @@ export type components = {
             /** @description Authority kinds the active caller may decide; contains no actor identity. */
             actorCanDecide: ("author" | "manager")[];
             /**
-             * @description Current exact source-author decision. Event bodies report unknown because author authority is not required.
+             * @description Current exact source-author or attachment-creator decision. Event bodies report unknown because author authority is not required.
              * @enum {string}
              */
             authorDecision: "grant" | "withdraw" | "unknown";
@@ -1642,7 +1648,27 @@ export type components = {
             /** @enum {string} */
             managerDecision: "grant" | "withdraw" | "unknown";
             ordinal: number;
-            /** @description Event bodies require only manager; feed bodies require author then manager. */
+            /** @description Event bodies require manager; feed bodies and attachment captions require author then manager. */
+            requiredAuthorities: ("author" | "manager")[];
+        } | {
+            /** @description Authority kinds the active caller may decide; contains no actor identity. */
+            actorCanDecide: ("author" | "manager")[];
+            attachmentOrdinal: number;
+            attachmentVersion: number;
+            /**
+             * @description Current exact source-author or attachment-creator decision. Event bodies report unknown because author authority is not required.
+             * @enum {string}
+             */
+            authorDecision: "grant" | "withdraw" | "unknown";
+            caption: string;
+            /** @enum {string} */
+            field: "caption";
+            /** @description Opaque exact-caption reference. Current refs are issued on reads; a bounded previous HMAC key may validate older refs during rotation without exposing attachment identity. */
+            fieldRef: string;
+            /** @enum {string} */
+            managerDecision: "grant" | "withdraw" | "unknown";
+            ordinal: number;
+            /** @description Event bodies require manager; feed bodies and attachment captions require author then manager. */
             requiredAuthorities: ("author" | "manager")[];
         };
         EventServiceEventRecapExternalShare: {
@@ -1651,10 +1677,17 @@ export type components = {
         };
         EventServiceEventRecapExternalShareItem: {
             body: string | null;
+            captions: string[];
             ordinal: number;
             title: string;
         } | {
             body: string;
+            captions: string[];
+            ordinal: number;
+            title: null;
+        } | {
+            body: null;
+            captions: string[];
             ordinal: number;
             title: null;
         };
@@ -2079,6 +2112,14 @@ export type components = {
             /** @enum {string} */
             sourceType: "feedEntry";
             sourceVersion: number;
+        } | {
+            /** @enum {string} */
+            field: "caption";
+            fieldRef: string;
+            sourceId: string;
+            /** @enum {string} */
+            sourceType: "feedEntry";
+            sourceVersion: number;
         };
         EventServiceRecapExternalGrantDecision: {
             /** @enum {string} */
@@ -2099,6 +2140,19 @@ export type components = {
             decision: "grant" | "withdraw";
             /** @enum {string} */
             field: "body";
+            recapVersion: number;
+            sourceId: string;
+            /** @enum {string} */
+            sourceType: "feedEntry";
+            sourceVersion: number;
+        } | {
+            /** @enum {string} */
+            authority: "author" | "manager";
+            /** @enum {string} */
+            decision: "grant" | "withdraw";
+            /** @enum {string} */
+            field: "caption";
+            fieldRef: string;
             recapVersion: number;
             sourceId: string;
             /** @enum {string} */

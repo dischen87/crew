@@ -881,8 +881,13 @@ describe("GatewayClient request mapping", () => {
 		const recap = {
 			title: "Crew trip recap",
 			items: [
-				{ ordinal: 0, title: "Arrival", body: null },
-				{ ordinal: 1, title: null, body: "Approved dinner moment" },
+				{ ordinal: 0, title: "Arrival", body: null, captions: [] },
+				{
+					ordinal: 1,
+					title: null,
+					body: "Approved dinner moment",
+					captions: [],
+				},
 			],
 		};
 		const client = clientWith(store, async (input, init) => {

@@ -301,15 +301,31 @@ describe("gateway contract generation", () => {
 		expect(consentSchema?.type).toEqual(["object", "null"]);
 		expect(consentSchema?.required).toEqual(["fields"]);
 		expect(consentSchema?.additionalProperties).toBe(false);
-		expect(consentFieldSchema?.required).toEqual([
+		expect(consentFieldSchema?.oneOf).toHaveLength(2);
+		const bodyConsentField = consentFieldSchema?.oneOf?.find((candidate) =>
+			candidate.properties?.field?.enum?.includes("body"),
+		);
+		const captionConsentField = consentFieldSchema?.oneOf?.find((candidate) =>
+			candidate.properties?.field?.enum?.includes("caption"),
+		);
+		const bodyConsentRequired = [
 			"ordinal",
-			"field",
 			"requiredAuthorities",
 			"authorDecision",
 			"managerDecision",
 			"actorCanDecide",
+			"field",
+		];
+		expect(bodyConsentField?.required).toEqual(bodyConsentRequired);
+		expect(captionConsentField?.required).toEqual([
+			...bodyConsentRequired,
+			"fieldRef",
+			"attachmentOrdinal",
+			"attachmentVersion",
+			"caption",
 		]);
-		expect(consentFieldSchema?.additionalProperties).toBe(false);
+		expect(bodyConsentField?.additionalProperties).toBe(false);
+		expect(captionConsentField?.additionalProperties).toBe(false);
 		for (const forbidden of [
 			"sourceId",
 			"sourceVersion",
@@ -325,7 +341,11 @@ describe("gateway contract generation", () => {
 			expect(JSON.stringify(consentSchema)).not.toContain(forbidden);
 			expect(JSON.stringify(consentFieldSchema)).not.toContain(forbidden);
 		}
-		expect(consentFieldSchema?.properties?.body).toBeUndefined();
+		expect(bodyConsentField?.properties?.body).toBeUndefined();
+		expect(captionConsentField?.properties?.fieldRef?.pattern).toBe(
+			"^rcf_[A-Za-z0-9_-]{43}$",
+		);
+		expect(captionConsentField?.properties?.media).toBeUndefined();
 		for (const operationId of [
 			"eventRecapsGenerate",
 			"eventRecapsPublish",
@@ -406,11 +426,30 @@ describe("gateway contract generation", () => {
 		expect(externalResponses["404"]).toBeDefined();
 		const externalPublicSchema =
 			gatewaySchemas.EventServiceEventRecapExternalShare;
+		const externalPublicItemSchema =
+			gatewaySchemas.EventServiceEventRecapExternalShareItem;
 		expect(externalPublicSchema?.required).toEqual(["title", "items"]);
 		expect(Object.keys(externalPublicSchema?.properties ?? {})).toEqual([
 			"title",
 			"items",
 		]);
+		expect(externalPublicItemSchema?.anyOf).toHaveLength(3);
+		for (const itemVariant of externalPublicItemSchema?.anyOf ?? []) {
+			expect(itemVariant.required).toEqual([
+				"ordinal",
+				"captions",
+				"title",
+				"body",
+			]);
+			expect(itemVariant.additionalProperties).toBe(false);
+			expect(itemVariant.properties?.captions?.maxItems).toBe(10);
+		}
+		const captionOnlyVariant = externalPublicItemSchema?.anyOf?.find(
+			(candidate) =>
+				candidate.properties?.title?.type === "null" &&
+				candidate.properties?.body?.type === "null",
+		);
+		expect(captionOnlyVariant?.properties?.captions?.minItems).toBe(1);
 		for (const forbidden of [
 			"rootEventId",
 			"sourceId",
