@@ -11,6 +11,7 @@ import { loadPlaceEnrichmentPolicy } from "./place-enrichment-worker-config";
 import { PlaceSearchService, TypesensePlaceSearchIndex } from "./place-search";
 import { PostgresPlaceCandidateRepository } from "./postgres-place-candidate-repository";
 import { PostgresEventRepository } from "./postgres-repository";
+import { RecapCaptionFieldRefCodec } from "./recap-caption-field-ref";
 import { RecapShareTokenCodec } from "./recap-share-token";
 import { EventService } from "./service";
 
@@ -21,7 +22,13 @@ const notificationPayloads = new EventNotificationPayloadCodec({
 	key: config.notificationPayloadCurrentKey,
 });
 const service = new EventService(
-	new PostgresEventRepository(sql, notificationPayloads),
+	new PostgresEventRepository(sql, notificationPayloads, false, {
+		enabled: config.recapExternalCaptionsEnabled,
+		fieldRefs: new RecapCaptionFieldRefCodec(
+			config.recapCaptionFieldRefCurrentKey,
+			config.recapCaptionFieldRefPreviousKey,
+		),
+	}),
 	new InvitationTokenCodec(
 		{ id: config.invitationKeyId, secret: config.invitationKey },
 		config.invitationPreviousKeyId && config.invitationPreviousKey

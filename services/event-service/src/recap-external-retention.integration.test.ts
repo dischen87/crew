@@ -253,6 +253,48 @@ describe("bounded external recap retention against PostgreSQL 17", () => {
 		expect(await decisionCount(rotated)).toBe(1);
 	});
 
+	test("purges an exact caption chain without conflating the sibling body grants", async () => {
+		const now = await databaseNow();
+		const recap = await createFeedRecap("evt_retention_caption_chain");
+		const captionFieldName = "caption|att_retention_caption_chain|1";
+		for (const [authority, actorId] of [
+			["author", participant.id],
+			["manager", owner.id],
+		] as const) {
+			await insertDecision(
+				recap,
+				authority,
+				actorId,
+				"grant",
+				ago(now, 100),
+				captionFieldName,
+			);
+			await insertDecision(recap, authority, actorId, "grant", ago(now, 1));
+		}
+		const linkId = await insertLink(recap, {
+			createdAt: ago(now, 98),
+			expiresAt: ago(now, 91),
+			fieldName: captionFieldName,
+		});
+
+		const stats = await new PostgresRecapExternalRetention(sql).purge(10);
+		expect(stats).toMatchObject({
+			purgedLinks: 1,
+			purgedFields: 1,
+			purgedGrantDecisions: 2,
+			ambiguousLinks: 0,
+		});
+		expect(await linkExists(linkId)).toBe(false);
+		expect(await decisionCount(recap)).toBe(2);
+		const [captions] = await sql<{ count: number }[]>`
+			SELECT count(*)::INTEGER AS count
+			FROM event_recap_external_grant_decisions
+			WHERE root_event_id = ${recap.rootEventId}
+				AND field_name = ${captionFieldName}
+		`;
+		expect(captions?.count).toBe(0);
+	});
+
 	test("bounds zero-link old decision cleanup without exposing an older grant and keeps recent unused decisions", async () => {
 		const now = await databaseNow();
 		const old = await createFeedRecap("evt_retention_unused_old");
@@ -760,6 +802,7 @@ async function insertDecision(
 	actorId: string,
 	decision: "grant" | "withdraw",
 	decidedAt: Date,
+	fieldName = "body",
 ) {
 	await sql`
 		INSERT INTO event_recap_external_grant_decisions (
@@ -768,7 +811,7 @@ async function insertDecision(
 			actor_membership_version, decided_at
 		) VALUES (
 			${recap.rootEventId}, 1, ${recap.ordinal}, ${recap.sourceType},
-			${recap.sourceId}, ${recap.sourceVersion}, 'body', ${authority},
+			${recap.sourceId}, ${recap.sourceVersion}, ${fieldName}, ${authority},
 			${decision}, ${actorId}, 1, ${decidedAt}
 		)
 	`;
@@ -783,6 +826,7 @@ async function insertLink(
 		terminalAction?: "rotate" | "revoke";
 		createAudit?: boolean;
 		projection?: "exact-fields-reviewed-v1" | "title-only-reviewed";
+		fieldName?: string;
 	},
 ) {
 	linkSequence += 1;
@@ -809,7 +853,7 @@ async function insertLink(
 			source_id, source_version, field_name
 		) VALUES (
 			${id}, ${recap.rootEventId}, 1, ${recap.ordinal}, ${recap.sourceType},
-			${recap.sourceId}, ${recap.sourceVersion}, 'body'
+			${recap.sourceId}, ${recap.sourceVersion}, ${input.fieldName ?? "body"}
 		)
 	`;
 	if (input.createAudit !== false)

@@ -14,6 +14,26 @@ describe("event-service scaffold", () => {
 		expect(api.notificationPayloadCurrentKeyId).toBe("api-current-v2");
 		expect(api.invitationKeyId).toBe("legacy-invitation-v1");
 		expect(api.recapShareTokenCurrentKeyId).toBe("development-v1");
+		expect(api.recapExternalCaptionsEnabled).toBe(false);
+		expect(() =>
+			loadConfig({ RECAP_EXTERNAL_CAPTIONS_ENABLED: "1" }),
+		).toThrow();
+		expect(() =>
+			loadConfig({
+				RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+					"same-recap-caption-key-with-at-least-32-characters",
+				RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY:
+					"same-recap-caption-key-with-at-least-32-characters",
+			}),
+		).toThrow("must differ");
+		expect(() =>
+			loadConfig({
+				RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+					"shared-recap-caption-and-share-key-with-32-characters",
+				RECAP_SHARE_TOKEN_CURRENT_KEY:
+					"shared-recap-caption-and-share-key-with-32-characters",
+			}),
+		).toThrow("separate secret domain");
 		expect(
 			loadConfig({
 				RECAP_SHARE_TOKEN_PREVIOUS_KEY_ID: "",
@@ -135,6 +155,70 @@ describe("event-service scaffold", () => {
 				"production-typesense-search-key-at-least-16",
 		};
 		expect(loadConfig(productionApi).environment).toBe("production");
+		expect(loadConfig(productionApi).recapExternalCaptionsEnabled).toBe(false);
+		expect(
+			loadConfig({
+				...productionApi,
+				RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+					"crew-local-recap-caption-field-ref-key-change-2026",
+				RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY:
+					"crew-development-recap-caption-field-ref-key-change-me",
+			}).recapExternalCaptionsEnabled,
+		).toBe(false);
+		expect(() =>
+			loadConfig({
+				...productionApi,
+				RECAP_EXTERNAL_CAPTIONS_ENABLED: "true",
+			}),
+		).toThrow("must not use development or Compose-local material");
+		for (const [name, key] of [
+			[
+				"RECAP_CAPTION_FIELD_REF_CURRENT_KEY",
+				"crew-development-recap-caption-field-ref-key-change-me",
+			],
+			[
+				"RECAP_CAPTION_FIELD_REF_CURRENT_KEY",
+				"crew-local-recap-caption-field-ref-key-change-2026",
+			],
+			[
+				"RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY",
+				"crew-development-recap-caption-field-ref-key-change-me",
+			],
+			[
+				"RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY",
+				"crew-local-recap-caption-field-ref-key-change-2026",
+			],
+		] as const) {
+			expect(() =>
+				loadConfig({
+					...productionApi,
+					RECAP_EXTERNAL_CAPTIONS_ENABLED: "true",
+					RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+						name === "RECAP_CAPTION_FIELD_REF_CURRENT_KEY"
+							? key
+							: "production-recap-caption-current-key-at-least-32-characters",
+					[name]: key,
+				}),
+			).toThrow(`${name} must not use development or Compose-local material`);
+		}
+		expect(
+			loadConfig({
+				...productionApi,
+				RECAP_EXTERNAL_CAPTIONS_ENABLED: "true",
+				RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+					"production-recap-caption-field-ref-key-at-least-32-characters",
+			}).recapExternalCaptionsEnabled,
+		).toBe(true);
+		expect(
+			loadConfig({
+				...productionApi,
+				RECAP_EXTERNAL_CAPTIONS_ENABLED: "true",
+				RECAP_CAPTION_FIELD_REF_CURRENT_KEY:
+					"production-recap-caption-current-key-at-least-32-characters",
+				RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY:
+					"production-recap-caption-previous-key-at-least-32-characters",
+			}).recapCaptionFieldRefPreviousKey,
+		).toBe("production-recap-caption-previous-key-at-least-32-characters");
 		expect(() =>
 			loadConfig({
 				...productionApi,
@@ -400,6 +484,14 @@ describe("event-service scaffold", () => {
 			await createApp().request("/docs/openapi.json")
 		).json();
 		const reason = document.components.schemas.EventPublishReadinessReason;
+		const readiness = document.components.schemas.EventPublishReadiness;
+		expect(readiness.properties.rootStatus).toEqual({
+			type: "string",
+			enum: ["draft", "published", "cancelled", "archived"],
+			description:
+				"Authoritative current root status from the same locked readiness read.",
+		});
+		expect(readiness.required).toContain("rootStatus");
 		expect(reason.properties.meta).toMatchObject({
 			type: "object",
 			additionalProperties: false,
@@ -411,6 +503,11 @@ describe("event-service scaffold", () => {
 				capabilityType: {
 					type: "string",
 					enum: ["travel", "lodging", "transport", "golf", "team"],
+				},
+				capabilityVersion: {
+					type: "integer",
+					minimum: 0,
+					maximum: Number.MAX_SAFE_INTEGER,
 				},
 			},
 		});
@@ -462,7 +559,9 @@ describe("event-service scaffold", () => {
 					deviceId: "dvc_00000000-0000-4000-8000-000000000001",
 					mutations: [
 						{
-							clientMutationId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+							clientMutationId: `00000000-0000-4000-8000-${String(
+								index + 1,
+							).padStart(12, "0")}`,
 							clientSequence: index + 1,
 							kind: "event.create",
 							entityId: `evt_sortkeychild${index}`,

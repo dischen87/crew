@@ -153,6 +153,7 @@ describe("authoritative event publication against PostgreSQL 17", () => {
 		expect(readiness).toMatchObject({
 			schemaVersion: 1,
 			rootEventId,
+			rootStatus: "draft",
 			rootVersion: 1,
 			rootRevision: "1",
 			template: null,
@@ -279,8 +280,47 @@ describe("authoritative event publication against PostgreSQL 17", () => {
 			code: "EVENT_CAPABILITY_REQUIRED",
 			path: "capabilities",
 			message: "Configure at least one event capability before publishing.",
-			meta: { eventId: rootEventId, capabilityType: "team" },
+			meta: {
+				eventId: rootEventId,
+				capabilityType: "team",
+				capabilityVersion: 2,
+			},
 		});
+
+		const restored = await app.request(
+			`/v1/event-roots/${rootEventId}/events/${rootEventId}/capabilities/team`,
+			{
+				method: "PUT",
+				headers: commandAuth(owner.id, "restore-publish-capability-01"),
+				body: JSON.stringify({
+					baseVersion: 2,
+					capability: {
+						type: "team",
+						schemaVersion: 1,
+						config: {
+							venuePlaceId: null,
+							assignmentMode: "organizer",
+							capacityPerTeam: null,
+							facilitator: null,
+						},
+					},
+				}),
+			},
+		);
+		expect(restored.status).toBe(200);
+		expect(await restored.json()).toMatchObject({
+			capability: { eventId: rootEventId, type: "team", version: 3 },
+		});
+		const afterRestore = await service.getPublishReadiness(owner, rootEventId);
+		expect(afterRestore.reasons).not.toContainEqual(
+			expect.objectContaining({ code: "EVENT_CAPABILITY_REQUIRED" }),
+		);
+		expect(afterRestore.reasons).toContainEqual(
+			expect.objectContaining({
+				code: "EVENT_CAPABILITY_PLACE_REQUIRED",
+				meta: { eventId: rootEventId, capabilityType: "team" },
+			}),
+		);
 	});
 
 	test("publishes once under concurrent commands and replays the winning response byte-for-byte", async () => {

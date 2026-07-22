@@ -210,7 +210,9 @@ export class PostgresAttachmentJobRepository {
 			UPDATE event_attachment_verify_jobs SET
 				status = ${dead ? "dead" : "retry"}, result_object_key = NULL,
 				error_code = ${input.errorCode}, lease_owner = NULL, lease_until = NULL,
-				available_at = now() + (${boundedDelay(input.delaySeconds)} * interval '1 second'),
+				available_at = now() + (${boundedDelay(
+					input.delaySeconds,
+				)} * interval '1 second'),
 				completed_at = CASE WHEN ${dead} THEN now() ELSE NULL END, updated_at = now()
 			WHERE upload_id = ${claim.upload.id} AND status = 'processing'
 				AND lease_owner = ${claim.workerId} AND fence = ${claim.fence}
@@ -289,19 +291,17 @@ export class PostgresAttachmentJobRepository {
 			`;
 			if (!job) return false;
 			if (claim.committedObjectKey !== null) {
-				const removed = await tx`
-					DELETE FROM event_attachments attachment
-					WHERE attachment.upload_id = ${claim.upload.id}
-						AND attachment.target_type = 'feedback'
-						AND attachment.object_key = ${claim.committedObjectKey}
-						AND NOT EXISTS (
-							SELECT 1 FROM event_feedback_attachments link
-							WHERE link.root_event_id = attachment.root_event_id
-								AND link.attachment_id = attachment.id
-						)
-					RETURNING attachment.id
+				const [cleanup] = await tx<{ removed: boolean }[]>`
+					SELECT delete_claimed_feedback_attachment(
+						${claim.upload.id},
+						${claim.upload.rootEventId},
+						${claim.upload.attachmentId},
+						${claim.committedObjectKey},
+						${claim.workerId},
+						${claim.fence}::bigint
+					) AS removed
 				`;
-				if (removed.length !== 1)
+				if (!cleanup?.removed)
 					throw new Error(
 						"Feedback attachment cleanup binding invariant failed",
 					);
@@ -345,7 +345,9 @@ export class PostgresAttachmentJobRepository {
 			UPDATE event_attachment_cleanup_jobs SET
 				status = ${dead ? "dead" : "retry"}, error_code = ${input.errorCode},
 				lease_owner = NULL, lease_until = NULL,
-				available_at = now() + (${boundedDelay(input.delaySeconds)} * interval '1 second'),
+				available_at = now() + (${boundedDelay(
+					input.delaySeconds,
+				)} * interval '1 second'),
 				completed_at = CASE WHEN ${dead} THEN now() ELSE NULL END, updated_at = now()
 			WHERE upload_id = ${claim.upload.id} AND status = 'processing'
 				AND lease_owner = ${claim.workerId} AND fence = ${claim.fence}

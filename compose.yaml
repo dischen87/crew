@@ -310,6 +310,9 @@ services:
       INVITATION_TOKEN_KEY: ${INVITATION_TOKEN_KEY:-crew-local-invitation-token-key-change-2026}
       RECAP_SHARE_TOKEN_CURRENT_KEY_ID: ${RECAP_SHARE_TOKEN_CURRENT_KEY_ID:-local-recap-share-v1}
       RECAP_SHARE_TOKEN_CURRENT_KEY: ${RECAP_SHARE_TOKEN_CURRENT_KEY:-crew-local-recap-share-token-key-change-2026}
+      RECAP_EXTERNAL_CAPTIONS_ENABLED: ${RECAP_EXTERNAL_CAPTIONS_ENABLED:-false}
+      RECAP_CAPTION_FIELD_REF_CURRENT_KEY: ${RECAP_CAPTION_FIELD_REF_CURRENT_KEY:-crew-local-recap-caption-field-ref-key-change-2026}
+      RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY: ${RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY:-}
       SYNC_CURSOR_KEY: ${SYNC_CURSOR_KEY:-crew-local-sync-cursor-key-change-2026}
       USER_SERVICE_JWKS_URL: http://user-api:3001/.well-known/jwks.json
       USER_TOKEN_ISSUER: crew-user-service

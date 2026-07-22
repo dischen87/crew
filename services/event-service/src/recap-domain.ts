@@ -57,14 +57,24 @@ export type EventRecap = {
 export type RecapExternalDecisionState = "grant" | "withdraw" | "unknown";
 
 export type EventRecapExternalConsent = {
-	fields: Array<{
-		ordinal: number;
-		field: "body";
-		requiredAuthorities: Array<"author" | "manager">;
-		authorDecision: RecapExternalDecisionState;
-		managerDecision: RecapExternalDecisionState;
-		actorCanDecide: Array<"author" | "manager">;
-	}>;
+	fields: Array<
+		{
+			ordinal: number;
+			requiredAuthorities: Array<"author" | "manager">;
+			authorDecision: RecapExternalDecisionState;
+			managerDecision: RecapExternalDecisionState;
+			actorCanDecide: Array<"author" | "manager">;
+		} & (
+			| { field: "body" }
+			| {
+					field: "caption";
+					fieldRef: string;
+					attachmentOrdinal: number;
+					attachmentVersion: number;
+					caption: string;
+			  }
+		)
+	>;
 };
 
 export type EventRecapRead = {
@@ -89,12 +99,20 @@ export type EventRecapShare = {
 	items: Array<{ ordinal: number; title: string }>;
 };
 
-export type RecapExternalField = {
-	sourceType: RecapSourceType;
-	sourceId: string;
-	sourceVersion: number;
-	field: "body";
-};
+export type RecapExternalField =
+	| {
+			sourceType: RecapSourceType;
+			sourceId: string;
+			sourceVersion: number;
+			field: "body";
+	  }
+	| {
+			sourceType: "feedEntry";
+			sourceId: string;
+			sourceVersion: number;
+			field: "caption";
+			fieldRef: string;
+	  };
 
 export type RecapExternalGrantDecisionInput = RecapExternalField & {
 	authority: "author" | "manager";
@@ -111,6 +129,7 @@ export type EventRecapExternalShare = {
 		ordinal: number;
 		title: string | null;
 		body: string | null;
+		captions: string[];
 	}>;
 };
 

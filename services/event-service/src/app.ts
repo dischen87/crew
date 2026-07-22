@@ -61,6 +61,7 @@ import {
 	MAX_PLACE_SEARCH_PAGE_SIZE,
 	type PlaceSearchService,
 } from "./place-search";
+import { RECAP_CAPTION_FIELD_REF_PATTERN } from "./recap-caption-field-ref";
 import type {
 	EventRecap,
 	EventRecapShareLink,
@@ -1533,6 +1534,12 @@ const EventPublishReadinessReasonSchema = z
 			.object({
 				eventId: EventIdSchema.optional(),
 				capabilityType: CapabilityTypeSchema.optional(),
+				capabilityVersion: z
+					.number()
+					.int()
+					.nonnegative()
+					.max(Number.MAX_SAFE_INTEGER)
+					.optional(),
 			})
 			.strict()
 			.optional(),
@@ -1543,6 +1550,10 @@ const EventPublishReadinessSchema = z
 	.object({
 		schemaVersion: z.literal(1),
 		rootEventId: EventIdSchema,
+		rootStatus: EventStatusSchema.openapi({
+			description:
+				"Authoritative current root status from the same locked readiness read.",
+		}),
 		rootVersion: z.number().int().positive().openapi({
 			description:
 				"Optimistic version of the root event row; send it as baseVersion when publishing.",
@@ -1647,36 +1658,55 @@ const RecapExternalDecisionStateSchema = z.enum([
 	"withdraw",
 	"unknown",
 ]);
-const EventRecapExternalConsentFieldSchema = z
-	.object({
-		ordinal: z.number().int().min(0).max(49),
-		field: z.literal("body"),
-		requiredAuthorities: z
-			.array(z.enum(["author", "manager"]))
-			.min(1)
-			.max(2)
-			.openapi({
-				description:
-					"Event bodies require only manager; feed bodies require author then manager.",
-			}),
-		authorDecision: RecapExternalDecisionStateSchema.openapi({
+const EventRecapExternalConsentFieldBase = {
+	ordinal: z.number().int().min(0).max(49),
+	requiredAuthorities: z
+		.array(z.enum(["author", "manager"]))
+		.min(1)
+		.max(2)
+		.openapi({
 			description:
-				"Current exact source-author decision. Event bodies report unknown because author authority is not required.",
+				"Event bodies require manager; feed bodies and attachment captions require author then manager.",
 		}),
-		managerDecision: RecapExternalDecisionStateSchema,
-		actorCanDecide: z
-			.array(z.enum(["author", "manager"]))
-			.max(2)
-			.openapi({
-				description:
-					"Authority kinds the active caller may decide; contains no actor identity.",
-			}),
-	})
-	.strict()
+	authorDecision: RecapExternalDecisionStateSchema.openapi({
+		description:
+			"Current exact source-author or attachment-creator decision. Event bodies report unknown because author authority is not required.",
+	}),
+	managerDecision: RecapExternalDecisionStateSchema,
+	actorCanDecide: z
+		.array(z.enum(["author", "manager"]))
+		.max(2)
+		.openapi({
+			description:
+				"Authority kinds the active caller may decide; contains no actor identity.",
+		}),
+};
+const EventRecapExternalConsentFieldSchema = z
+	.discriminatedUnion("field", [
+		z
+			.object({
+				...EventRecapExternalConsentFieldBase,
+				field: z.literal("body"),
+			})
+			.strict(),
+		z
+			.object({
+				...EventRecapExternalConsentFieldBase,
+				field: z.literal("caption"),
+				fieldRef: z.string().regex(RECAP_CAPTION_FIELD_REF_PATTERN).openapi({
+					description:
+						"Opaque exact-caption reference. Current refs are issued on reads; a bounded previous HMAC key may validate older refs during rotation without exposing attachment identity.",
+				}),
+				attachmentOrdinal: z.number().int().min(0).max(9),
+				attachmentVersion: RecapVersionSchema,
+				caption: z.string().min(1).max(1_000),
+			})
+			.strict(),
+	])
 	.openapi("EventRecapExternalConsentField");
 const EventRecapExternalConsentSchema = z
 	.object({
-		fields: z.array(EventRecapExternalConsentFieldSchema).max(50),
+		fields: z.array(EventRecapExternalConsentFieldSchema).max(550),
 	})
 	.strict()
 	.openapi("EventRecapExternalConsent");
@@ -1685,7 +1715,7 @@ const EventRecapReadResponseSchema = z
 		recap: EventRecapSchema,
 		externalConsent: EventRecapExternalConsentSchema.nullable().openapi({
 			description:
-				"Current exact-body consent state, or null for a draft, old, archived, removed or source-drifted recap.",
+				"Current exact body and caption consent state, or null for a draft, old, archived, removed or source-drifted recap. Caption projection never includes media bytes, URLs, hashes or metadata.",
 		}),
 	})
 	.strict();
@@ -1746,7 +1776,7 @@ const RecapShareCreateSchema = z
 	.strict()
 	.openapi("RecapShareCreate");
 const RecapExternalFieldSchema = z
-	.discriminatedUnion("sourceType", [
+	.union([
 		z
 			.object({
 				sourceType: z.literal("event"),
@@ -1763,10 +1793,19 @@ const RecapExternalFieldSchema = z
 				field: z.literal("body"),
 			})
 			.strict(),
+		z
+			.object({
+				sourceType: z.literal("feedEntry"),
+				sourceId: FeedIdSchema,
+				sourceVersion: RecapVersionSchema,
+				field: z.literal("caption"),
+				fieldRef: z.string().regex(RECAP_CAPTION_FIELD_REF_PATTERN),
+			})
+			.strict(),
 	])
 	.openapi("RecapExternalField");
 const RecapExternalGrantDecisionSchema = z
-	.discriminatedUnion("sourceType", [
+	.union([
 		z
 			.object({
 				recapVersion: RecapVersionSchema,
@@ -1789,6 +1828,18 @@ const RecapExternalGrantDecisionSchema = z
 				decision: z.enum(["grant", "withdraw"]),
 			})
 			.strict(),
+		z
+			.object({
+				recapVersion: RecapVersionSchema,
+				sourceType: z.literal("feedEntry"),
+				sourceId: FeedIdSchema,
+				sourceVersion: RecapVersionSchema,
+				field: z.literal("caption"),
+				fieldRef: z.string().regex(RECAP_CAPTION_FIELD_REF_PATTERN),
+				authority: z.enum(["author", "manager"]),
+				decision: z.enum(["grant", "withdraw"]),
+			})
+			.strict(),
 	])
 	.openapi("RecapExternalGrantDecision");
 const RecapExternalGrantDecisionResponseSchema = z
@@ -1804,7 +1855,10 @@ const RecapExternalShareCreateSchema = z
 	.superRefine((value, context) => {
 		const keys = new Set<string>();
 		for (const [index, field] of value.fields.entries()) {
-			const key = `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:${field.field}`;
+			const key =
+				field.field === "body"
+					? `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:body`
+					: `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:caption:${field.fieldRef}`;
 			if (keys.has(key))
 				context.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -1866,20 +1920,32 @@ const EventRecapShareResolveSchema = z
 const EventRecapShareResponseSchema = z
 	.object({ recap: EventRecapShareSchema })
 	.strict();
+const EventRecapExternalShareItemBase = {
+	ordinal: z.number().int().min(0).max(49),
+	captions: z.array(z.string().min(1).max(1_000)).max(10),
+};
 const EventRecapExternalShareItemSchema = z
 	.union([
 		z
 			.object({
-				ordinal: z.number().int().min(0).max(49),
+				...EventRecapExternalShareItemBase,
 				title: z.string().min(1).max(160),
 				body: z.string().min(1).max(5000).nullable(),
 			})
 			.strict(),
 		z
 			.object({
-				ordinal: z.number().int().min(0).max(49),
+				...EventRecapExternalShareItemBase,
 				title: z.null(),
 				body: z.string().min(1).max(5000),
+			})
+			.strict(),
+		z
+			.object({
+				...EventRecapExternalShareItemBase,
+				title: z.null(),
+				body: z.null(),
+				captions: EventRecapExternalShareItemBase.captions.min(1),
 			})
 			.strict(),
 	])
@@ -3490,9 +3556,9 @@ const decideRecapExternalGrantRoute = createRoute({
 	path: "/v1/event-roots/{rootEventId}/recap/external-grants",
 	operationId: "eventRecapExternalGrantsDecide",
 	tags: ["events"],
-	summary: "Grant or withdraw one exact external recap body field",
+	summary: "Grant or withdraw one exact external recap text field",
 	description:
-		"Appends one exact recap-version, source-version and body-field decision. Event bodies require manager authority; feed bodies require separate source-author and manager decisions. No source content is copied into the decision record.",
+		"Appends one exact recap/source-version body or attachment-caption decision. Event bodies require manager authority; feed bodies and captions require separate author/creator and manager decisions. No source content is copied into the decision record.",
 	security: [{ userBearer: [] }],
 	request: {
 		params: rootParams,
@@ -3520,7 +3586,7 @@ const createRecapExternalShareLinkRoute = createRoute({
 	tags: ["events"],
 	summary: "Create a reviewed exact-field external recap link",
 	description:
-		"After all exact body fields have current source-author and manager grants, creates one seven-day link bound to those immutable field identities and rotates every prior active recap link. Identifiable media remains unavailable.",
+		"After all exact body and caption fields have current source-author or attachment-creator and manager grants, creates one seven-day text-only link bound to those immutable field identities and rotates every prior active recap link. Media bytes, URLs, hashes and metadata remain unavailable.",
 	security: [{ userBearer: [] }],
 	request: {
 		params: rootParams,
@@ -3597,7 +3663,7 @@ const resolveRecapExternalShareLinkRoute = createRoute({
 	tags: ["events"],
 	summary: "Resolve one reviewed exact-field external recap token",
 	description:
-		"Returns only the public recap title, event item titles and explicitly selected body fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.",
+		"Returns only the public recap title, event item titles and explicitly selected body or attachment-caption text fields while the exact link, recap, sources, author grants, manager grants and authority memberships remain current. Caption selection returns text only, never the image or attachment metadata. It never returns identities, membership, provenance, internal IDs, media or tokens. Every invalid state is the same concealed 404.",
 	security: [],
 	request: {
 		body: {

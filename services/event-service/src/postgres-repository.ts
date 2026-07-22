@@ -98,6 +98,10 @@ import {
 	teamSnapshotRecords,
 } from "./postgres-team";
 import type {
+	RecapCaptionFieldRefCodec,
+	RecapCaptionFieldRefInput,
+} from "./recap-caption-field-ref";
+import type {
 	EventRecap,
 	EventRecapExternalConsent,
 	EventRecapExternalGrantDecision,
@@ -182,6 +186,7 @@ type RecapExternalGrantDecisionRow = {
 	sourceType: "event" | "feedEntry";
 	sourceId: string;
 	sourceVersion: number;
+	fieldName: string;
 	authority: "author" | "manager";
 	decision: "grant" | "withdraw";
 	actorId: string;
@@ -197,6 +202,7 @@ type RecapExternalShareFieldRow = {
 	sourceType: "event" | "feedEntry";
 	sourceId: string;
 	sourceVersion: number;
+	fieldName: string;
 };
 type RecapItemRow = {
 	ordinal: number;
@@ -212,6 +218,27 @@ type RecapItemRow = {
 	sourceBody: string | null;
 };
 type RecapSourceProjection = RecapItemRow;
+type RecapCaptionRow = {
+	id: string;
+	targetEntryId: string;
+	version: number;
+	rootRevision: string;
+	createdBy: string;
+	caption: string;
+};
+type RecapExternalFieldTarget =
+	| {
+			field: "body";
+			item: RecapItemRow;
+			storageFieldName: "body";
+	  }
+	| {
+			field: "caption";
+			item: RecapItemRow;
+			attachment: RecapCaptionRow;
+			attachmentOrdinal: number;
+			storageFieldName: string;
+	  };
 type RecapEventSource = {
 	sourceId: string;
 	sourceVersion: number;
@@ -284,6 +311,10 @@ export class PostgresEventRepository implements EventRepository {
 		private readonly sql: Sql,
 		private readonly notificationPayloads: EventNotificationPayloadCodec,
 		private readonly inTransaction = false,
+		private readonly recapCaptions?: {
+			enabled: boolean;
+			fieldRefs: RecapCaptionFieldRefCodec;
+		},
 	) {}
 
 	async findIdempotent<T extends Record<string, unknown>>(
@@ -347,7 +378,12 @@ export class PostgresEventRepository implements EventRepository {
 				headers: record.responseHeaders,
 			};
 			await replayGuard?.(
-				new PostgresEventRepository(tx, this.notificationPayloads, true),
+				new PostgresEventRepository(
+					tx,
+					this.notificationPayloads,
+					true,
+					this.recapCaptions,
+				),
 				replay,
 			);
 			return { ...replay, replayed: true as const };
@@ -396,6 +432,7 @@ export class PostgresEventRepository implements EventRepository {
 				tx,
 				this.notificationPayloads,
 				true,
+				this.recapCaptions,
 			);
 			await guard?.(repository);
 			const inserted = await tx`
@@ -630,6 +667,7 @@ export class PostgresEventRepository implements EventRepository {
 					tx,
 					this.notificationPayloads,
 					true,
+					this.recapCaptions,
 				).getAttachment(actor, rootEventId, attachmentId);
 				if (!sameAttachmentTarget(upload.target, attachment.target))
 					throw notFound();
@@ -690,7 +728,11 @@ export class PostgresEventRepository implements EventRepository {
 			if (shareLinkId === null) return null;
 			const link = await findRecapShareLinkById(tx, rootEventId, shareLinkId);
 			if (!link) throw notFound();
-			await validateAnyRecapShareLinkPolicy(tx, link);
+			await validateAnyRecapShareLinkPolicy(
+				tx,
+				link,
+				this.recapCaptions?.enabled === true,
+			);
 			return link.tokenKeyId;
 		});
 	}
@@ -709,19 +751,25 @@ export class PostgresEventRepository implements EventRepository {
 				rootEventId,
 				recapVersion,
 			);
-			const item = requireRecapExternalField(context.validation.items, input);
+			const target = await requireRecapExternalField(
+				tx,
+				context.validation.items,
+				context.snapshot,
+				input,
+				this.recapCaptions,
+			);
 			const membership = await requireRecapExternalGrantAuthority(
 				tx,
 				actor,
 				rootEventId,
-				item,
+				target,
 				input.authority,
 			);
 			const latest = await findLatestRecapExternalGrantDecision(
 				tx,
 				rootEventId,
 				recapVersion,
-				item,
+				target,
 				input.authority,
 			);
 			if (
@@ -797,7 +845,12 @@ export class PostgresEventRepository implements EventRepository {
 					}
 				).savepoint((sql) =>
 					work(
-						new PostgresEventRepository(sql, this.notificationPayloads, true),
+						new PostgresEventRepository(
+							sql,
+							this.notificationPayloads,
+							true,
+							this.recapCaptions,
+						),
 					),
 				);
 
@@ -2073,7 +2126,9 @@ export class PostgresEventRepository implements EventRepository {
 								membership,
 								rootEventId,
 								selectedVersion,
+								snapshot,
 								validation.items,
+								this.recapCaptions,
 							)
 						: null,
 			};
@@ -2304,12 +2359,18 @@ export class PostgresEventRepository implements EventRepository {
 				rootEventId,
 				recapVersion,
 			);
-			const item = requireRecapExternalField(context.validation.items, input);
+			const target = await requireRecapExternalField(
+				tx,
+				context.validation.items,
+				context.snapshot,
+				input,
+				this.recapCaptions,
+			);
 			const membership = await requireRecapExternalGrantAuthority(
 				tx,
 				actor,
 				rootEventId,
-				item,
+				target,
 				input.authority,
 			);
 			await tx`
@@ -2318,8 +2379,8 @@ export class PostgresEventRepository implements EventRepository {
 					source_id, source_version, field_name, authority, decision,
 					actor_id, actor_membership_version
 				) VALUES (
-					${rootEventId}, ${recapVersion}, ${item.ordinal}, ${item.sourceType},
-					${item.sourceId}, ${item.sourceVersion}, ${input.field},
+					${rootEventId}, ${recapVersion}, ${target.item.ordinal}, ${target.item.sourceType},
+					${target.item.sourceId}, ${target.item.sourceVersion}, ${target.storageFieldName},
 					${input.authority}, ${input.decision}, ${actor.id},
 					${membership.version}
 				)
@@ -2354,7 +2415,7 @@ export class PostgresEventRepository implements EventRepository {
 					"The request is invalid.",
 				);
 			const keys = new Set<string>();
-			const selected: RecapItemRow[] = [];
+			const selected: RecapExternalFieldTarget[] = [];
 			for (const field of input.fields) {
 				const key = recapExternalFieldKey(field);
 				if (keys.has(key))
@@ -2364,14 +2425,20 @@ export class PostgresEventRepository implements EventRepository {
 						"The request is invalid.",
 					);
 				keys.add(key);
-				const item = requireRecapExternalField(context.validation.items, field);
+				const target = await requireRecapExternalField(
+					tx,
+					context.validation.items,
+					context.snapshot,
+					field,
+					this.recapCaptions,
+				);
 				await validateRecapExternalFieldGrants(
 					tx,
 					rootEventId,
 					input.recapVersion,
-					item,
+					target,
 				);
-				selected.push(item);
+				selected.push(target);
 			}
 			const [policy] = await tx<{ now: Date }[]>`
 				SELECT clock_timestamp() AS now
@@ -2395,14 +2462,15 @@ export class PostgresEventRepository implements EventRepository {
 					expires_at > clock_timestamp() AS unexpired
 			`;
 			if (!link) throw new Error("Recap share link insert invariant failed");
-			for (const item of selected) {
+			for (const target of selected) {
 				await tx`
 					INSERT INTO event_recap_external_share_fields (
 						link_id, root_event_id, recap_version, recap_ordinal,
 						source_type, source_id, source_version, field_name
 					) VALUES (
-						${input.id}, ${rootEventId}, ${input.recapVersion}, ${item.ordinal},
-						${item.sourceType}, ${item.sourceId}, ${item.sourceVersion}, 'body'
+						${input.id}, ${rootEventId}, ${input.recapVersion}, ${target.item.ordinal},
+						${target.item.sourceType}, ${target.item.sourceId}, ${target.item.sourceVersion},
+						${target.storageFieldName}
 					)
 				`;
 			}
@@ -2431,11 +2499,15 @@ export class PostgresEventRepository implements EventRepository {
 			if (root.status !== "active") throw notFound();
 			const link = await findRecapShareLinkByTokenHash(tx, tokenHash);
 			if (!link || link.rootEventId !== candidate.rootEventId) throw notFound();
-			const context = await validateRecapExternalShareLinkPolicy(tx, link);
+			const context = await validateRecapExternalShareLinkPolicy(
+				tx,
+				link,
+				this.recapCaptions?.enabled === true,
+			);
 			return recapExternalShare(
 				context.snapshot,
 				context.validation,
-				context.fields,
+				context.targets,
 			);
 		});
 	}
@@ -5623,6 +5695,13 @@ async function readPublishReadiness(
 		)?.capabilities;
 		const capability =
 			rootCapabilities?.length === 1 ? rootCapabilities[0] : null;
+		const [storedCapability] = capability
+			? await tx<{ version: number }[]>`
+				SELECT version FROM event_capabilities
+				WHERE root_event_id = ${rootEventId} AND event_id = ${rootEventId}
+					AND capability_type = ${capability.type}
+			`
+			: [];
 		reasons.push({
 			code: "EVENT_CAPABILITY_REQUIRED",
 			path: "capabilities",
@@ -5632,6 +5711,7 @@ async function readPublishReadiness(
 						meta: {
 							eventId: rootEventId,
 							capabilityType: capability.type,
+							capabilityVersion: storedCapability?.version ?? 0,
 						},
 					}
 				: {}),
@@ -5659,6 +5739,7 @@ async function readPublishReadiness(
 	return {
 		schemaVersion: 1,
 		rootEventId,
+		rootStatus: context.status,
 		rootVersion: context.rootVersion,
 		rootRevision: context.rootRevision,
 		template:
@@ -5997,29 +6078,157 @@ async function requireCurrentPublishedRecap(
 }
 
 function recapExternalFieldKey(field: RecapExternalField) {
-	return `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:${field.field}`;
+	return field.field === "body"
+		? `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:body`
+		: `${field.sourceType}:${field.sourceId}:${field.sourceVersion}:caption:${field.fieldRef}`;
 }
 
-function requireRecapExternalField(
+function captionStorageFieldName(attachmentId: string, version: number) {
+	return `caption|${attachmentId}|${version}`;
+}
+
+function parseCaptionStorageFieldName(fieldName: string) {
+	const match = /^caption\|(att_[A-Za-z0-9._:-]{1,96})\|([1-9][0-9]*)$/.exec(
+		fieldName,
+	);
+	if (!match) return null;
+	const version = Number(match[2]);
+	return match[1] && Number.isSafeInteger(version) && version > 0
+		? { attachmentId: match[1], version }
+		: null;
+}
+
+async function readRecapCaptions(
+	tx: Tx,
+	rootEventId: string,
+	sourceRootRevision: string,
+	entryIds: string[],
+): Promise<RecapCaptionRow[]> {
+	if (!entryIds.length) return [];
+	return tx<RecapCaptionRow[]>`
+		SELECT id, target_entry_id AS "targetEntryId", version,
+			root_revision::text AS "rootRevision", created_by AS "createdBy", caption
+		FROM event_attachments
+		WHERE root_event_id = ${rootEventId} AND target_type = 'feed_entry'
+			AND target_entry_id IN ${tx(entryIds)} AND caption IS NOT NULL
+			AND root_revision <= ${sourceRootRevision}::bigint
+		ORDER BY target_entry_id, root_revision, id
+	`;
+}
+
+async function requireRecapExternalField(
+	tx: Tx,
 	items: RecapItemRow[],
+	snapshot: RecapSnapshotRow,
 	field: RecapExternalField,
-) {
+	captionPolicy?: {
+		enabled: boolean;
+		fieldRefs: RecapCaptionFieldRefCodec;
+	},
+): Promise<RecapExternalFieldTarget> {
 	const item = items.find(
 		(candidate) =>
 			candidate.sourceType === field.sourceType &&
 			candidate.sourceId === field.sourceId &&
 			candidate.sourceVersion === field.sourceVersion,
 	);
-	if (!item || field.field !== "body" || item.sourceBody === null)
+	if (!item) throw notFound();
+	if (field.field === "body") {
+		if (item.sourceBody === null) throw notFound();
+		return { field: "body", item, storageFieldName: "body" };
+	}
+	if (item.sourceType !== "feedEntry" || !captionPolicy?.enabled)
 		throw notFound();
-	return item;
+	const captions = await readRecapCaptions(
+		tx,
+		snapshot.rootEventId,
+		snapshot.sourceRootRevision,
+		[item.sourceId],
+	);
+	const match = captions.find((attachment) =>
+		captionPolicy.fieldRefs.matches(
+			field.fieldRef,
+			captionFieldRefInput(snapshot, item, attachment),
+		),
+	);
+	if (!match) throw notFound();
+	const attachmentOrdinal = captions.indexOf(match);
+	return {
+		field: "caption",
+		item,
+		attachment: match,
+		attachmentOrdinal,
+		storageFieldName: captionStorageFieldName(match.id, match.version),
+	};
+}
+
+function captionFieldRefInput(
+	snapshot: RecapSnapshotRow,
+	item: RecapItemRow,
+	attachment: RecapCaptionRow,
+): RecapCaptionFieldRefInput {
+	if (item.sourceType !== "feedEntry")
+		throw new Error("Caption source invariant");
+	return {
+		rootEventId: snapshot.rootEventId,
+		recapVersion: snapshot.version,
+		recapOrdinal: item.ordinal,
+		sourceType: "feedEntry",
+		sourceId: item.sourceId,
+		sourceVersion: item.sourceVersion,
+		attachmentId: attachment.id,
+		attachmentVersion: attachment.version,
+		attachmentRootRevision: attachment.rootRevision,
+		attachmentCreatedBy: attachment.createdBy,
+		caption: attachment.caption,
+	};
+}
+
+async function requireStoredRecapExternalField(
+	tx: Tx,
+	items: RecapItemRow[],
+	snapshot: RecapSnapshotRow,
+	field: RecapExternalShareFieldRow,
+): Promise<RecapExternalFieldTarget> {
+	const item = items.find(
+		(candidate) =>
+			candidate.ordinal === field.recapOrdinal &&
+			candidate.sourceType === field.sourceType &&
+			candidate.sourceId === field.sourceId &&
+			candidate.sourceVersion === field.sourceVersion,
+	);
+	if (!item) throw notFound();
+	if (field.fieldName === "body") {
+		if (item.sourceBody === null) throw notFound();
+		return { field: "body", item, storageFieldName: "body" };
+	}
+	const stored = parseCaptionStorageFieldName(field.fieldName);
+	if (!stored || item.sourceType !== "feedEntry") throw notFound();
+	const [attachment] = await tx<RecapCaptionRow[]>`
+		SELECT id, target_entry_id AS "targetEntryId", version,
+			root_revision::text AS "rootRevision", created_by AS "createdBy", caption
+		FROM event_attachments
+		WHERE root_event_id = ${snapshot.rootEventId}
+			AND target_type = 'feed_entry' AND target_entry_id = ${item.sourceId}
+			AND id = ${stored.attachmentId} AND version = ${stored.version}
+			AND caption IS NOT NULL
+			AND root_revision <= ${snapshot.sourceRootRevision}::bigint
+	`;
+	if (!attachment) throw notFound();
+	return {
+		field: "caption",
+		item,
+		attachment,
+		attachmentOrdinal: -1,
+		storageFieldName: field.fieldName,
+	};
 }
 
 async function requireRecapExternalGrantAuthority(
 	tx: Tx,
 	actor: Actor,
 	rootEventId: string,
-	item: RecapItemRow,
+	target: RecapExternalFieldTarget,
 	authority: "author" | "manager",
 ) {
 	const membership = await requireMembership(tx, rootEventId, actor);
@@ -6027,10 +6236,15 @@ async function requireRecapExternalGrantAuthority(
 		if (!isManager(membership.role)) throw notFound();
 		return membership;
 	}
+	const authorId =
+		target.field === "caption"
+			? target.attachment.createdBy
+			: target.item.consentedByUserId;
+	if (target.item.sourceType !== "feedEntry" || authorId !== actor.id)
+		throw notFound();
 	if (
-		item.sourceType !== "feedEntry" ||
-		item.consentedByUserId !== actor.id ||
-		item.consentMembershipVersion !== membership.version
+		target.field === "body" &&
+		target.item.consentMembershipVersion !== membership.version
 	)
 		throw notFound();
 	return membership;
@@ -6040,23 +6254,24 @@ async function findLatestRecapExternalGrantDecision(
 	tx: Tx,
 	rootEventId: string,
 	recapVersion: number,
-	item: RecapItemRow,
+	target: RecapExternalFieldTarget,
 	authority: "author" | "manager",
 ) {
 	const [decision] = await tx<RecapExternalGrantDecisionRow[]>`
 		SELECT grant_decision.id::text AS id, recap_ordinal AS "recapOrdinal",
 			source_type AS "sourceType", source_id AS "sourceId",
-			source_version AS "sourceVersion", authority, decision,
+			source_version AS "sourceVersion", field_name AS "fieldName",
+			authority, decision,
 			actor_id AS "actorId",
 			actor_membership_version AS "actorMembershipVersion"
 		FROM event_recap_external_grant_decisions grant_decision
 		WHERE root_event_id = ${rootEventId}
 			AND recap_version = ${recapVersion}
-			AND recap_ordinal = ${item.ordinal}
-			AND source_type = ${item.sourceType}
-			AND source_id = ${item.sourceId}
-			AND source_version = ${item.sourceVersion}
-			AND field_name = 'body' AND authority = ${authority}
+			AND recap_ordinal = ${target.item.ordinal}
+			AND source_type = ${target.item.sourceType}
+			AND source_id = ${target.item.sourceId}
+			AND source_version = ${target.item.sourceVersion}
+			AND field_name = ${target.storageFieldName} AND authority = ${authority}
 		ORDER BY grant_decision.id DESC LIMIT 1
 	`;
 	return decision ?? null;
@@ -6068,22 +6283,38 @@ async function readRecapExternalConsent(
 	membership: MembershipRecord,
 	rootEventId: string,
 	recapVersion: number,
+	snapshot: RecapSnapshotRow,
 	items: RecapItemRow[],
+	captionPolicy?: {
+		enabled: boolean;
+		fieldRefs: RecapCaptionFieldRefCodec;
+	},
 ): Promise<EventRecapExternalConsent> {
+	const captions = captionPolicy?.enabled
+		? await readRecapCaptions(
+				tx,
+				rootEventId,
+				snapshot.sourceRootRevision,
+				items.flatMap((item) =>
+					item.sourceType === "feedEntry" ? [item.sourceId] : [],
+				),
+			)
+		: [];
 	const decisions = await tx<RecapExternalGrantReadRow[]>`
 		WITH latest AS (
-			SELECT DISTINCT ON (recap_ordinal, authority)
+			SELECT DISTINCT ON (recap_ordinal, field_name, authority)
 				grant_decision.id, recap_ordinal, source_type, source_id,
-				source_version, authority, decision, actor_id,
+				source_version, field_name, authority, decision, actor_id,
 				actor_membership_version
 			FROM event_recap_external_grant_decisions grant_decision
 			WHERE root_event_id = ${rootEventId}
-				AND recap_version = ${recapVersion} AND field_name = 'body'
-			ORDER BY recap_ordinal, authority, grant_decision.id DESC
+				AND recap_version = ${recapVersion}
+			ORDER BY recap_ordinal, field_name, authority, grant_decision.id DESC
 		)
 		SELECT latest.id::text AS id, recap_ordinal AS "recapOrdinal",
 			source_type AS "sourceType", source_id AS "sourceId",
-			source_version AS "sourceVersion", authority, decision,
+			source_version AS "sourceVersion", field_name AS "fieldName",
+			authority, decision,
 			actor_id AS "actorId",
 			actor_membership_version AS "actorMembershipVersion",
 			membership.role AS "membershipRole",
@@ -6093,49 +6324,109 @@ async function readRecapExternalConsent(
 		LEFT JOIN event_memberships membership
 			ON membership.root_event_id = ${rootEventId}
 			AND membership.user_id = latest.actor_id
-		ORDER BY recap_ordinal, authority
+		ORDER BY recap_ordinal, field_name, authority
 	`;
 	const byFieldAuthority = new Map(
 		decisions.map((decision) => [
-			`${decision.recapOrdinal}:${decision.authority}`,
+			`${decision.recapOrdinal}:${decision.fieldName}:${decision.authority}`,
 			decision,
 		]),
 	);
+	const captionsByEntry = new Map<string, RecapCaptionRow[]>();
+	for (const caption of captions) {
+		const current = captionsByEntry.get(caption.targetEntryId) ?? [];
+		current.push(caption);
+		captionsByEntry.set(caption.targetEntryId, current);
+	}
 	return {
 		fields: items.flatMap((item) => {
-			if (item.sourceBody === null) return [];
-			const requiredAuthorities: Array<"author" | "manager"> =
-				item.sourceType === "feedEntry" ? ["author", "manager"] : ["manager"];
-			const actorCanDecide: Array<"author" | "manager"> = [];
-			if (
-				item.sourceType === "feedEntry" &&
-				item.consentedByUserId === actor.id &&
-				item.consentMembershipVersion === membership.version
-			)
-				actorCanDecide.push("author");
-			if (isManager(membership.role)) actorCanDecide.push("manager");
-			return [
-				{
+			const targets: RecapExternalFieldTarget[] = [];
+			if (item.sourceBody !== null)
+				targets.push({ field: "body", item, storageFieldName: "body" });
+			for (const [attachmentOrdinal, attachment] of (
+				captionsByEntry.get(item.sourceId) ?? []
+			).entries())
+				targets.push({
+					field: "caption",
+					item,
+					attachment,
+					attachmentOrdinal,
+					storageFieldName: captionStorageFieldName(
+						attachment.id,
+						attachment.version,
+					),
+				});
+			return targets.map((target) => {
+				const requiredAuthorities: Array<"author" | "manager"> =
+					target.field === "body" && item.sourceType === "event"
+						? ["manager"]
+						: ["author", "manager"];
+				const actorCanDecide: Array<"author" | "manager"> = [];
+				const authorId =
+					target.field === "caption"
+						? target.attachment.createdBy
+						: item.consentedByUserId;
+				if (
+					item.sourceType === "feedEntry" &&
+					authorId === actor.id &&
+					(target.field === "caption" ||
+						item.consentMembershipVersion === membership.version)
+				)
+					actorCanDecide.push("author");
+				if (isManager(membership.role)) actorCanDecide.push("manager");
+				const common = {
 					ordinal: item.ordinal,
-					field: "body" as const,
 					requiredAuthorities,
 					authorDecision: currentRecapExternalDecision(
-						item,
-						byFieldAuthority.get(`${item.ordinal}:author`) ?? null,
+						target,
+						byFieldAuthority.get(
+							`${item.ordinal}:${target.storageFieldName}:author`,
+						) ?? null,
 					),
 					managerDecision: currentRecapExternalDecision(
-						item,
-						byFieldAuthority.get(`${item.ordinal}:manager`) ?? null,
+						target,
+						byFieldAuthority.get(
+							`${item.ordinal}:${target.storageFieldName}:manager`,
+						) ?? null,
 					),
 					actorCanDecide,
-				},
-			];
+				};
+				return target.field === "body"
+					? { ...common, field: "body" as const }
+					: {
+							...common,
+							field: "caption" as const,
+							fieldRef: issueCaptionFieldRef(
+								captionPolicy,
+								snapshot,
+								item,
+								target.attachment,
+							),
+							attachmentOrdinal: target.attachmentOrdinal,
+							attachmentVersion: target.attachment.version,
+							caption: target.attachment.caption,
+						};
+			});
 		}),
 	};
 }
 
-function currentRecapExternalDecision(
+function issueCaptionFieldRef(
+	captionPolicy:
+		| { enabled: boolean; fieldRefs: RecapCaptionFieldRefCodec }
+		| undefined,
+	snapshot: RecapSnapshotRow,
 	item: RecapItemRow,
+	attachment: RecapCaptionRow,
+) {
+	if (!captionPolicy?.enabled) throw new Error("Caption policy invariant");
+	return captionPolicy.fieldRefs.issue(
+		captionFieldRefInput(snapshot, item, attachment),
+	);
+}
+
+function currentRecapExternalDecision(
+	target: RecapExternalFieldTarget,
 	decision: RecapExternalGrantReadRow | null,
 ): RecapExternalDecisionState {
 	if (
@@ -6147,9 +6438,14 @@ function currentRecapExternalDecision(
 		return decision.membershipRole && isManager(decision.membershipRole)
 			? decision.decision
 			: "unknown";
-	return item.sourceType === "feedEntry" &&
-		item.consentedByUserId === decision.actorId &&
-		item.consentMembershipVersion === decision.actorMembershipVersion
+	const authorId =
+		target.field === "caption"
+			? target.attachment.createdBy
+			: target.item.consentedByUserId;
+	return target.item.sourceType === "feedEntry" &&
+		authorId === decision.actorId &&
+		(target.field === "caption" ||
+			target.item.consentMembershipVersion === decision.actorMembershipVersion)
 		? decision.decision
 		: "unknown";
 }
@@ -6157,7 +6453,7 @@ function currentRecapExternalDecision(
 async function isCurrentRecapExternalGrant(
 	tx: Tx,
 	rootEventId: string,
-	item: RecapItemRow,
+	target: RecapExternalFieldTarget,
 	decision: RecapExternalGrantDecisionRow | null,
 ) {
 	if (decision?.decision !== "grant") return false;
@@ -6173,10 +6469,15 @@ async function isCurrentRecapExternalGrant(
 	)
 		return false;
 	if (decision.authority === "manager") return isManager(membership.role);
+	const authorId =
+		target.field === "caption"
+			? target.attachment.createdBy
+			: target.item.consentedByUserId;
 	return (
-		item.sourceType === "feedEntry" &&
-		item.consentedByUserId === decision.actorId &&
-		item.consentMembershipVersion === membership.version
+		target.item.sourceType === "feedEntry" &&
+		authorId === decision.actorId &&
+		(target.field === "caption" ||
+			target.item.consentMembershipVersion === membership.version)
 	);
 }
 
@@ -6184,37 +6485,38 @@ async function validateRecapExternalFieldGrants(
 	tx: Tx,
 	rootEventId: string,
 	recapVersion: number,
-	item: RecapItemRow,
+	target: RecapExternalFieldTarget,
 ) {
 	const manager = await findLatestRecapExternalGrantDecision(
 		tx,
 		rootEventId,
 		recapVersion,
-		item,
+		target,
 		"manager",
 	);
-	if (!(await isCurrentRecapExternalGrant(tx, rootEventId, item, manager)))
+	if (!(await isCurrentRecapExternalGrant(tx, rootEventId, target, manager)))
 		throw notFound();
-	if (item.sourceType === "event") return;
+	if (target.field === "body" && target.item.sourceType === "event") return;
 	const author = await findLatestRecapExternalGrantDecision(
 		tx,
 		rootEventId,
 		recapVersion,
-		item,
+		target,
 		"author",
 	);
-	if (!(await isCurrentRecapExternalGrant(tx, rootEventId, item, author)))
+	if (!(await isCurrentRecapExternalGrant(tx, rootEventId, target, author)))
 		throw notFound();
 }
 
 async function readRecapExternalShareFields(tx: Tx, link: RecapShareLinkRow) {
 	return tx<RecapExternalShareFieldRow[]>`
 		SELECT recap_ordinal AS "recapOrdinal", source_type AS "sourceType",
-			source_id AS "sourceId", source_version AS "sourceVersion"
+			source_id AS "sourceId", source_version AS "sourceVersion",
+			field_name AS "fieldName"
 		FROM event_recap_external_share_fields
 		WHERE link_id = ${link.id} AND root_event_id = ${link.rootEventId}
-			AND recap_version = ${link.recapVersion} AND field_name = 'body'
-		ORDER BY recap_ordinal
+			AND recap_version = ${link.recapVersion}
+		ORDER BY recap_ordinal, field_name
 	`;
 }
 
@@ -6252,6 +6554,7 @@ async function validateRecapShareLinkPolicy(tx: Tx, link: RecapShareLinkRow) {
 async function validateRecapExternalShareLinkPolicy(
 	tx: Tx,
 	link: RecapShareLinkRow,
+	captionsEnabled: boolean,
 ) {
 	const context = await validateRecapShareLinkBase(
 		tx,
@@ -6260,30 +6563,37 @@ async function validateRecapExternalShareLinkPolicy(
 	);
 	const fields = await readRecapExternalShareFields(tx, link);
 	if (!fields.length || fields.length > RECAP_SOURCE_LIMIT) throw notFound();
+	if (
+		!captionsEnabled &&
+		fields.some((field) => parseCaptionStorageFieldName(field.fieldName))
+	)
+		throw notFound();
+	const targets: RecapExternalFieldTarget[] = [];
 	for (const field of fields) {
-		const item = requireRecapExternalField(context.validation.items, {
-			sourceType: field.sourceType,
-			sourceId: field.sourceId,
-			sourceVersion: field.sourceVersion,
-			field: "body",
-		});
-		if (item.ordinal !== field.recapOrdinal) throw notFound();
+		const target = await requireStoredRecapExternalField(
+			tx,
+			context.validation.items,
+			context.snapshot,
+			field,
+		);
 		await validateRecapExternalFieldGrants(
 			tx,
 			link.rootEventId,
 			link.recapVersion,
-			item,
+			target,
 		);
+		targets.push(target);
 	}
-	return { ...context, fields };
+	return { ...context, targets };
 }
 
 async function validateAnyRecapShareLinkPolicy(
 	tx: Tx,
 	link: RecapShareLinkRow,
+	captionsEnabled: boolean,
 ) {
 	return link.projectionConsent === "exact-fields-reviewed-v1"
-		? validateRecapExternalShareLinkPolicy(tx, link)
+		? validateRecapExternalShareLinkPolicy(tx, link, captionsEnabled)
 		: validateRecapShareLinkPolicy(tx, link);
 }
 
@@ -6311,16 +6621,29 @@ function recapShare(
 function recapExternalShare(
 	snapshot: RecapSnapshotRow,
 	validation: Awaited<ReturnType<typeof validateRecapSnapshot>>,
-	fields: RecapExternalShareFieldRow[],
+	targets: RecapExternalFieldTarget[],
 ): EventRecapExternalShare {
-	const selected = new Set(fields.map((field) => field.recapOrdinal));
 	const projected = validation.items.flatMap((item) => {
-		const bodySelected = selected.has(item.ordinal);
-		if (item.sourceType === "feedEntry" && !bodySelected) return [];
+		const itemTargets = targets.filter(
+			(target) => target.item.ordinal === item.ordinal,
+		);
+		const bodySelected = itemTargets.some((target) => target.field === "body");
+		const captions = itemTargets
+			.flatMap((target) =>
+				target.field === "caption" ? [target.attachment] : [],
+			)
+			.sort(
+				(left, right) =>
+					Number(BigInt(left.rootRevision) - BigInt(right.rootRevision)) ||
+					left.id.localeCompare(right.id),
+			)
+			.map((attachment) => attachment.caption);
+		if (item.sourceType === "feedEntry" && !bodySelected && !captions.length)
+			return [];
 		const title = item.sourceType === "event" ? item.sourceTitle : null;
 		const body = bodySelected ? item.sourceBody : null;
-		if (title === null && body === null) throw notFound();
-		return [{ title, body }];
+		if (title === null && body === null && !captions.length) throw notFound();
+		return [{ title, body, captions }];
 	});
 	return {
 		title: snapshot.title,

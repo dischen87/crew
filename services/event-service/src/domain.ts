@@ -34,6 +34,7 @@ export type EventPublishReadinessReason = ErrorDetail & {
 export type EventPublishReadiness = {
 	schemaVersion: 1;
 	rootEventId: string;
+	rootStatus: EventStatus;
 	rootVersion: number;
 	rootRevision: string;
 	template: { id: string; version: number } | null;

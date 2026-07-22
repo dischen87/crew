@@ -13,6 +13,7 @@ import { createApp } from "./app";
 import type { EventInput } from "./domain";
 import { EventNotificationPayloadCodec } from "./event-notification-payload";
 import { PostgresEventRepository } from "./postgres-repository";
+import { RecapCaptionFieldRefCodec } from "./recap-caption-field-ref";
 import type { EventRecap, EventRecapExternalConsent } from "./recap-domain";
 import { RecapShareTokenCodec } from "./recap-share-token";
 import { EventService } from "./service";
@@ -33,6 +34,12 @@ const notificationPayloads = () =>
 		kid: "event-recap-test-v1",
 		key: "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
 	});
+const captionFieldRefCurrentKey =
+	"event-recap-caption-field-ref-current-key-2026";
+const captionFieldRefNextKey =
+	"event-recap-caption-field-ref-next-key-2026-rotation";
+const captionFieldRefs = () =>
+	new RecapCaptionFieldRefCodec(captionFieldRefCurrentKey);
 
 type ErrorBody = {
 	error: {
@@ -73,6 +80,7 @@ type PublicExternalRecapBody = {
 			ordinal: number;
 			title: string | null;
 			body: string | null;
+			captions: string[];
 		}>;
 	};
 };
@@ -1917,6 +1925,7 @@ describe("privacy-safe event recaps against PostgreSQL 17", () => {
 						ordinal: 0,
 						title: "Private source-safe event title",
 						body: "Published event description",
+						captions: [],
 					},
 				],
 			},
@@ -2211,8 +2220,9 @@ describe("privacy-safe event recaps against PostgreSQL 17", () => {
 							ordinal: 0,
 							title: "Private source-safe event title",
 							body: null,
+							captions: [],
 						},
-						{ ordinal: 1, title: null, body: feedMarker },
+						{ ordinal: 1, title: null, body: feedMarker, captions: [] },
 					],
 				},
 			},
@@ -2281,6 +2291,613 @@ describe("privacy-safe event recaps against PostgreSQL 17", () => {
 		);
 		expect(normalizeError(drifted.body)).toEqual(normalizeError(unknown.body));
 		expect(JSON.stringify(drifted.body)).not.toContain(feedMarker);
+	});
+
+	test("shares only exact caption text after distinct attachment-creator and manager grants", async () => {
+		const rootEventId = "evt_recap_external_caption01";
+		const feedBody = "PRIVATE_FEED_BODY_NOT_SELECTED_01";
+		const caption = "Caption approved for this recap";
+		const attachmentId = "att_recap_external_caption01";
+		const uploadId = "upl_recap_external_caption01";
+		const mediaHash = "d".repeat(64);
+		const objectKey = `committed/${rootEventId}/${attachmentId}/${uploadId}/${mediaHash}`;
+		const siblingAttachmentId = "att_recap_external_caption02";
+		const siblingUploadId = "upl_recap_external_caption02";
+		const siblingCaption = "Sibling caption must stay separately bound";
+		const siblingHash = "e".repeat(64);
+		await createPublishedRoot(rootEventId);
+		await addMember(rootEventId, organizer.id, "organizer");
+		await addMember(rootEventId, participant.id, "participant");
+		await addMember(rootEventId, viewer.id, "organizer");
+		const feed = await service.createFeedEntry(organizer, rootEventId, {
+			id: "fed_recap_external_caption01",
+			eventId: rootEventId,
+			parentEntryId: null,
+			kind: "message",
+			body: feedBody,
+		});
+		await insertCaptionAttachmentFixture({
+			attachmentId,
+			caption,
+			createdBy: participant.id,
+			feedEntryId: feed.id,
+			mediaHash,
+			rootEventId,
+			uploadId,
+		});
+		await insertCaptionAttachmentFixture({
+			attachmentId: siblingAttachmentId,
+			caption: siblingCaption,
+			createdBy: participant.id,
+			feedEntryId: feed.id,
+			mediaHash: siblingHash,
+			rootEventId,
+			uploadId: siblingUploadId,
+		});
+		const generated = await generateRequest(
+			organizer.id,
+			rootEventId,
+			"recap-external-caption-generate",
+			await currentRootRevision(rootEventId),
+			[
+				{
+					type: "event",
+					sourceId: rootEventId,
+					sourceVersion: 1,
+					consentBasis: "event-publication",
+				},
+				{
+					type: "feedEntry",
+					sourceId: feed.id,
+					sourceVersion: feed.version,
+					consentBasis: "source-author",
+				},
+			],
+		);
+		expect(generated.status).toBe(201);
+		const draft = ((await generated.json()) as RecapBody).recap;
+		expect(
+			(
+				await publishRequest(
+					owner.id,
+					rootEventId,
+					"recap-external-caption-publish",
+					draft.version,
+					draft.lifecycleVersion,
+				)
+			).status,
+		).toBe(200);
+
+		const ownerRead = (await (
+			await getRecap(owner.id, rootEventId)
+		).json()) as RecapReadBody;
+		expect(ownerRead.externalConsent?.fields[2]).toEqual({
+			ordinal: 1,
+			field: "caption",
+			fieldRef: expect.stringMatching(/^rcf_[A-Za-z0-9_-]{43}$/),
+			attachmentOrdinal: 0,
+			attachmentVersion: 1,
+			caption,
+			requiredAuthorities: ["author", "manager"],
+			authorDecision: "unknown",
+			managerDecision: "unknown",
+			actorCanDecide: ["manager"],
+		});
+		const ownerCaption = ownerRead.externalConsent?.fields[2];
+		if (ownerCaption?.field !== "caption")
+			throw new Error("Caption consent fixture missing");
+		const ownerSiblingCaption = ownerRead.externalConsent?.fields[3];
+		if (ownerSiblingCaption?.field !== "caption")
+			throw new Error("Sibling caption consent fixture missing");
+		expect(ownerSiblingCaption).toMatchObject({
+			attachmentOrdinal: 1,
+			attachmentVersion: 1,
+			caption: siblingCaption,
+		});
+		expect(ownerSiblingCaption.fieldRef).not.toBe(ownerCaption.fieldRef);
+		const captionField = {
+			sourceType: "feedEntry",
+			sourceId: feed.id,
+			sourceVersion: feed.version,
+			field: "caption",
+			fieldRef: ownerCaption.fieldRef,
+		} as const;
+		const consentText = JSON.stringify(ownerRead.externalConsent);
+		for (const forbidden of [
+			attachmentId,
+			siblingAttachmentId,
+			participant.id,
+			mediaHash,
+			siblingHash,
+			objectKey,
+			"image/jpeg",
+			"byteCount",
+			"mediaUrl",
+		])
+			expect(consentText).not.toContain(forbidden);
+		await expectPostgresError(
+			sql`UPDATE event_attachments SET root_revision = root_revision - 1 WHERE id = ${siblingAttachmentId}`,
+			"23514",
+		);
+		await expectPostgresError(
+			sql`UPDATE event_attachments SET caption = 'caption drift' WHERE id = ${attachmentId}`,
+			"23514",
+		);
+		await expectPostgresError(
+			sql`UPDATE event_attachments SET version = 2 WHERE id = ${attachmentId}`,
+			"23514",
+		);
+		await expectPostgresError(
+			sql`UPDATE event_attachments SET id = 'att_recap_external_replacement' WHERE id = ${attachmentId}`,
+			"23514",
+		);
+		const stableRead = (await (
+			await getRecap(owner.id, rootEventId)
+		).json()) as RecapReadBody;
+		expect(
+			stableRead.externalConsent?.fields
+				.filter((candidate) => candidate.field === "caption")
+				.map((candidate) => candidate.fieldRef),
+		).toEqual([ownerCaption.fieldRef, ownerSiblingCaption.fieldRef]);
+		const creatorRead = (await (
+			await getRecap(participant.id, rootEventId)
+		).json()) as RecapReadBody;
+		expect(creatorRead.externalConsent?.fields[2]?.actorCanDecide).toEqual([
+			"author",
+		]);
+		expect(
+			(
+				await decideExternalGrant(
+					organizer.id,
+					rootEventId,
+					"caption-wrong-creator",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await decideExternalGrant(viewer.id, rootEventId, "caption-manager", {
+					recapVersion: draft.version,
+					...captionField,
+					authority: "manager",
+					decision: "grant",
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await createExternalShareLink(
+					owner.id,
+					rootEventId,
+					"caption-link-missing-creator",
+					{ recapVersion: draft.version, fields: [captionField] },
+				)
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-creator",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(200);
+		const createdResponse = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-link-complete",
+			{ recapVersion: draft.version, fields: [captionField] },
+		);
+		expect(createdResponse.status).toBe(201);
+		const created = (await createdResponse.json()) as RecapShareLinkBody;
+		const publicResponse = await resolveExternalShareLink(created.token);
+		expect(publicResponse.status).toBe(200);
+		expect((await publicResponse.json()) as PublicExternalRecapBody).toEqual({
+			recap: {
+				title: "Private source-safe event title",
+				items: [
+					{
+						ordinal: 0,
+						title: "Private source-safe event title",
+						body: null,
+						captions: [],
+					},
+					{ ordinal: 1, title: null, body: null, captions: [caption] },
+				],
+			},
+		});
+		const publicText = await (
+			await resolveExternalShareLink(created.token)
+		).text();
+		for (const forbidden of [
+			feedBody,
+			siblingCaption,
+			attachmentId,
+			participant.id,
+			mediaHash,
+			objectKey,
+			"image/jpeg",
+			"sourceId",
+			"attachmentVersion",
+		])
+			expect(publicText).not.toContain(forbidden);
+
+		installService(undefined, false);
+		const disabledRead = (await (
+			await getRecap(owner.id, rootEventId)
+		).json()) as RecapReadBody;
+		expect(
+			disabledRead.externalConsent?.fields.every(
+				(candidate) => candidate.field === "body",
+			),
+		).toBe(true);
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		const disabledReplay = await decideExternalGrant(
+			viewer.id,
+			rootEventId,
+			"caption-manager",
+			{
+				recapVersion: draft.version,
+				...captionField,
+				authority: "manager",
+				decision: "grant",
+			},
+		);
+		expect(disabledReplay.status).toBe(404);
+		expect(disabledReplay.headers.get("idempotency-replayed")).toBeNull();
+		const disabledShareReplay = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-link-complete",
+			{ recapVersion: draft.version, fields: [captionField] },
+		);
+		expect(disabledShareReplay.status).toBe(404);
+		expect(disabledShareReplay.headers.get("idempotency-replayed")).toBeNull();
+		expect(
+			(
+				await createExternalShareLink(
+					owner.id,
+					rootEventId,
+					"caption-link-disabled",
+					{ recapVersion: draft.version, fields: [captionField] },
+				)
+			).status,
+		).toBe(404);
+		installService();
+		await sql`
+			UPDATE event_memberships SET status = 'removed', version = version + 1
+			WHERE root_event_id = ${rootEventId} AND user_id = ${participant.id}
+		`;
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		await sql`
+			UPDATE event_memberships SET status = 'active', version = version + 1
+			WHERE root_event_id = ${rootEventId} AND user_id = ${participant.id}
+		`;
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-creator-reactivated",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(200);
+		expect((await resolveExternalShareLink(created.token)).status).toBe(200);
+		await sql`
+			UPDATE event_memberships SET role = 'participant', version = version + 1
+			WHERE root_event_id = ${rootEventId} AND user_id = ${viewer.id}
+		`;
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		await sql`
+			UPDATE event_memberships SET role = 'organizer', version = version + 1
+			WHERE root_event_id = ${rootEventId} AND user_id = ${viewer.id}
+		`;
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		expect(
+			(
+				await decideExternalGrant(
+					viewer.id,
+					rootEventId,
+					"caption-manager-reactivated",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "manager",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(200);
+		expect((await resolveExternalShareLink(created.token)).status).toBe(200);
+
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-creator-withdraw",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "withdraw",
+					},
+				)
+			).status,
+		).toBe(200);
+		expect((await resolveExternalShareLink(created.token)).status).toBe(404);
+		expect(
+			(
+				await decideExternalGrant(
+					owner.id,
+					rootEventId,
+					"caption-media-denied",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						field: "media",
+						authority: "manager",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(400);
+		const [stored] = await sql<{ fieldName: string }[]>`
+			SELECT field_name AS "fieldName"
+			FROM event_recap_external_share_fields
+			WHERE link_id = ${created.shareLink.id}
+		`;
+		expect(stored?.fieldName).toBe(`caption|${attachmentId}|1`);
+		expect(stored?.fieldName).not.toContain(caption);
+		await expectPostgresError(
+			sql`
+				INSERT INTO event_recap_external_grant_decisions (
+					root_event_id, recap_version, recap_ordinal, source_type,
+					source_id, source_version, field_name, authority, decision,
+					actor_id, actor_membership_version
+				) VALUES (
+					${rootEventId}, ${draft.version}, 0, 'event', ${rootEventId}, 1,
+					${`caption|${attachmentId}|1`}, 'manager', 'grant', ${owner.id}, 1
+				)
+			`,
+			"23514",
+		);
+		await expectPostgresError(
+			sql`
+				INSERT INTO event_recap_external_share_fields (
+					link_id, root_event_id, recap_version, recap_ordinal,
+					source_type, source_id, source_version, field_name
+				) VALUES (
+					${created.shareLink.id}, ${rootEventId}, ${draft.version}, 0,
+					'event', ${rootEventId}, 1, ${`caption|${attachmentId}|1`}
+				)
+			`,
+			"23514",
+		);
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-creator-before-retention-delete",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(200);
+		expect((await resolveExternalShareLink(created.token)).status).toBe(200);
+		const siblingField = {
+			sourceType: "feedEntry",
+			sourceId: feed.id,
+			sourceVersion: feed.version,
+			field: "caption",
+			fieldRef: ownerSiblingCaption.fieldRef,
+		} as const;
+		for (const [actorId, authority, key] of [
+			[participant.id, "author", "caption-sibling-creator"],
+			[owner.id, "manager", "caption-sibling-manager"],
+		] as const)
+			expect(
+				(
+					await decideExternalGrant(actorId, rootEventId, key, {
+						recapVersion: draft.version,
+						...siblingField,
+						authority,
+						decision: "grant",
+					})
+				).status,
+			).toBe(200);
+		const siblingLinkResponse = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-sibling-link",
+			{ recapVersion: draft.version, fields: [siblingField] },
+		);
+		expect(siblingLinkResponse.status).toBe(201);
+		const siblingLink =
+			(await siblingLinkResponse.json()) as RecapShareLinkBody;
+		expect((await resolveExternalShareLink(siblingLink.token)).status).toBe(
+			200,
+		);
+		expect(
+			await sql`DELETE FROM event_attachments WHERE id = ${attachmentId} RETURNING id`,
+		).toHaveLength(1);
+		expect((await resolveExternalShareLink(siblingLink.token)).status).toBe(
+			200,
+		);
+		const afterSiblingReorder = (await (
+			await getRecap(owner.id, rootEventId)
+		).json()) as RecapReadBody;
+		const stableSibling = afterSiblingReorder.externalConsent?.fields.find(
+			(candidate) =>
+				candidate.field === "caption" && candidate.caption === siblingCaption,
+		);
+		expect(stableSibling).toMatchObject({
+			field: "caption",
+			fieldRef: ownerSiblingCaption.fieldRef,
+			attachmentOrdinal: 0,
+		});
+		expect(
+			afterSiblingReorder.externalConsent?.fields.some(
+				(candidate) =>
+					candidate.field === "caption" && candidate.caption === caption,
+			),
+		).toBe(false);
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-deleted-sibling",
+					{
+						recapVersion: draft.version,
+						...captionField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(404);
+
+		installService(
+			undefined,
+			true,
+			new RecapCaptionFieldRefCodec(
+				captionFieldRefNextKey,
+				captionFieldRefCurrentKey,
+			),
+		);
+		const overlapRead = (await (
+			await getRecap(owner.id, rootEventId)
+		).json()) as RecapReadBody;
+		const currentSibling = overlapRead.externalConsent?.fields.find(
+			(candidate) =>
+				candidate.field === "caption" && candidate.caption === siblingCaption,
+		);
+		if (currentSibling?.field !== "caption")
+			throw new Error("Rotated sibling caption fixture missing");
+		expect(currentSibling.fieldRef).not.toBe(siblingField.fieldRef);
+		expect(
+			(
+				await decideExternalGrant(
+					participant.id,
+					rootEventId,
+					"caption-sibling-creator",
+					{
+						recapVersion: draft.version,
+						...siblingField,
+						authority: "author",
+						decision: "grant",
+					},
+				)
+			).headers.get("idempotency-replayed"),
+		).toBe("true");
+		const overlapShareReplay = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-sibling-link",
+			{ recapVersion: draft.version, fields: [siblingField] },
+		);
+		expect(overlapShareReplay.status).toBe(201);
+		expect(overlapShareReplay.headers.get("idempotency-replayed")).toBe("true");
+		expect((await resolveExternalShareLink(siblingLink.token)).status).toBe(
+			200,
+		);
+
+		installService(
+			undefined,
+			true,
+			new RecapCaptionFieldRefCodec(captionFieldRefNextKey),
+		);
+		const retiredGrantReplay = await decideExternalGrant(
+			participant.id,
+			rootEventId,
+			"caption-sibling-creator",
+			{
+				recapVersion: draft.version,
+				...siblingField,
+				authority: "author",
+				decision: "grant",
+			},
+		);
+		expect(retiredGrantReplay.status).toBe(404);
+		expect(retiredGrantReplay.headers.get("idempotency-replayed")).toBeNull();
+		const retiredShareReplay = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-sibling-link",
+			{ recapVersion: draft.version, fields: [siblingField] },
+		);
+		expect(retiredShareReplay.status).toBe(201);
+		expect(retiredShareReplay.headers.get("idempotency-replayed")).toBe("true");
+		expect((await resolveExternalShareLink(siblingLink.token)).status).toBe(
+			200,
+		);
+		const currentSiblingField = {
+			...siblingField,
+			fieldRef: currentSibling.fieldRef,
+		};
+		expect(
+			(
+				await decideExternalGrant(
+					owner.id,
+					rootEventId,
+					"caption-current-manager",
+					{
+						recapVersion: draft.version,
+						...currentSiblingField,
+						authority: "manager",
+						decision: "grant",
+					},
+				)
+			).status,
+		).toBe(200);
+		const currentLinkResponse = await createExternalShareLink(
+			owner.id,
+			rootEventId,
+			"caption-current-link",
+			{ recapVersion: draft.version, fields: [currentSiblingField] },
+		);
+		expect(currentLinkResponse.status).toBe(201);
+		const currentLink =
+			(await currentLinkResponse.json()) as RecapShareLinkBody;
+		expect((await resolveExternalShareLink(siblingLink.token)).status).toBe(
+			404,
+		);
+		expect((await resolveExternalShareLink(currentLink.token)).status).toBe(
+			200,
+		);
+		expect(
+			await sql`DELETE FROM event_attachments WHERE id = ${siblingAttachmentId} RETURNING id`,
+		).toHaveLength(1);
+		expect((await resolveExternalShareLink(currentLink.token)).status).toBe(
+			404,
+		);
+		installService();
 	});
 
 	test("reads current exact-body consent without identities and fails closed on membership, recap or source drift", async () => {
@@ -2665,9 +3282,16 @@ function auth(user: string) {
 	return { Authorization: `Bearer ${user}` };
 }
 
-function installService(recapShareTokens?: RecapShareTokenCodec) {
+function installService(
+	recapShareTokens?: RecapShareTokenCodec,
+	captionsEnabled = true,
+	fieldRefs = captionFieldRefs(),
+) {
 	service = new EventService(
-		new PostgresEventRepository(sql, notificationPayloads()),
+		new PostgresEventRepository(sql, notificationPayloads(), false, {
+			enabled: captionsEnabled,
+			fieldRefs,
+		}),
 		invitationKey,
 		undefined,
 		undefined,
@@ -2960,6 +3584,16 @@ async function errorResponse(responsePromise: Response | Promise<Response>) {
 	};
 }
 
+async function expectPostgresError(query: PromiseLike<unknown>, code: string) {
+	let caught: unknown;
+	try {
+		await query;
+	} catch (error) {
+		caught = error;
+	}
+	expect(caught).toMatchObject({ code });
+}
+
 function normalizeError(body: ErrorBody) {
 	const { requestId: _requestId, ...error } = body.error;
 	return error;
@@ -2989,6 +3623,68 @@ async function currentRootRevision(rootEventId: string) {
 	`;
 	if (!root) throw new Error("Missing test root");
 	return root.revision;
+}
+
+async function insertCaptionAttachmentFixture(input: {
+	attachmentId: string;
+	caption: string;
+	createdBy: string;
+	feedEntryId: string;
+	mediaHash: string;
+	rootEventId: string;
+	uploadId: string;
+}) {
+	const objectKey = `committed/${input.rootEventId}/${input.attachmentId}/${input.uploadId}/${input.mediaHash}`;
+	await sql`
+		INSERT INTO event_attachment_uploads (
+			id, attachment_id, root_event_id, target_entry_id, created_by,
+			quarantine_object_key, content_type, byte_count, sha256,
+			grant_kid, grant_ciphertext, state, expires_at, committed_at
+		) VALUES (
+			${input.uploadId}, ${input.attachmentId}, ${input.rootEventId},
+			${input.feedEntryId}, ${input.createdBy},
+			${`quarantine/${input.rootEventId}/${input.attachmentId}/${input.uploadId}/12-${input.mediaHash}`},
+			'image/jpeg', 12, ${input.mediaHash}, 'recap-caption-v1', ${"x".repeat(32)},
+			'committed', clock_timestamp() + interval '1 hour', clock_timestamp()
+		)
+	`;
+	const [revision] = await sql<{ revision: string }[]>`
+		UPDATE event_roots SET revision = revision + 1
+		WHERE root_event_id = ${input.rootEventId}
+		RETURNING revision::text AS revision
+	`;
+	if (!revision) throw new Error("Caption attachment revision fixture failed");
+	await sql`
+		INSERT INTO event_attachments (
+			id, root_event_id, target_entry_id, upload_id, created_by, object_key,
+			content_type, byte_count, sha256, caption, root_revision
+		) VALUES (
+			${input.attachmentId}, ${input.rootEventId}, ${input.feedEntryId},
+			${input.uploadId}, ${input.createdBy}, ${objectKey}, 'image/jpeg', 12,
+			${input.mediaHash}, ${input.caption}, ${revision.revision}::bigint
+		)
+	`;
+	await sql`
+		INSERT INTO event_root_changes (
+			root_event_id, root_revision, ordinal, entity_type, entity_id,
+			operation, entity_version, data, audience
+		) VALUES (
+			${input.rootEventId}, ${revision.revision}::bigint, 0,
+			'attachment', ${input.attachmentId}, 'upsert', 1,
+			${sql.json({
+				id: input.attachmentId,
+				rootEventId: input.rootEventId,
+				target: { entityType: "feedEntry", entityId: input.feedEntryId },
+				contentType: "image/jpeg",
+				byteCount: 12,
+				sha256: input.mediaHash,
+				caption: input.caption,
+				version: 1,
+				createdAt: new Date().toISOString(),
+			} as never)},
+			'members'
+		)
+	`;
 }
 
 async function addMember(

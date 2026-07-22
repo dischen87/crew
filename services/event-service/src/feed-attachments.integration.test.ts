@@ -12,6 +12,7 @@ import sharp from "sharp";
 import { migrate } from "../scripts/migrate";
 import { createApp } from "./app";
 import { PostgresAttachmentJobRepository } from "./attachment-jobs";
+import { attachmentCommittedKey } from "./attachment-keys";
 import { createAttachmentWorker } from "./attachment-worker";
 import type { EventInput } from "./domain";
 import { EventNotificationPayloadCodec } from "./event-notification-payload";
@@ -36,6 +37,10 @@ const owner = { id: userId(101) };
 const participant = { id: userId(102) };
 const viewer = { id: userId(103) };
 const outsider = { id: userId(104) };
+const attachmentApiAclRole = "crew_attachment_cleanup_api_acl_test";
+const attachmentWorkerAclRole = "crew_attachment_cleanup_worker_acl_test";
+const attachmentOtherWorkerAclRole =
+	"crew_attachment_cleanup_other_worker_acl_test";
 
 let sql: Sql;
 let store: MemoryObjectStore;
@@ -45,6 +50,37 @@ let png: Buffer;
 beforeAll(async () => {
 	sql = postgres(databaseUrl, { max: 12 });
 	await migrate(sql);
+	await sql.unsafe(`
+		DO $body$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${attachmentApiAclRole}') THEN
+				CREATE ROLE ${attachmentApiAclRole} NOLOGIN;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${attachmentWorkerAclRole}') THEN
+				CREATE ROLE ${attachmentWorkerAclRole} NOLOGIN;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${attachmentOtherWorkerAclRole}') THEN
+				CREATE ROLE ${attachmentOtherWorkerAclRole} NOLOGIN;
+			END IF;
+		END;
+		$body$;
+		GRANT USAGE ON SCHEMA public TO
+			${attachmentApiAclRole}, ${attachmentWorkerAclRole},
+			${attachmentOtherWorkerAclRole};
+		GRANT SELECT, INSERT ON event_attachments TO ${attachmentApiAclRole};
+		GRANT SELECT, UPDATE ON event_attachment_verify_jobs,
+			event_attachment_cleanup_jobs, event_attachment_uploads
+			TO ${attachmentWorkerAclRole};
+		GRANT SELECT ON event_attachments, event_feedback_attachments
+			TO ${attachmentWorkerAclRole};
+		REVOKE EXECUTE ON FUNCTION delete_claimed_feedback_attachment(
+			TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT
+		) FROM ${attachmentApiAclRole}, ${attachmentWorkerAclRole},
+			${attachmentOtherWorkerAclRole};
+		GRANT EXECUTE ON FUNCTION delete_claimed_feedback_attachment(
+			TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT
+		) TO ${attachmentWorkerAclRole};
+	`);
 	png = await sharp({
 		create: {
 			width: 2,
@@ -89,6 +125,14 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+	await sql.unsafe(`
+		DROP OWNED BY ${attachmentApiAclRole};
+		DROP OWNED BY ${attachmentWorkerAclRole};
+		DROP OWNED BY ${attachmentOtherWorkerAclRole};
+		DROP ROLE ${attachmentApiAclRole};
+		DROP ROLE ${attachmentWorkerAclRole};
+		DROP ROLE ${attachmentOtherWorkerAclRole};
+	`);
 	await sql.end();
 });
 
@@ -731,6 +775,383 @@ describe("durable event feed and attachments", () => {
 		expect(
 			await sql`
 				SELECT id FROM event_attachments WHERE id = ${linked.attachment.id}
+			`,
+		).toHaveLength(1);
+	});
+
+	test("limits committed feedback cleanup to the exact fenced worker claim", async () => {
+		const rootEventId = "evt_feedbackacl01";
+		const foreignRootEventId = "evt_feedbackacl02";
+		await service.createRoot(owner, rootInput(rootEventId, "published"));
+		await service.createRoot(owner, rootInput(foreignRootEventId, "published"));
+		await addMember(rootEventId, participant.id, "participant");
+		await service.createFeedEntry(participant, rootEventId, {
+			id: "fed_feedbackacl01",
+			eventId: null,
+			parentEntryId: null,
+			kind: "message",
+			body: "Attachment ACL fixture",
+		});
+
+		const commitFeed = async () => {
+			const upload = await service.prepareAttachmentUpload(participant, {
+				rootEventId,
+				attachmentId: "att_feedbackacl_feed",
+				targetEntryId: "fed_feedbackacl01",
+				contentType: "image/png",
+				byteCount: png.byteLength,
+				sha256: sha256(png),
+			});
+			store.put(upload.quarantineObjectKey, png);
+			await service.ensureAttachmentVerification(
+				participant,
+				rootEventId,
+				upload.id,
+			);
+			await attachmentWorker("acl-feed-verify").tick();
+			const attachment = await service.commitAttachment(
+				participant,
+				rootEventId,
+				upload.id,
+				"Feed caption",
+			);
+			return { upload, attachment };
+		};
+		const commitFeedback = async (feedbackId: string, attachmentId: string) => {
+			const upload = await service.prepareAttachmentUpload(participant, {
+				rootEventId,
+				attachmentId,
+				target: { kind: "feedback", feedbackId },
+				contentType: "image/png",
+				byteCount: png.byteLength,
+				sha256: sha256(png),
+			});
+			store.put(upload.quarantineObjectKey, png);
+			await service.ensureAttachmentVerification(
+				participant,
+				rootEventId,
+				upload.id,
+			);
+			await attachmentWorker(`acl-${attachmentId}-verify`).tick();
+			const attachment = await service.commitAttachment(
+				participant,
+				rootEventId,
+				upload.id,
+				"Feedback caption",
+			);
+			return {
+				upload,
+				attachment,
+				committedObjectKey: attachmentCommittedKey(upload),
+			};
+		};
+
+		const feed = await commitFeed();
+		const orphan = await commitFeedback(
+			"fbk_feedbackacl_orphan",
+			"att_feedbackacl_orphan",
+		);
+		const linked = await commitFeedback(
+			"fbk_feedbackacl_linked",
+			"att_feedbackacl_linked",
+		);
+		await service.createFeedback(participant, {
+			id: "fbk_feedbackacl_linked",
+			title: "Linked screenshot",
+			body: "The cleanup function must retain this attachment.",
+			visibility: "private",
+			rootEventId,
+			eventId: rootEventId,
+			screenKey: "feedback.compose",
+			diagnostics: null,
+			attachmentIds: [linked.attachment.id],
+		});
+
+		const jobs = new PostgresAttachmentJobRepository(sql);
+		const claim = async (uploadId: string, workerId: string) => {
+			await sql`
+				UPDATE event_attachment_uploads
+				SET created_at = now() - interval '25 hours'
+				WHERE id = ${uploadId}
+			`;
+			await sql`
+				UPDATE event_attachment_cleanup_jobs SET available_at = now()
+				WHERE upload_id = ${uploadId}
+			`;
+			return jobs.claimCleanup({
+				workerId,
+				leaseSeconds: 30,
+				retentionSeconds: 86_400,
+				maxAttempts: 3,
+			});
+		};
+		const orphanClaim = await claim(orphan.upload.id, "acl-orphan-worker");
+		expect(orphanClaim?.upload.id).toBe(orphan.upload.id);
+		const linkedClaim = await claim(linked.upload.id, "acl-linked-worker");
+		expect(linkedClaim?.upload.id).toBe(linked.upload.id);
+		expect(linkedClaim?.committedObjectKey).toBeNull();
+
+		const [privileges] = await sql<
+			{
+				workerSelect: boolean;
+				workerInsert: boolean;
+				workerUpdate: boolean;
+				workerDelete: boolean;
+				workerTruncate: boolean;
+				workerReferences: boolean;
+				workerTrigger: boolean;
+				workerMaintain: boolean;
+				workerExecute: boolean;
+				apiSelect: boolean;
+				apiInsert: boolean;
+				apiUpdate: boolean;
+				apiDelete: boolean;
+				apiTruncate: boolean;
+				apiReferences: boolean;
+				apiTrigger: boolean;
+				apiMaintain: boolean;
+				apiExecute: boolean;
+				otherExecute: boolean;
+				publicExecute: boolean;
+			}[]
+		>`
+			SELECT
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'SELECT'
+				) AS "workerSelect",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'INSERT'
+				) AS "workerInsert",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'UPDATE'
+				) AS "workerUpdate",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'DELETE'
+				) AS "workerDelete",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'TRUNCATE'
+				) AS "workerTruncate",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'REFERENCES'
+				) AS "workerReferences",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'TRIGGER'
+				) AS "workerTrigger",
+				has_table_privilege(
+					${attachmentWorkerAclRole}, 'event_attachments', 'MAINTAIN'
+				) AS "workerMaintain",
+				has_function_privilege(
+					${attachmentWorkerAclRole},
+					'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)',
+					'EXECUTE'
+				) AS "workerExecute",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'SELECT'
+				) AS "apiSelect",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'INSERT'
+				) AS "apiInsert",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'UPDATE'
+				) AS "apiUpdate",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'DELETE'
+				) AS "apiDelete",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'TRUNCATE'
+				) AS "apiTruncate",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'REFERENCES'
+				) AS "apiReferences",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'TRIGGER'
+				) AS "apiTrigger",
+				has_table_privilege(
+					${attachmentApiAclRole}, 'event_attachments', 'MAINTAIN'
+				) AS "apiMaintain",
+				has_function_privilege(
+					${attachmentApiAclRole},
+					'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)',
+					'EXECUTE'
+				) AS "apiExecute",
+				has_function_privilege(
+					${attachmentOtherWorkerAclRole},
+					'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)',
+					'EXECUTE'
+				) AS "otherExecute",
+				has_function_privilege(
+					'public',
+					'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)',
+					'EXECUTE'
+				) AS "publicExecute"
+		`;
+		expect(privileges).toEqual({
+			workerSelect: true,
+			workerInsert: false,
+			workerUpdate: false,
+			workerDelete: false,
+			workerTruncate: false,
+			workerReferences: false,
+			workerTrigger: false,
+			workerMaintain: false,
+			workerExecute: true,
+			apiSelect: true,
+			apiInsert: true,
+			apiUpdate: false,
+			apiDelete: false,
+			apiTruncate: false,
+			apiReferences: false,
+			apiTrigger: false,
+			apiMaintain: false,
+			apiExecute: false,
+			otherExecute: false,
+			publicExecute: false,
+		});
+
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentWorkerAclRole,
+					(tx) => tx`INSERT INTO event_attachments DEFAULT VALUES`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentWorkerAclRole,
+					(tx) =>
+						tx`DELETE FROM event_attachments WHERE id = ${feed.attachment.id}`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentWorkerAclRole,
+					(tx) => tx`TRUNCATE TABLE event_attachments`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await sql`SELECT id FROM event_attachments WHERE id = ${feed.attachment.id}`,
+		).toHaveLength(1);
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentWorkerAclRole,
+					(tx) =>
+						tx`
+						UPDATE event_attachments SET object_key = object_key
+						WHERE id = ${feed.attachment.id}
+					`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentApiAclRole,
+					(tx) =>
+						tx`DELETE FROM event_attachments WHERE id = ${feed.attachment.id}`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await sql`SELECT id FROM event_attachments WHERE id = ${feed.attachment.id}`,
+		).toHaveLength(1);
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentApiAclRole,
+					(tx) => tx`TRUNCATE TABLE event_attachments`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await sql`SELECT id FROM event_attachments WHERE id = ${feed.attachment.id}`,
+		).toHaveLength(1);
+		expect(
+			await databaseErrorCode(() =>
+				asDatabaseRole(
+					attachmentApiAclRole,
+					(tx) =>
+						tx`
+						UPDATE event_attachments SET object_key = object_key
+						WHERE id = ${feed.attachment.id}
+					`,
+				),
+			),
+		).toBe("42501");
+		expect(
+			await sql`SELECT id FROM event_attachments WHERE id = ${feed.attachment.id}`,
+		).toHaveLength(1);
+
+		const invoke = (
+			role: string,
+			input: {
+				uploadId: string;
+				rootEventId: string;
+				attachmentId: string;
+				objectKey: string;
+				workerId: string;
+				fence: string;
+			},
+		) =>
+			asDatabaseRole(role, async (tx) => {
+				const [result] = await tx<{ removed: boolean }[]>`
+					SELECT delete_claimed_feedback_attachment(
+						${input.uploadId}, ${input.rootEventId}, ${input.attachmentId},
+						${input.objectKey}, ${input.workerId}, ${input.fence}::bigint
+					) AS removed
+				`;
+				return result?.removed ?? false;
+			});
+		const orphanInput = {
+			uploadId: orphan.upload.id,
+			rootEventId,
+			attachmentId: orphan.attachment.id,
+			objectKey: orphan.committedObjectKey,
+			workerId: orphanClaim?.workerId as string,
+			fence: orphanClaim?.fence as string,
+		};
+		expect(
+			await databaseErrorCode(() => invoke(attachmentApiAclRole, orphanInput)),
+		).toBe("42501");
+		expect(
+			await databaseErrorCode(() =>
+				invoke(attachmentOtherWorkerAclRole, orphanInput),
+			),
+		).toBe("42501");
+		expect(
+			await invoke(attachmentWorkerAclRole, {
+				...orphanInput,
+				rootEventId: foreignRootEventId,
+			}),
+		).toBe(false);
+		expect(
+			await invoke(attachmentWorkerAclRole, {
+				...orphanInput,
+				uploadId: linked.upload.id,
+			}),
+		).toBe(false);
+		expect(
+			await invoke(attachmentWorkerAclRole, {
+				uploadId: linked.upload.id,
+				rootEventId,
+				attachmentId: linked.attachment.id,
+				objectKey: linked.committedObjectKey,
+				workerId: linkedClaim?.workerId as string,
+				fence: linkedClaim?.fence as string,
+			}),
+		).toBe(false);
+		expect(await invoke(attachmentWorkerAclRole, orphanInput)).toBe(true);
+		expect(await invoke(attachmentWorkerAclRole, orphanInput)).toBe(false);
+		expect(
+			await sql`
+				SELECT id FROM event_attachments
+				WHERE id IN (${orphan.attachment.id}, ${linked.attachment.id})
+				ORDER BY id
 			`,
 		).toHaveLength(1);
 	});
@@ -1626,37 +2047,19 @@ describe("durable event feed and attachments", () => {
 		expect(store.committedKeys).toEqual(committedKeys);
 		expect(await finalizeIdempotencyRecord()).toBe(finalizedIdempotency);
 
-		await sql`
-			UPDATE event_attachments
-			SET upload_id = ${blockedUpload.id},
-				object_key = 'committed/' || root_event_id || '/' || id || '/' ||
-					${blockedUpload.id} || '/' || sha256
-			WHERE root_event_id = ${rootEventId} AND id = 'att_authreplay1'
-		`;
+		let attachmentMutationError: unknown;
 		try {
-			const wrongBindingReplay = await finalize(
-				replayUpload.id,
-				"auth-finalize-replay-0001",
-				"auth-finalize-replay-wrong-binding",
-			);
-			expect(wrongBindingReplay.status).toBe(404);
-			expect(wrongBindingReplay.headers.get("idempotency-replayed")).toBeNull();
-			expect(wrongBindingReplay.headers.get("x-request-id")).toBe(
-				"auth-finalize-replay-wrong-binding",
-			);
-			const wrongBindingBody = await wrongBindingReplay.json();
-			expect(wrongBindingBody).toMatchObject({ error: { code: "NOT_FOUND" } });
-			expect(wrongBindingBody).not.toEqual(finalizedBody);
-			expect(JSON.stringify(wrongBindingBody)).not.toContain("att_authreplay1");
-		} finally {
 			await sql`
 				UPDATE event_attachments
-				SET upload_id = ${replayUpload.id},
+				SET upload_id = ${blockedUpload.id},
 					object_key = 'committed/' || root_event_id || '/' || id || '/' ||
-						${replayUpload.id} || '/' || sha256
+						${blockedUpload.id} || '/' || sha256
 				WHERE root_event_id = ${rootEventId} AND id = 'att_authreplay1'
 			`;
+		} catch (error) {
+			attachmentMutationError = error;
 		}
+		expect(attachmentMutationError).toMatchObject({ code: "23514" });
 		expect(store.verifyCalls).toBe(verificationCalls);
 		expect(store.downloadCalls).toBe(downloadCalls);
 		expect(store.committedKeys).toEqual(committedKeys);
@@ -1813,7 +2216,9 @@ class MemoryObjectStore implements PrivateObjectStore {
 		};
 		return {
 			method: "POST",
-			url: `https://objects.test/upload?key=${encodeURIComponent(input.key)}&grant-secret=upload`,
+			url: `https://objects.test/upload?key=${encodeURIComponent(
+				input.key,
+			)}&grant-secret=upload`,
 			fields: {
 				...fields,
 				Policy: Buffer.from(
@@ -1876,7 +2281,9 @@ class MemoryObjectStore implements PrivateObjectStore {
 			throw new ObjectVerificationError("ATTACHMENT_OBJECT_MISSING");
 		return {
 			method: "GET",
-			url: `https://objects.test/download?key=${encodeURIComponent(input.key)}&grant-secret=download`,
+			url: `https://objects.test/download?key=${encodeURIComponent(
+				input.key,
+			)}&grant-secret=download`,
 			headers: {},
 			expiresAt: input.expiresAt,
 		};
@@ -1966,6 +2373,26 @@ function attachmentWorker(
 		new PostgresAttachmentJobRepository(sql),
 		store,
 	);
+}
+
+async function asDatabaseRole<T>(
+	role: string,
+	operation: (tx: Sql) => Promise<T>,
+) {
+	return sql.begin(async (transaction) => {
+		const tx = transaction as unknown as Sql;
+		await tx.unsafe(`SET LOCAL ROLE ${role}`);
+		return operation(tx);
+	}) as Promise<T>;
+}
+
+async function databaseErrorCode(operation: () => Promise<unknown>) {
+	try {
+		await operation();
+		return null;
+	} catch (error) {
+		return (error as { code?: string }).code ?? null;
+	}
 }
 
 function sha256(value: Uint8Array) {

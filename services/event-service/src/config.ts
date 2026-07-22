@@ -5,6 +5,10 @@ const DEVELOPMENT_DATABASE_URL = "postgres://localhost/crew_event";
 const DEVELOPMENT_INVITATION_KEY = "crew-development-invitation-key-change-me";
 const DEVELOPMENT_RECAP_SHARE_TOKEN_KEY =
 	"crew-development-recap-share-token-key-change-me";
+const DEVELOPMENT_RECAP_CAPTION_FIELD_REF_KEY =
+	"crew-development-recap-caption-field-ref-key-change-me";
+const COMPOSE_LOCAL_RECAP_CAPTION_FIELD_REF_KEY =
+	"crew-local-recap-caption-field-ref-key-change-2026";
 const DEVELOPMENT_GRANT_KEY = "crew-development-upload-grant-key-change-me";
 const DEVELOPMENT_OBJECT_ENDPOINT = "http://localhost:9000";
 const DEVELOPMENT_OBJECT_ACCESS_KEY = "crew-development-object-access";
@@ -38,6 +42,11 @@ const ConfigSchema = z
 		recapShareTokenPreviousKeyId: KeyId.optional(),
 		recapShareTokenPreviousKey: z.string().min(32).optional(),
 		recapShareTokenPreviousNotAfter: z.coerce.date().optional(),
+		recapExternalCaptionsEnabled: z
+			.enum(["true", "false"])
+			.transform((value) => value === "true"),
+		recapCaptionFieldRefCurrentKey: z.string().min(32),
+		recapCaptionFieldRefPreviousKey: z.string().min(32).optional(),
 		syncCursorKey: z.string().min(32),
 		userServiceJwksUrl: z.string().url(),
 		userTokenIssuer: z.string().min(1),
@@ -136,6 +145,41 @@ const ConfigSchema = z
 				code: z.ZodIssueCode.custom,
 				path: ["recapShareTokenCurrentKey"],
 				message: "Recap-share tokens must have a separate secret domain",
+			});
+		}
+		if (
+			value.recapCaptionFieldRefPreviousKey ===
+			value.recapCaptionFieldRefCurrentKey
+		) {
+			context.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["recapCaptionFieldRefPreviousKey"],
+				message:
+					"Current and previous recap-caption field-ref keys must differ",
+			});
+		}
+		const otherSecretDomains = [
+			value.invitationKey,
+			value.invitationPreviousKey,
+			value.recapShareTokenCurrentKey,
+			value.recapShareTokenPreviousKey,
+			value.syncCursorKey,
+			value.attachmentGrantKey,
+			value.attachmentPreviousGrantKey,
+			value.notificationPayloadCurrentKey,
+			value.placeSearchCursorKey,
+			value.placeCandidateServiceCurrentKey,
+			value.placeCandidateServicePreviousKey,
+		];
+		if (
+			otherSecretDomains.includes(value.recapCaptionFieldRefCurrentKey) ||
+			(value.recapCaptionFieldRefPreviousKey !== undefined &&
+				otherSecretDomains.includes(value.recapCaptionFieldRefPreviousKey))
+		) {
+			context.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["recapCaptionFieldRefCurrentKey"],
+				message: "Recap-caption field refs must have a separate secret domain",
 			});
 		}
 		if (
@@ -309,6 +353,32 @@ const ConfigSchema = z
 						"RECAP_SHARE_TOKEN_CURRENT_KEY must be configured in production",
 				});
 			}
+			if (value.recapExternalCaptionsEnabled) {
+				const insecureKeys = [
+					DEVELOPMENT_RECAP_CAPTION_FIELD_REF_KEY,
+					COMPOSE_LOCAL_RECAP_CAPTION_FIELD_REF_KEY,
+				];
+				for (const [path, envName, key] of [
+					[
+						"recapCaptionFieldRefCurrentKey",
+						"RECAP_CAPTION_FIELD_REF_CURRENT_KEY",
+						value.recapCaptionFieldRefCurrentKey,
+					],
+					[
+						"recapCaptionFieldRefPreviousKey",
+						"RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY",
+						value.recapCaptionFieldRefPreviousKey,
+					],
+				] as const) {
+					if (key !== undefined && insecureKeys.includes(key)) {
+						context.addIssue({
+							code: z.ZodIssueCode.custom,
+							path: [path],
+							message: `${envName} must not use development or Compose-local material when captions are enabled in production`,
+						});
+					}
+				}
+			}
 			if (value.syncCursorKey === DEVELOPMENT_SYNC_CURSOR_KEY) {
 				context.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -411,6 +481,14 @@ export function loadConfig(
 		recapShareTokenPreviousKey: optionalEnv(env.RECAP_SHARE_TOKEN_PREVIOUS_KEY),
 		recapShareTokenPreviousNotAfter: optionalEnv(
 			env.RECAP_SHARE_TOKEN_PREVIOUS_NOT_AFTER,
+		),
+		recapExternalCaptionsEnabled:
+			env.RECAP_EXTERNAL_CAPTIONS_ENABLED ?? "false",
+		recapCaptionFieldRefCurrentKey:
+			env.RECAP_CAPTION_FIELD_REF_CURRENT_KEY ??
+			DEVELOPMENT_RECAP_CAPTION_FIELD_REF_KEY,
+		recapCaptionFieldRefPreviousKey: optionalEnv(
+			env.RECAP_CAPTION_FIELD_REF_PREVIOUS_KEY,
 		),
 		syncCursorKey: env.SYNC_CURSOR_KEY ?? DEVELOPMENT_SYNC_CURSOR_KEY,
 		userServiceJwksUrl:
