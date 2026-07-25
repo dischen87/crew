@@ -196,8 +196,12 @@ export async function setCommunityFeedbackVote(
 	feedbackId: string,
 	present: boolean,
 ): Promise<CommunityFeedbackResolution> {
-	await requireActiveMembership(tx, actor, rootEventId);
-	const canonicalId = await lockCanonicalGroup(tx, rootEventId, feedbackId);
+	const canonicalId = await lockCanonicalGroup(
+		tx,
+		actor,
+		rootEventId,
+		feedbackId,
+	);
 	await tx`
 		DELETE FROM event_feedback_votes vote
 		USING event_feedback member
@@ -230,8 +234,12 @@ export async function addCommunityFeedbackComment(
 	feedbackId: string,
 	input: { id: string; body: string },
 ): Promise<CommunityFeedbackResolution> {
-	await requireActiveMembership(tx, actor, rootEventId);
-	const canonicalId = await lockCanonicalGroup(tx, rootEventId, feedbackId);
+	const canonicalId = await lockCanonicalGroup(
+		tx,
+		actor,
+		rootEventId,
+		feedbackId,
+	);
 	await tx`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))`;
 	const [existing] = await tx<
 		{ feedbackId: string; authorUserId: string; body: string }[]
@@ -277,8 +285,12 @@ export async function setCommunityFeedbackFollow(
 	feedbackId: string,
 	followed: boolean,
 ): Promise<CommunityFeedbackFollow> {
-	await requireActiveMembership(tx, actor, rootEventId);
-	const canonicalId = await lockCanonicalGroup(tx, rootEventId, feedbackId);
+	const canonicalId = await lockCanonicalGroup(
+		tx,
+		actor,
+		rootEventId,
+		feedbackId,
+	);
 	await tx`
 		DELETE FROM event_feedback_follows follow
 		USING event_feedback member
@@ -309,7 +321,7 @@ export async function assertCommunityFeedbackAccess(
 	feedbackId: string,
 	expectedCanonicalId: string,
 ) {
-	await requireActiveMembership(tx, actor, rootEventId);
+	await requireActiveMembership(tx, actor, rootEventId, true);
 	const canonicalId = await requiredCanonicalId(tx, rootEventId, feedbackId);
 	if (canonicalId !== expectedCanonicalId) throw notFound();
 }
@@ -467,10 +479,12 @@ function followedGroup(tx: Sql, actorId: string, rootEventId: string) {
 
 async function lockCanonicalGroup(
 	tx: Sql,
+	actor: Actor,
 	rootEventId: string,
 	feedbackId: string,
 ) {
 	await lockFeedbackDuplicateScopes(tx, [rootEventId]);
+	await requireActiveMembership(tx, actor, rootEventId, true);
 	const canonicalId = await requiredCanonicalId(tx, rootEventId, feedbackId);
 	await tx`
 		SELECT id FROM event_feedback
@@ -512,9 +526,11 @@ async function requireActiveMembership(
 	tx: Sql,
 	actor: Actor,
 	rootEventId: string,
+	requireNextWrite = false,
 ) {
-	const [membership] = await tx<{ userId: string }[]>`
-		SELECT membership.user_id AS "userId"
+	const [membership] = await tx<{ userId: string; ownershipState: string }[]>`
+		SELECT membership.user_id AS "userId",
+			root.ownership_state AS "ownershipState"
 		FROM event_roots root
 		JOIN event_memberships membership
 			ON membership.root_event_id = root.root_event_id
@@ -524,6 +540,11 @@ async function requireActiveMembership(
 		FOR SHARE OF root, membership
 	`;
 	if (!membership) throw notFound();
+	if (requireNextWrite && membership.ownershipState !== "next")
+		throw conflict(
+			"ROOT_WRITE_NOT_AUTHORITATIVE",
+			"Crew Next is not authoritative for this event root.",
+		);
 }
 
 function slice<T>(rows: T[], limit: number) {

@@ -130,8 +130,8 @@ to be edited after publication:
   "toReleaseId": "<captured-previous-release-id>",
   "databaseReleaseId": "<target-database-release-id>",
   "verifiedAt": "2026-07-20T09:59:00.000Z",
-  "evidence": "ci:crew-next:rollback-compatibility:<target-release-id>",
-  "evidenceSha256": "<sha256-of-the-evidence-bundle>"
+  "evidence": "ci:github-actions:<workflow-run-id>:<artifact-id>",
+  "evidenceSha256": "<github-artifact-sha256-without-the-sha256-prefix>"
 }
 ```
 
@@ -139,6 +139,22 @@ The evidence bundle must show the previous Gateway, User/Event APIs and worker
 images starting against databases migrated and granted by the target release,
 then passing the same private readiness and public Gateway contract probes. A
 human assertion is not accepted as `ci:` evidence.
+
+The manual `.github/workflows/crew-next-rollback-compatibility.yml` workflow
+currently proves only source contracts. It requires the exact `main` revision
+and its successful Crew Next CI run, validates the canonical release pair,
+generates the dry-run rollback plan, and publishes the exactly named artifact
+`crew-next-rollback-compatibility-<target-release-id>`. Its manifest and receipt
+are explicitly marked `validation-only/source-contract`; the receipt binds the
+GitHub run/artifact IDs and artifact digest, while `manifest.sha256` binds the
+manifest to the dry-run plan.
+
+This source-contract artifact is useful diagnostics but is not the proof
+described above. The staging preflight downloads and verifies it, then rejects
+its validation-only scope. It remains fail-closed until an approved staging
+executor has actually run the previous images against the target database and
+recorded the observed forward/rollback states and required probes. Never relabel
+or manually promote the source-contract receipt into `rollback-proof.json`.
 
 ## Generate the forward plan
 

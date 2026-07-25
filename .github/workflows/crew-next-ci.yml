@@ -117,6 +117,12 @@ jobs:
           bunx biome check .github/ci
           bun test ./.github/ci
 
+      - name: Check release and migration tooling
+        run: |
+          set -euo pipefail
+          bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts scripts/crew-next-staging-preflight.ts scripts/legacy-root-migration.ts scripts/legacy-root-migration.test.ts
+          bun test scripts/crew-next-release.test.ts scripts/legacy-root-migration.test.ts
+
       - name: Prove MinIO attachment ingress policy
         run: |
           set -euo pipefail

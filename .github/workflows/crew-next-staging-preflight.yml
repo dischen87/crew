@@ -1,0 +1,129 @@
+name: Crew Next staging preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_release:
+        description: Canonical target release JSON
+        required: true
+        type: string
+      previous_release:
+        description: Captured previous release JSON
+        required: true
+        type: string
+      rollback_proof:
+        description: Immutable rollback compatibility proof JSON
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: crew-next-staging-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate immutable staging release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      CREW_NEXT_STAGING_REGISTRY: ${{ vars.CREW_NEXT_STAGING_REGISTRY }}
+      CREW_NEXT_STAGING_EXECUTOR: ${{ vars.CREW_NEXT_STAGING_EXECUTOR }}
+      TARGET_RELEASE: ${{ inputs.target_release }}
+      PREVIOUS_RELEASE: ${{ inputs.previous_release }}
+      ROLLBACK_PROOF: ${{ inputs.rollback_proof }}
+    steps:
+      - name: Check out the dispatched revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Set up Bun 1.3.9
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.3.9"
+
+      - name: Read configured environment and immutable rollback evidence
+        id: evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$GITHUB_REF" = refs/heads/main
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          printf '%s' "$ROLLBACK_PROOF" > "$RUNNER_TEMP/rollback-proof.json"
+          read -r evidence_run_id evidence_artifact_id < <(
+            jq -er '
+              .evidence
+              | capture("^ci:github-actions:(?<run>[1-9][0-9]*):(?<artifact>[1-9][0-9]*)$")
+              | "\(.run) \(.artifact)"
+            ' "$RUNNER_TEMP/rollback-proof.json"
+          )
+          {
+            echo "run_id=$evidence_run_id"
+            echo "artifact_id=$evidence_artifact_id"
+          } >> "$GITHUB_OUTPUT"
+          curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/crew-next-staging" \
+            > "$RUNNER_TEMP/crew-next-staging-environment.json"
+          curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$evidence_artifact_id" \
+            > "$RUNNER_TEMP/rollback-evidence-artifact.json"
+          curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$evidence_run_id" \
+            > "$RUNNER_TEMP/rollback-evidence-run.json"
+
+      - name: Download the exact rollback evidence artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ steps.evidence.outputs.artifact_id }}
+          path: ${{ runner.temp }}/rollback-evidence
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.evidence.outputs.run_id }}
+          merge-multiple: true
+
+      - name: Validate configuration and emit a dry-run plan
+        run: |
+          set -euo pipefail
+          umask 077
+          evidence_files="$(
+            find "$RUNNER_TEMP/rollback-evidence" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' \
+              | LC_ALL=C sort
+          )"
+          test "$evidence_files" = "$(printf '%s\n' manifest.json manifest.sha256 rollback-plan.json)"
+          test -z "$(
+            find "$RUNNER_TEMP/rollback-evidence" -mindepth 1 -maxdepth 1 ! -type f -print -quit
+          )"
+          printf '%s' "$TARGET_RELEASE" > "$RUNNER_TEMP/target-release.json"
+          printf '%s' "$PREVIOUS_RELEASE" > "$RUNNER_TEMP/previous-release.json"
+          bun scripts/crew-next-staging-preflight.ts \
+            --ref "$GITHUB_REF" \
+            --sha "$GITHUB_SHA" \
+            --head "$(git rev-parse HEAD)" \
+            --origin-main "$(git rev-parse origin/main)" \
+            --environment "$RUNNER_TEMP/crew-next-staging-environment.json" \
+            --registry "$CREW_NEXT_STAGING_REGISTRY" \
+            --executor "$CREW_NEXT_STAGING_EXECUTOR" \
+            --target "$RUNNER_TEMP/target-release.json" \
+            --previous "$RUNNER_TEMP/previous-release.json" \
+            --proof "$RUNNER_TEMP/rollback-proof.json" \
+            --artifact "$RUNNER_TEMP/rollback-evidence-artifact.json" \
+            --workflow-run "$RUNNER_TEMP/rollback-evidence-run.json" \
+            --manifest "$RUNNER_TEMP/rollback-evidence/manifest.json" \
+            --manifest-sha256 "$RUNNER_TEMP/rollback-evidence/manifest.sha256" \
+            --rollback-plan "$RUNNER_TEMP/rollback-evidence/rollback-plan.json"

@@ -42,9 +42,14 @@ SELECT format(
 )
 FROM pg_tables
 WHERE schemaname = 'public'
-	AND tablename NOT IN ('event_schema_migrations', 'event_attachments')
+	AND tablename NOT IN (
+		'event_schema_migrations',
+		'event_attachments',
+		'event_root_ownership_audit'
+	)
 \gexec
 GRANT SELECT, INSERT ON TABLE event_attachments TO crew_event_api;
+GRANT SELECT ON TABLE event_root_ownership_audit TO crew_event_api;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO crew_event_api;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO crew_event_api;
 REVOKE EXECUTE ON FUNCTION delete_claimed_feedback_attachment(

@@ -21,6 +21,13 @@ const runtimeGrantSource = await Bun.file(
 ).text();
 const attachmentApiGrant =
 	"GRANT SELECT, INSERT ON TABLE event_attachments TO crew_event_api;";
+const ownershipAuditApiGrant =
+	"GRANT SELECT ON TABLE event_root_ownership_audit TO crew_event_api;";
+const eventApiTableExclusions = `AND tablename NOT IN (
+		'event_schema_migrations',
+		'event_attachments',
+		'event_root_ownership_audit'
+	)`;
 const attachmentCleanupFunctionRevoke = `REVOKE EXECUTE ON FUNCTION delete_claimed_feedback_attachment(
 	TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT
 ) FROM
@@ -246,7 +253,7 @@ describe("Crew Next GitHub Actions workflow", () => {
 		validateRuntimeGrants(runtimeGrantSource);
 		for (const drifted of [
 			runtimeGrantSource.replace(
-				"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
+				eventApiTableExclusions,
 				"AND tablename <> 'event_schema_migrations'",
 			),
 			runtimeGrantSource.replace(
@@ -260,6 +267,10 @@ describe("Crew Next GitHub Actions workflow", () => {
 			`${runtimeGrantSource}\nGRANT DELETE ON event_attachments TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT TRUNCATE ON event_attachments TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT ALL PRIVILEGES ON TABLE event_attachments TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT INSERT ON event_root_ownership_audit TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT UPDATE ON event_root_ownership_audit TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT DELETE ON event_root_ownership_audit TO crew_event_api;\n`,
+			`${runtimeGrantSource}\nGRANT TRUNCATE ON event_root_ownership_audit TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT UPDATE ON TABLE public."event_attachments" TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT DELETE ON TABLE "public"."event_attachments" TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT ALL ON ALL TABLES IN SCHEMA public TO crew_event_api;\n`,
@@ -296,9 +307,7 @@ function validateRuntimeGrants(source: string) {
 		(match) => normalizeSql(match[1] as string),
 	);
 	expect(dynamicApiGrantFormats).toEqual([normalizeSql(blanketEventApiGrant)]);
-	expect(source).toContain(
-		"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
-	);
+	expect(source).toContain(eventApiTableExclusions);
 	const statements = privilegeStatements(source);
 	const runtimeStatements = statements.filter((statement) =>
 		/\bto\b[^;]*\bcrew_event_(?:api|attachment_worker|notification_worker|recap_retention_worker)\b/.test(
@@ -329,6 +338,11 @@ function validateRuntimeGrants(source: string) {
 			statement.includes("event_attachments"),
 		),
 	).toEqual([normalizedAttachmentApiGrant]);
+	expect(
+		apiStatements.filter((statement) =>
+			statement.includes("event_root_ownership_audit"),
+		),
+	).toEqual([normalizeSql(ownershipAuditApiGrant)]);
 
 	const grantAllFunctions =
 		"grant execute on all functions in schema public to crew_event_api;";
@@ -541,6 +555,10 @@ function validateWorkflow(source: string) {
 	expect(
 		commands(steps, "Validate Crew Next CI structure and migration prefixes"),
 	).toEqual(["bunx biome check .github/ci", "bun test ./.github/ci"]);
+	expect(commands(steps, "Check release and migration tooling")).toEqual([
+		"bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts scripts/crew-next-staging-preflight.ts scripts/legacy-root-migration.ts scripts/legacy-root-migration.test.ts",
+		"bun test scripts/crew-next-release.test.ts scripts/legacy-root-migration.test.ts",
+	]);
 	expect(commands(steps, "Check User service")).toEqual([
 		"bun run lint",
 		"bun run typecheck",

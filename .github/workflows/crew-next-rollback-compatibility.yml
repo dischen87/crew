@@ -1,0 +1,213 @@
+name: Crew Next rollback source-contract evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      current_release:
+        description: Canonical target release JSON at this exact main revision
+        required: true
+        type: string
+      previous_release:
+        description: Canonical previous staging release JSON
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: crew-next-rollback-source-contract-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  source-contract:
+    name: Validate rollback source contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CURRENT_RELEASE: ${{ inputs.current_release }}
+      PREVIOUS_RELEASE: ${{ inputs.previous_release }}
+    steps:
+      - name: Check out the dispatched main revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Set up Bun 1.3.9
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.3.9"
+
+      - name: Require the exact successful Crew Next CI revision
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$GITHUB_REF" = refs/heads/main
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          curl --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/crew-next-ci.yml/runs?branch=main&event=push&status=success&head_sha=$GITHUB_SHA&per_page=100" \
+            > "$RUNNER_TEMP/crew-next-ci-runs.json"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$GITHUB_SHA" \
+            '
+              [
+                .workflow_runs[]
+                | select(
+                    .event == "push"
+                    and .status == "completed"
+                    and .conclusion == "success"
+                    and .head_branch == "main"
+                    and .head_sha == $sha
+                    and .head_repository.full_name == $repository
+                  )
+              ]
+              | sort_by(.id)
+              | last
+            ' "$RUNNER_TEMP/crew-next-ci-runs.json" \
+            > "$RUNNER_TEMP/crew-next-ci-run.json"
+          jq -e '.id | numbers and . > 0' "$RUNNER_TEMP/crew-next-ci-run.json" >/dev/null
+
+      - name: Validate the immutable release pair and rollback plan
+        run: |
+          set -euo pipefail
+          umask 077
+          evidence_dir="$RUNNER_TEMP/rollback-source-contract"
+          mkdir -p "$evidence_dir"
+          printf '%s' "$CURRENT_RELEASE" > "$RUNNER_TEMP/current-release.json"
+          printf '%s' "$PREVIOUS_RELEASE" > "$RUNNER_TEMP/previous-release.json"
+          from_release_id="$(jq -er '.releaseId' "$RUNNER_TEMP/current-release.json")"
+          to_release_id="$(jq -er '.releaseId' "$RUNNER_TEMP/previous-release.json")"
+          database_release_id="$(jq -er '.databaseReleaseId' "$RUNNER_TEMP/current-release.json")"
+          test "$from_release_id" = "$GITHUB_SHA"
+          test "$database_release_id" = "$GITHUB_SHA"
+          test "$to_release_id" != "$from_release_id"
+          jq -n \
+            --arg from "$from_release_id" \
+            --arg to "$to_release_id" \
+            --arg database "$database_release_id" \
+            --arg verified_at "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+            --arg evidence "ci:github-actions:$GITHUB_RUN_ID:1" \
+            '{
+              schemaVersion: 1,
+              environment: "staging",
+              fromReleaseId: $from,
+              toReleaseId: $to,
+              databaseReleaseId: $database,
+              verifiedAt: $verified_at,
+              evidence: $evidence,
+              evidenceSha256: ("0" * 64)
+            }' > "$RUNNER_TEMP/source-contract-proof.json"
+          bun scripts/crew-next-release.ts rollback \
+            --environment staging \
+            --current "$RUNNER_TEMP/current-release.json" \
+            --previous "$RUNNER_TEMP/previous-release.json" \
+            --proof "$RUNNER_TEMP/source-contract-proof.json" \
+            > "$evidence_dir/rollback-plan.json"
+          jq -e \
+            --arg from "$from_release_id" \
+            --arg to "$to_release_id" \
+            --arg database "$database_release_id" \
+            '
+              .execution == "dry-run-only"
+              and .action == "rollback"
+              and .current.releaseId == $from
+              and .current.databaseReleaseId == $database
+              and .previous.releaseId == $to
+            ' "$evidence_dir/rollback-plan.json" >/dev/null
+
+      - name: Run release-contract checks and create the validation-only manifest
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/rollback-source-contract"
+          bun test scripts/crew-next-release.test.ts .github/ci/crew-next-staging-preflight.test.ts
+          from_release_id="$(jq -er '.releaseId' "$RUNNER_TEMP/current-release.json")"
+          to_release_id="$(jq -er '.releaseId' "$RUNNER_TEMP/previous-release.json")"
+          database_release_id="$(jq -er '.databaseReleaseId' "$RUNNER_TEMP/current-release.json")"
+          ci_run_id="$(jq -er '.id' "$RUNNER_TEMP/crew-next-ci-run.json")"
+          rollback_plan_sha256="$(sha256sum "$evidence_dir/rollback-plan.json" | cut -d ' ' -f 1)"
+          jq -S -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow ".github/workflows/crew-next-rollback-compatibility.yml" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --arg from "$from_release_id" \
+            --arg to "$to_release_id" \
+            --arg database "$database_release_id" \
+            --argjson ci_run_id "$ci_run_id" \
+            --arg ci_head_sha "$GITHUB_SHA" \
+            --arg plan_sha "$rollback_plan_sha256" \
+            '{
+              schemaVersion: 1,
+              kind: "crew-next-rollback-compatibility",
+              scope: "validation-only/source-contract",
+              environment: "staging",
+              repository: $repository,
+              workflow: $workflow,
+              runId: $run_id,
+              fromReleaseId: $from,
+              toReleaseId: $to,
+              databaseReleaseId: $database,
+              crewNextCiRunId: $ci_run_id,
+              crewNextCiHeadSha: $ci_head_sha,
+              rollbackPlanSha256: $plan_sha,
+              checks: [
+                "exact-main-revision",
+                "successful-crew-next-ci",
+                "release-contract-tests",
+                "dry-run-rollback-plan"
+              ]
+            }' > "$evidence_dir/manifest.json"
+          (
+            cd "$evidence_dir"
+            sha256sum manifest.json > manifest.sha256
+          )
+
+      - name: Upload validation-only rollback source-contract evidence
+        id: evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crew-next-rollback-compatibility-${{ github.sha }}
+          path: ${{ runner.temp }}/rollback-source-contract
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Emit the validation-only artifact receipt
+        env:
+          ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          evidence_sha256="$ARTIFACT_DIGEST"
+          jq -n \
+            --arg from "$GITHUB_SHA" \
+            --arg evidence "ci:github-actions:$GITHUB_RUN_ID:$ARTIFACT_ID" \
+            --arg evidence_sha256 "$evidence_sha256" \
+            --arg manifest_sha256 "$(cut -d ' ' -f 1 "$RUNNER_TEMP/rollback-source-contract/manifest.sha256")" \
+            '{
+              scope: "validation-only/source-contract",
+              fromReleaseId: $from,
+              evidence: $evidence,
+              evidenceSha256: $evidence_sha256,
+              manifestSha256: $manifest_sha256,
+              runtimeRollbackProof: false
+            }' > "$RUNNER_TEMP/validation-receipt.json"
+          {
+            echo "## Validation-only source-contract receipt"
+            echo
+            echo "This is not runtime rollback proof and cannot authorize a deployment."
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/validation-receipt.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
