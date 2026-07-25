@@ -28,7 +28,6 @@ import {
 	type PlaceInput,
 	type PlacePatch,
 	type Role,
-	type RootCutoverOwnershipState,
 } from "./domain";
 import {
 	capabilityEntityId,
@@ -772,29 +771,6 @@ export class EventService {
 	}
 	getRoot(actor: Actor, rootEventId: string) {
 		return this.repository.getRoot(actor, rootEventId);
-	}
-	getRootCutoverOwnership(actor: Actor, rootEventId: string) {
-		return this.repository.getRootCutoverOwnership(actor, rootEventId);
-	}
-	transitionRootCutoverOwnership(
-		actor: Actor,
-		rootEventId: string,
-		input: {
-			state: RootCutoverOwnershipState;
-			expectedRevision: string;
-			reason: string;
-			sourceRelease: string;
-			targetRelease: string;
-		},
-	) {
-		return this.repository.transitionRootCutoverOwnership(
-			actor,
-			rootEventId,
-			input,
-		);
-	}
-	assertRootWriteAuthority(rootEventId: string, authority: "legacy" | "next") {
-		return this.repository.assertRootWriteAuthority(rootEventId, authority);
 	}
 	getPublishReadiness(
 		actor: Actor,

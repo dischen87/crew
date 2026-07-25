@@ -191,13 +191,11 @@ Likely future candidates are `catalog-service`, `communication-service`,
 extract them. Until a trigger is met, feature modules plus the separate worker
 give Crew the same API discipline with fewer distributed failure modes.
 
-## Repository transition
+## Repository layout
 
-The current `packages/api` and `packages/web` remain as legacy reference during
-the additive build. New deployables will live under `services/`, and the new
-native app under `apps/mobile`. Legacy endpoints are frozen except for critical
-fixes. Cutover requires contract, authorization, offline, and both vertical-
-slice gates; this ADR does not authorize deleting the old implementation.
+Deployable backend components live under `services/`, shared client packages
+under `packages/`, and product applications under `apps/`. The native app calls
+only the API gateway.
 
 ## Consequences
 

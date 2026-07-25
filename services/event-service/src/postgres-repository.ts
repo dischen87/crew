@@ -29,9 +29,6 @@ import {
 	type PlaceRecord,
 	type PlaceSnapshot,
 	type Role,
-	type RootCutoverOwnership,
-	type RootCutoverOwnershipAuditEntry,
-	type RootCutoverOwnershipState,
 	type RootView,
 } from "./domain";
 import {
@@ -148,13 +145,6 @@ type Tx = Sql;
 type RootRow = {
 	revision: string;
 	status: "active" | "archived";
-	ownershipRevision: string;
-	ownershipState: RootCutoverOwnershipState;
-	ownershipActorId: string;
-	ownershipReason: string;
-	ownershipSourceRelease: string;
-	ownershipTargetRelease: string;
-	ownershipChangedAt: Date;
 	templateId: EventTemplateIdentity["id"] | null;
 	templateVersion: 1 | null;
 };
@@ -1458,14 +1448,8 @@ export class PostgresEventRepository implements EventRepository {
 			}
 
 			await tx`
-        INSERT INTO event_roots (
-					root_event_id, revision, ownership_actor_id, ownership_reason,
-					ownership_source_release, ownership_target_release
-				)
-        VALUES (
-					${input.id}, 1, ${actor.id}, 'Root created in Crew Next',
-					'crew-next', 'crew-next'
-				)
+        INSERT INTO event_roots (root_event_id, revision)
+        VALUES (${input.id}, 1)
       `;
 			const [event] = await tx<EventRecord[]>`
         INSERT INTO events (
@@ -1532,13 +1516,10 @@ export class PostgresEventRepository implements EventRepository {
 
 			await tx`
 				INSERT INTO event_roots (
-					root_event_id, revision, template_id, template_version,
-					ownership_actor_id, ownership_reason,
-					ownership_source_release, ownership_target_release
+					root_event_id, revision, template_id, template_version
 				)
 				VALUES (
-					${input.id}, 1, ${template.definition.id}, ${template.definition.version},
-					${actor.id}, 'Root created in Crew Next', 'crew-next', 'crew-next'
+					${input.id}, 1, ${template.definition.id}, ${template.definition.version}
 				)
 			`;
 			const events: EventRecord[] = [];
@@ -1941,119 +1922,6 @@ export class PostgresEventRepository implements EventRepository {
 				events,
 				capabilities,
 			};
-		});
-	}
-
-	async getRootCutoverOwnership(actor: Actor, rootEventId: string) {
-		return this.transaction(async (tx) => {
-			const root = await lockRoot(tx, rootEventId, "share");
-			const membership = await requireMembership(tx, rootEventId, actor);
-			if (membership.role !== "owner") throw forbidden();
-			const audit = await tx<RootCutoverOwnershipAuditEntry[]>`
-				SELECT transition_id::text AS "transitionId",
-					root_event_id AS "rootEventId",
-					ownership_revision::text AS revision, from_state AS "fromState",
-					to_state AS state, actor_id AS "actorId", reason,
-					source_release AS "sourceRelease", target_release AS "targetRelease",
-					changed_at AS "changedAt", recorded_at AS "recordedAt"
-				FROM event_root_ownership_audit
-				WHERE root_event_id = ${rootEventId}
-				ORDER BY transition_id
-			`;
-			return { ownership: rootCutoverOwnership(rootEventId, root), audit };
-		});
-	}
-
-	async transitionRootCutoverOwnership(
-		actor: Actor,
-		rootEventId: string,
-		input: {
-			state: RootCutoverOwnershipState;
-			expectedRevision: string;
-			reason: string;
-			sourceRelease: string;
-			targetRelease: string;
-		},
-	) {
-		assertCutoverRevision(input.expectedRevision);
-		assertCutoverText(input.reason, 500);
-		assertCutoverText(input.sourceRelease, 200);
-		assertCutoverText(input.targetRelease, 200);
-		return this.transaction(async (tx) => {
-			const root = await lockRoot(tx, rootEventId, "update", false);
-			const membership = await requireMembership(tx, rootEventId, actor);
-			if (membership.role !== "owner") throw forbidden();
-			const current = rootCutoverOwnership(rootEventId, root);
-			if (root.ownershipState === input.state) {
-				if (
-					replayRevisionMatches(
-						root.ownershipRevision,
-						input.expectedRevision,
-					) &&
-					current.actorId === actor.id &&
-					current.reason === input.reason &&
-					current.sourceRelease === input.sourceRelease &&
-					current.targetRelease === input.targetRelease
-				)
-					return current;
-				throw conflict(
-					"CUTOVER_REPLAY_MISMATCH",
-					"The ownership state already has different transition metadata.",
-				);
-			}
-			if (root.ownershipRevision !== input.expectedRevision)
-				throw conflict(
-					"CUTOVER_REVISION_CONFLICT",
-					"Cutover ownership changed after the command was prepared.",
-				);
-			const allowed =
-				(root.ownershipState === "legacy" &&
-					input.state === "migration_locked") ||
-				(root.ownershipState === "migration_locked" &&
-					(input.state === "legacy" || input.state === "next")) ||
-				(root.ownershipState === "next" && input.state === "archived");
-			if (!allowed)
-				throw conflict(
-					"CUTOVER_TRANSITION_INVALID",
-					"The requested ownership transition is not allowed.",
-				);
-			if (input.state === "archived" && root.status !== "archived")
-				throw conflict(
-					"ROOT_ARCHIVE_REQUIRED",
-					"Archive the event root before archiving cutover ownership.",
-				);
-			const [updated] = await tx<RootRow[]>`
-				UPDATE event_roots SET ownership_state = ${input.state},
-					ownership_revision = ownership_revision + 1,
-					ownership_actor_id = ${actor.id}, ownership_reason = ${input.reason},
-					ownership_source_release = ${input.sourceRelease},
-					ownership_target_release = ${input.targetRelease},
-					ownership_changed_at = clock_timestamp()
-				WHERE root_event_id = ${rootEventId}
-					AND ownership_state = ${root.ownershipState}
-					AND ownership_revision = ${input.expectedRevision}::bigint
-				RETURNING ${rootColumns(tx)}
-			`;
-			if (!updated)
-				throw conflict(
-					"CUTOVER_TRANSITION_CONFLICT",
-					"Ownership changed concurrently.",
-				);
-			return rootCutoverOwnership(rootEventId, updated);
-		});
-	}
-
-	async assertRootWriteAuthority(
-		rootEventId: string,
-		authority: "legacy" | "next",
-	) {
-		await this.transaction(async (tx) => {
-			const root = await lockRoot(tx, rootEventId, "share");
-			if (root.ownershipState !== authority)
-				throw conflict(
-					"ROOT_WRITE_NOT_AUTHORITATIVE",
-					"The requested runtime is not authoritative for this event root.",
-				);
 		});
 	}
 
@@ -5365,25 +5233,18 @@ async function syncRootAccess(
 		{
 			rootRevision: string;
 			status: "active" | "archived";
-			ownershipState: RootCutoverOwnershipState;
 			authorizationScopeVersion: string;
 			minimumSyncRevision: string;
 			minimumSyncOrdinal: number;
 		}[]
 	>`
 		SELECT revision::text AS "rootRevision", status,
-			ownership_state AS "ownershipState",
 			authorization_scope_version::text AS "authorizationScopeVersion",
 			minimum_sync_revision::text AS "minimumSyncRevision"
 			, minimum_sync_ordinal AS "minimumSyncOrdinal"
 		FROM event_roots WHERE root_event_id = ${rootEventId} ${lock}
 	`;
 	if (!root) throw notFound();
-	if (mode === "update" && root.ownershipState !== "next")
-		throw conflict(
-			"ROOT_WRITE_NOT_AUTHORITATIVE",
-			"Crew Next is not authoritative for this event root.",
-		);
 	const membership = await requireMembership(tx, rootEventId, actor);
 	if (root.status !== "active" && !isManager(membership.role)) throw notFound();
 	return {
@@ -5714,76 +5575,15 @@ async function materializeSyncSnapshot(
 	return recordCount;
 }
 
-function rootColumns(tx: Tx) {
-	return tx`
-		revision::text AS revision, status,
-		ownership_revision::text AS "ownershipRevision",
-		ownership_state AS "ownershipState",
-		ownership_actor_id AS "ownershipActorId",
-		ownership_reason AS "ownershipReason",
-		ownership_source_release AS "ownershipSourceRelease",
-		ownership_target_release AS "ownershipTargetRelease",
-		ownership_changed_at AS "ownershipChangedAt",
-		template_id AS "templateId", template_version AS "templateVersion"
-	`;
-}
-
-function rootCutoverOwnership(
-	rootEventId: string,
-	root: RootRow,
-): RootCutoverOwnership {
-	return {
-		rootEventId,
-		revision: root.ownershipRevision,
-		state: root.ownershipState,
-		actorId: root.ownershipActorId,
-		reason: root.ownershipReason,
-		sourceRelease: root.ownershipSourceRelease,
-		targetRelease: root.ownershipTargetRelease,
-		changedAt: root.ownershipChangedAt,
-	};
-}
-
-function assertCutoverText(value: string, max: number) {
-	if (value.trim() !== value || value.length < 1 || value.length > max)
-		throw new DomainError(400, "INVALID_REQUEST", "Invalid cutover metadata.");
-}
-
-function assertCutoverRevision(value: string) {
-	if (
-		!/^[1-9][0-9]{0,18}$/.test(value) ||
-		BigInt(value) > 9_223_372_036_854_775_807n
-	)
-		throw new DomainError(400, "INVALID_REQUEST", "Invalid cutover revision.");
-}
-
-function replayRevisionMatches(current: string, expected: string) {
-	const currentRevision = BigInt(current);
-	const expectedRevision = BigInt(expected);
-	return (
-		currentRevision === expectedRevision ||
-		currentRevision === expectedRevision + 1n
-	);
-}
-
-async function lockRoot(
-	tx: Tx,
-	rootEventId: string,
-	mode: "share" | "update",
-	requireNextWrite = mode === "update",
-) {
+async function lockRoot(tx: Tx, rootEventId: string, mode: "share" | "update") {
 	const lock = mode === "share" ? tx`FOR SHARE` : tx`FOR UPDATE`;
 	const [root] = await tx<RootRow[]>`
-		SELECT ${rootColumns(tx)}
+		SELECT revision::text AS revision, status,
+			template_id AS "templateId", template_version AS "templateVersion"
 		FROM event_roots
     WHERE root_event_id = ${rootEventId} ${lock}
   `;
 	if (!root) throw notFound();
-	if (requireNextWrite && root.ownershipState !== "next")
-		throw conflict(
-			"ROOT_WRITE_NOT_AUTHORITATIVE",
-			"Crew Next is not authoritative for this event root.",
-		);
 	return root;
 }
 

@@ -117,11 +117,12 @@ jobs:
           bunx biome check .github/ci
           bun test ./.github/ci
 
-      - name: Check release and migration tooling
+      - name: Check release tooling
         run: |
           set -euo pipefail
-          bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts scripts/crew-next-staging-preflight.ts scripts/legacy-root-migration.ts scripts/legacy-root-migration.test.ts
-          bun test scripts/crew-next-release.test.ts scripts/legacy-root-migration.test.ts
+          bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts
+          bun test scripts/crew-next-release.test.ts
+          bunx tsc --noEmit --allowImportingTsExtensions --moduleResolution bundler --module preserve --target esnext --types bun scripts/crew-next-release.ts scripts/crew-next-release.test.ts
 
       - name: Prove MinIO attachment ingress policy
         run: |
@@ -230,6 +231,12 @@ jobs:
         run: |
           set -euo pipefail
           bun run check:product-contracts
+
+      - name: Check Crew web
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          bun run check
 
       - name: Check mobile data
         working-directory: packages/mobile-data

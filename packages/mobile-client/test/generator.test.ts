@@ -487,7 +487,7 @@ describe("gateway contract generation", () => {
 			new URL("package.json", repositoryRoot),
 		).json();
 		const workflow = await Bun.file(
-			new URL(".github/workflows/deploy.yml", repositoryRoot),
+			new URL(".github/workflows/crew-next-ci.yml", repositoryRoot),
 		).text();
 		const script = rootPackage.scripts?.["check:mobile-client"];
 
@@ -496,6 +496,10 @@ describe("gateway contract generation", () => {
 		expect(script).toContain("bun run typecheck");
 		expect(script).toContain("bun test");
 		expect(workflow).toContain("bun install --frozen-lockfile");
-		expect(workflow).toContain("bun run check:mobile-client");
+		expect(workflow).toContain("working-directory: packages/mobile-client");
+		expect(workflow).toContain("bun run generate:check");
+		expect(workflow).toContain("bun run lint");
+		expect(workflow).toContain("bun run typecheck");
+		expect(workflow).toContain("bun test");
 	});
 });

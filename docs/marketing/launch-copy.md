@@ -74,9 +74,8 @@ nur die Preview-Seite; der alte Join-Pfad liefert `404`. Die Route bleibt
 bewusst deaktiviert. Browser-renderte Mobile-/Desktop-, Fokus-,
 Reduced-Motion- und 200%-Zoom-QA ist lokal bestanden. Ein datenschutzgeprüfter
 Kontaktweg, Deployment-/Live-Evidence und eine Analytics-/Consent-Entscheidung
-fehlen weiterhin. `packages/web` bleibt die
-quarantänisierte Legacy-PWA und ist kein Crew-Next-Beleg. Die Fassung oben ist
-damit **in Code und Copy vorhanden, aber nicht publikationsfreigegeben**; sie
+fehlen weiterhin. Die Fassung oben ist damit **in Code und Copy vorhanden,
+aber nicht publikationsfreigegeben**; sie
 belegt weder Preview-Conversion noch Next-Analytics.
 
 ### Launch-Fassung

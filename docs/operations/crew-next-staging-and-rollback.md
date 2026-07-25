@@ -1,8 +1,6 @@
 # Crew Next staging release and rollback
 
-This runbook defines the Crew Next staging release contract. It does not deploy
-the legacy `packages/api` or `packages/web` runtime and does not modify the
-quarantined `.github/workflows/deploy.yml` workflow.
+This runbook defines the Crew staging release contract for the new services.
 
 The repository currently has no approved staging host, Swarm, registry target,
 GitHub environment or deployment credentials. Consequently the committed tool
@@ -33,11 +31,14 @@ Event image is shared by `event-api`, `attachment-worker`,
 `notification-worker` and `recap-retention-worker`. A capture is rejected if
 any member of an image group differs.
 
-Rollback changes code images only. It never reverses a migration, grant or live
-data. Before either a forward rollout or a manual rollback can be planned, an
-immutable CI evidence record must prove that the previous code is compatible
-with the target database release. This follows the additive-cutover rule in
-`docs/architecture/0004-additive-cutover.md`.
+Rollback changes code images only. It never reverses a schema migration, grant
+or live data. After the first successful release, an immutable CI evidence
+record must prove that the previous code is compatible with the target database
+release before a forward rollout or manual rollback can be planned.
+
+The initial Greenfield deployment has no previous release. The current planner
+does not implement that bootstrap path; the staging executor must add and prove
+it before the first deployment.
 
 ## Required staging infrastructure
 
@@ -90,6 +91,8 @@ state.
 
 ## Capture the previous live release
 
+This section applies after the initial Greenfield deployment.
+
 Capture all services before any migration, grant or image update:
 
 ```sh
@@ -130,8 +133,8 @@ to be edited after publication:
   "toReleaseId": "<captured-previous-release-id>",
   "databaseReleaseId": "<target-database-release-id>",
   "verifiedAt": "2026-07-20T09:59:00.000Z",
-  "evidence": "ci:github-actions:<workflow-run-id>:<artifact-id>",
-  "evidenceSha256": "<github-artifact-sha256-without-the-sha256-prefix>"
+  "evidence": "ci:crew-next:rollback-compatibility:<target-release-id>",
+  "evidenceSha256": "<sha256-of-the-evidence-bundle>"
 }
 ```
 
@@ -139,22 +142,6 @@ The evidence bundle must show the previous Gateway, User/Event APIs and worker
 images starting against databases migrated and granted by the target release,
 then passing the same private readiness and public Gateway contract probes. A
 human assertion is not accepted as `ci:` evidence.
-
-The manual `.github/workflows/crew-next-rollback-compatibility.yml` workflow
-currently proves only source contracts. It requires the exact `main` revision
-and its successful Crew Next CI run, validates the canonical release pair,
-generates the dry-run rollback plan, and publishes the exactly named artifact
-`crew-next-rollback-compatibility-<target-release-id>`. Its manifest and receipt
-are explicitly marked `validation-only/source-contract`; the receipt binds the
-GitHub run/artifact IDs and artifact digest, while `manifest.sha256` binds the
-manifest to the dry-run plan.
-
-This source-contract artifact is useful diagnostics but is not the proof
-described above. The staging preflight downloads and verifies it, then rejects
-its validation-only scope. It remains fail-closed until an approved staging
-executor has actually run the previous images against the target database and
-recorded the observed forward/rollback states and required probes. Never relabel
-or manually promote the source-contract receipt into `rollback-proof.json`.
 
 ## Generate the forward plan
 

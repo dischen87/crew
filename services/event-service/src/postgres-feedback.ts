@@ -45,7 +45,6 @@ export async function assertFeedbackAccess(
 ) {
 	const row = await feedbackRow(tx, actor, feedbackId);
 	if (!row) throw notFound();
-	if (access !== "read") await lockFeedbackRootsNext(tx, [feedbackId]);
 	await lockCurrentMembership(tx, row, actor);
 	authorize(row, actor, access);
 }
@@ -59,7 +58,6 @@ export async function createFeedback(
 	await tx`SELECT id FROM event_feedback WHERE id = ${input.id} FOR SHARE`;
 	const existing = await feedbackRow(tx, actor, input.id);
 	if (existing) {
-		await lockFeedbackRootsNext(tx, [input.id]);
 		const attachmentIds = await feedbackAttachmentIds(tx, input.id);
 		if (
 			existing.authorUserId === actor.id &&
@@ -130,7 +128,6 @@ export async function setFeedbackVote(
 	feedbackId: string,
 	present: boolean,
 ) {
-	await lockFeedbackRootsNext(tx, [feedbackId]);
 	await lockFeedback(tx, feedbackId);
 	await requiredFeedbackRow(tx, actor, feedbackId, "member");
 	if (present) {
@@ -154,7 +151,6 @@ export async function addFeedbackComment(
 	feedbackId: string,
 	input: { id: string; body: string },
 ) {
-	await lockFeedbackRootsNext(tx, [feedbackId]);
 	await lockFeedback(tx, feedbackId);
 	await requiredFeedbackRow(tx, actor, feedbackId, "member");
 	await tx`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))`;
@@ -204,12 +200,10 @@ export async function markFeedbackDuplicate(
 			"FEEDBACK_DUPLICATE_INVALID",
 			"Feedback cannot be a duplicate of itself.",
 		);
-	const rootEventIds = await feedbackRootScopes(tx, [
-		feedbackId,
-		canonicalFeedbackId,
-	]);
-	await lockFeedbackDuplicateScopes(tx, rootEventIds);
-	await lockFeedbackRootScopesNext(tx, rootEventIds);
+	await lockFeedbackDuplicateScopes(
+		tx,
+		await feedbackRootScopes(tx, [feedbackId, canonicalFeedbackId]),
+	);
 	await lockFeedbackDuplicateSet(tx, feedbackId, canonicalFeedbackId);
 	const source = await requiredFeedbackRow(tx, actor, feedbackId, "manage");
 	const canonical = await requiredFeedbackRow(
@@ -253,9 +247,10 @@ export async function setFeedbackStatus(
 	status: Exclude<FeedbackStatus, "duplicate">,
 	note: string | null,
 ) {
-	const rootEventIds = await feedbackRootScopes(tx, [feedbackId]);
-	await lockFeedbackDuplicateScopes(tx, rootEventIds);
-	await lockFeedbackRootScopesNext(tx, rootEventIds);
+	await lockFeedbackDuplicateScopes(
+		tx,
+		await feedbackRootScopes(tx, [feedbackId]),
+	);
 	await lockFeedback(tx, feedbackId);
 	const current = await requiredFeedbackRow(tx, actor, feedbackId, "manage");
 	if (current.status === status) return feedbackRecord(tx, actor, current);
@@ -304,21 +299,16 @@ async function validateContext(
 	eventId: string | null,
 ) {
 	if (!rootEventId) return null;
-	const [membership] = await tx<{ role: Role; ownershipState: string }[]>`
-		SELECT membership.role, root.ownership_state AS "ownershipState"
+	const [membership] = await tx<{ role: Role }[]>`
+		SELECT membership.role
 		FROM event_roots root
 		JOIN event_memberships membership
 			ON membership.root_event_id = root.root_event_id
 		WHERE root.root_event_id = ${rootEventId}
 			AND membership.user_id = ${actor.id} AND membership.status = 'active'
-		FOR UPDATE OF root
+		FOR SHARE OF root, membership
 	`;
 	if (!membership) throw notFound();
-	if (membership.ownershipState !== "next")
-		throw conflict(
-			"ROOT_WRITE_NOT_AUTHORITATIVE",
-			"Crew Next is not authoritative for this event root.",
-		);
 	if (!eventId) return membership.role;
 	const [event] = await tx<{ id: string }[]>`
 		SELECT id FROM events
@@ -629,37 +619,6 @@ function isManager(row: FeedbackRow) {
 
 async function lockFeedback(tx: Sql, feedbackId: string) {
 	await tx`SELECT id FROM event_feedback WHERE id = ${feedbackId} FOR UPDATE`;
-}
-
-async function lockFeedbackRootsNext(tx: Sql, feedbackIds: string[]) {
-	const roots = await tx<{ rootEventId: string }[]>`
-		SELECT root_event_id AS "rootEventId" FROM event_feedback
-		WHERE id IN ${tx(feedbackIds)} AND root_event_id IS NOT NULL
-		ORDER BY root_event_id
-	`;
-	await lockFeedbackRootScopesNext(
-		tx,
-		roots.map((root) => root.rootEventId),
-	);
-}
-
-async function lockFeedbackRootScopesNext(
-	tx: Sql,
-	rootEventIds: Array<string | null>,
-) {
-	for (const rootEventId of [
-		...new Set(rootEventIds.filter((id): id is string => id !== null)),
-	].sort()) {
-		const [root] = await tx<{ ownershipState: string }[]>`
-			SELECT ownership_state AS "ownershipState" FROM event_roots
-			WHERE root_event_id = ${rootEventId} FOR SHARE
-		`;
-		if (root?.ownershipState !== "next")
-			throw conflict(
-				"ROOT_WRITE_NOT_AUTHORITATIVE",
-				"Crew Next is not authoritative for this event root.",
-			);
-	}
 }
 
 async function lockFeedbackDuplicateSet(

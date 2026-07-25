@@ -14,15 +14,16 @@ product vertical. Organizers need to compose these experiences, while
 participants need one predictable timeline, feed, invitation model, and
 offline data boundary.
 
-The legacy model is flat: an event belongs to a group and has no parent, root,
-entity version, or tombstone. Copying that model would make nested itineraries,
-root-scoped authorization, and deterministic offline sync unsafe.
+An event graph needs explicit parents, roots, entity versions, and tombstones
+so nested itineraries, root-scoped authorization, and deterministic offline
+sync remain safe.
 
 ## Decision
 
 `event-service` owns one recursive event graph. Every event is either a root or
-a descendant of exactly one root. The root is the authorization, sync,
-revision, export, migration, and cutover boundary.
+a descendant of exactly one root.
+
+The root is the authorization, sync, and revision boundary.
 
 The graph is a domain aggregate, not one permanently loaded object and not a
 promise that every root mutation uses one database row. Commands update the

@@ -211,7 +211,6 @@ export class PostgresEventNotificationOutbox {
 			const [root] = await tx<{ rootEventId: string }[]>`
 				SELECT root_event_id AS "rootEventId" FROM event_roots
 				WHERE root_event_id = ${payload.deepLink.rootEventId}
-					AND ownership_state = 'next'
 				FOR SHARE
 			`;
 			const [leasedJob] = await tx<{ attempts: number }[]>`

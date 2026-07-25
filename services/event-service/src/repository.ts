@@ -37,9 +37,6 @@ import type {
 	PlacePatch,
 	PlaceRecord,
 	Role,
-	RootCutoverOwnership,
-	RootCutoverOwnershipAuditEntry,
-	RootCutoverOwnershipState,
 	RootView,
 } from "./domain";
 import type {
@@ -319,28 +316,6 @@ export interface EventRepository {
 		},
 	): Promise<PageSlice<EventRootSummary>>;
 	getRoot(actor: Actor, rootEventId: string): Promise<RootView>;
-	getRootCutoverOwnership(
-		actor: Actor,
-		rootEventId: string,
-	): Promise<{
-		ownership: RootCutoverOwnership;
-		audit: RootCutoverOwnershipAuditEntry[];
-	}>;
-	transitionRootCutoverOwnership(
-		actor: Actor,
-		rootEventId: string,
-		input: {
-			state: RootCutoverOwnershipState;
-			expectedRevision: string;
-			reason: string;
-			sourceRelease: string;
-			targetRelease: string;
-		},
-	): Promise<RootCutoverOwnership>;
-	assertRootWriteAuthority(
-		rootEventId: string,
-		authority: "legacy" | "next",
-	): Promise<void>;
 	getPublishReadiness(
 		actor: Actor,
 		rootEventId: string,

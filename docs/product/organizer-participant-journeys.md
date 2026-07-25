@@ -4,7 +4,6 @@
 - Date: 2026-07-18
 - Bead: `crew-paq.4.2`
 - Domain basis: [ADR-003](../architecture/0003-event-domain.md)
-- Cutover basis: [Migration Plan 004](../architecture/0004-additive-cutover.md)
 
 ## Outcome
 
@@ -22,10 +21,9 @@ create draft -> add plan -> invite -> publish -> join -> prepare
              -> participate live -> communicate -> give feedback -> recap
 ```
 
-A root event is the authorization, membership, sync, and cutover boundary.
+A root event is the authorization, membership, and sync boundary.
 Templates may prefill capabilities and children, but they do not create a
-second model. The native app talks only to the API gateway and never asks a
-person to choose between legacy and Next.
+second model. The native app talks only to the API gateway.
 
 ## Journey rules
 
@@ -809,7 +807,7 @@ intentionally supplies behavior and state coverage only.
    participant opens the recap through `R-O-01`–`R-P-01`.
 
 The path passes only with no duplicate root, membership, score, feed entry,
-attachment, vote, or notification; no lost local data; and no service or legacy
+attachment, vote, or notification; no lost local data; and no direct service
 URL in mobile traffic.
 
 ### Non-travel team event

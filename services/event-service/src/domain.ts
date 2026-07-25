@@ -2,26 +2,6 @@ export type Actor = { id: string; email?: string };
 export type Role = "owner" | "organizer" | "participant" | "viewer";
 export type MembershipStatus = "active" | "left" | "removed";
 export type EventStatus = "draft" | "published" | "cancelled" | "archived";
-export type RootCutoverOwnershipState =
-	| "legacy"
-	| "migration_locked"
-	| "next"
-	| "archived";
-export type RootCutoverOwnership = {
-	rootEventId: string;
-	revision: string;
-	state: RootCutoverOwnershipState;
-	actorId: string;
-	reason: string;
-	sourceRelease: string;
-	targetRelease: string;
-	changedAt: Date;
-};
-export type RootCutoverOwnershipAuditEntry = RootCutoverOwnership & {
-	transitionId: string;
-	fromState: RootCutoverOwnershipState | null;
-	recordedAt: Date;
-};
 export type CapabilityType =
 	| "travel"
 	| "lodging"

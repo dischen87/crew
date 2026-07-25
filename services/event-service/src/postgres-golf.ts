@@ -667,7 +667,6 @@ async function lockRoot(
 		JOIN event_memberships membership
 			ON membership.root_event_id = root.root_event_id
 		WHERE root.root_event_id = ${rootEventId} AND root.status = 'active'
-			AND root.ownership_state = 'next'
 			AND membership.user_id = ${actor.id} AND membership.status = 'active'
 		FOR UPDATE OF root
 	`;
