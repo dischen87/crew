@@ -6,6 +6,7 @@ import {
   MobileDataStore,
   MobileSyncEngine,
   MobileSyncRootAccessDeniedError,
+  type FeedPhotoLifecycle,
   type FeedRecord,
   type OutboxItem,
   type SqlExecutor,
@@ -13,7 +14,11 @@ import {
   TeamOfflineStore,
 } from '@crew/mobile-data';
 import type { MobileGatewayClient } from '../app/GatewayProvider';
-import { reconcileRetainedAttachmentFiles } from '../media/attachmentMedia';
+import {
+  reconcileFeedPhotoAttachments,
+  reconcileRetainedAttachmentFiles,
+  runAttachmentMediaOperation,
+} from '../media/attachmentMedia';
 import { deniedRootRegistry } from '../storage/deniedRoots';
 import { secureDeviceIdStore } from '../storage/deviceIdentity';
 import { secureUuidV4 } from '../storage/secureRandom';
@@ -278,16 +283,42 @@ export class TeamProductionRuntime {
     };
   }
 
-  createFeedEntry(eventId: string | null, value: string): Promise<OutboxItem> {
+  async recoverFeedPhoto(
+    eventId: string | null,
+  ): Promise<FeedPhotoLifecycle | null> {
+    return runAttachmentMediaOperation(this.#accountUserId, async () => {
+      this.#assertActive();
+      const photos = await reconcileFeedPhotoAttachments(
+        new LocalAttachmentStore(this.#database),
+        this.#accountUserId,
+        this.#rootEventId,
+      );
+      this.#assertActive();
+      return photos.find(photo => photo.eventId === eventId) ?? null;
+    });
+  }
+
+  createFeedEntry(
+    eventId: string | null,
+    value: string,
+    feedEntryId?: string,
+  ): Promise<OutboxItem> {
     this.#assertActive();
     if (this.role === 'viewer') {
       return Promise.reject(new Error('Viewers cannot post to the team feed'));
     }
     const content = normalizeTeamFeedContent(value);
+    if (feedEntryId !== undefined && !isFeedEntryId(feedEntryId)) {
+      throw new TypeError('Invalid team feed entry identity');
+    }
     const key = eventId ?? this.#rootEventId;
     const existing = this.#feedInFlight.get(key);
     if (existing) return existing;
-    const pending = this.#createFeedEntry(eventId, content).finally(() => {
+    const pending = this.#createFeedEntry(
+      eventId,
+      content,
+      feedEntryId,
+    ).finally(() => {
       if (this.#feedInFlight.get(key) === pending) {
         this.#feedInFlight.delete(key);
       }
@@ -378,12 +409,13 @@ export class TeamProductionRuntime {
   async #createFeedEntry(
     eventId: string | null,
     content: string,
+    feedEntryId?: string,
   ): Promise<OutboxItem> {
     const eventTitle = await this.#eventTitle(eventId ?? this.#rootEventId);
     this.#assertActive();
     if (!eventTitle) throw new Error('Team feed event is unavailable');
-    const entityId = `fed_${this.#randomUUID()}`;
-    if (!/^fed_[A-Za-z0-9._:-]{1,96}$/.test(entityId)) {
+    const entityId = feedEntryId ?? `fed_${this.#randomUUID()}`;
+    if (!isFeedEntryId(entityId)) {
       throw new TypeError('Invalid team feed entry identity');
     }
     const command: SyncMutationDraft = {
@@ -452,6 +484,10 @@ export class TeamProductionRuntime {
       throw new Error('Viewers cannot post to the team feed');
     }
   }
+}
+
+function isFeedEntryId(value: string): boolean {
+  return /^fed_[A-Za-z0-9._:-]{1,96}$/.test(value);
 }
 
 function teamFeedEntries(

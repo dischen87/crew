@@ -13,6 +13,7 @@ import {
   createFeedbackAttachmentUploadTransport,
   previewRetainedAttachment,
   reconcileRetainedAttachmentFiles,
+  runAttachmentMediaOperation,
 } from '../media/attachmentMedia';
 import { secureUuidV4 } from '../storage/secureRandom';
 
@@ -93,42 +94,44 @@ export class FeedbackComposeRuntime {
     }
     const feedbackId = `fbk_${feedbackUuid}`;
     const attachmentId = `att_${attachmentUuid}`;
-    try {
-      const captured = await captureCurrentScreenAttachment(
-        this.#accountUserId,
-      );
-      await this.#assertActive();
-      const previewDataUri = await previewRetainedAttachment(
-        this.#accountUserId,
-        captured.retainedFileKey,
-      );
-      await this.#assertActive();
-      await this.#screenshots.retain({
-        accountUserId: this.#accountUserId,
-        attachmentId,
-        byteCount: captured.byteCount,
-        contentType: 'image/png',
-        feedbackId,
-        pixelHeight: captured.pixelHeight,
-        pixelWidth: captured.pixelWidth,
-        retainedAt: this.#now().toISOString(),
-        retainedFileKey: captured.retainedFileKey,
-        rootEventId,
-        sha256: captured.sha256,
-        wasNormalized: true,
-      });
-      await this.#assertActive();
-      return {
-        attachmentId,
-        feedbackId,
-        pixelHeight: captured.pixelHeight,
-        pixelWidth: captured.pixelWidth,
-        previewDataUri,
-      };
-    } catch (error) {
-      await this.#discardAndReconcile(feedbackId);
-      throw error;
-    }
+    return runAttachmentMediaOperation(this.#accountUserId, async () => {
+      try {
+        const captured = await captureCurrentScreenAttachment(
+          this.#accountUserId,
+        );
+        await this.#assertActive();
+        const previewDataUri = await previewRetainedAttachment(
+          this.#accountUserId,
+          captured.retainedFileKey,
+        );
+        await this.#assertActive();
+        await this.#screenshots.retain({
+          accountUserId: this.#accountUserId,
+          attachmentId,
+          byteCount: captured.byteCount,
+          contentType: 'image/png',
+          feedbackId,
+          pixelHeight: captured.pixelHeight,
+          pixelWidth: captured.pixelWidth,
+          retainedAt: this.#now().toISOString(),
+          retainedFileKey: captured.retainedFileKey,
+          rootEventId,
+          sha256: captured.sha256,
+          wasNormalized: true,
+        });
+        await this.#assertActive();
+        return {
+          attachmentId,
+          feedbackId,
+          pixelHeight: captured.pixelHeight,
+          pixelWidth: captured.pixelWidth,
+          previewDataUri,
+        };
+      } catch (error) {
+        await this.#discardAndReconcile(feedbackId);
+        throw error;
+      }
+    });
   }
 
   async restore(

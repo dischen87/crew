@@ -78,6 +78,8 @@ export type {
 	FeedbackAttachmentUploadTransport,
 	FeedbackSubmissionControllerOptions,
 	FeedbackSubmissionDiagnostics,
+	FeedbackSubmissionEvidence,
+	FeedbackSubmissionEvidenceRow,
 	FeedbackSubmissionFailure,
 	FeedbackSubmissionInput,
 	FeedbackSubmissionReceipt,
@@ -105,6 +107,10 @@ export {
 } from "./golfOffline.ts";
 export type {
 	AttachmentContentType,
+	FeedPhotoCleanupPlan,
+	FeedPhotoLifecycle,
+	FeedPhotoLifecycleState,
+	FeedPhotoReconciliation,
 	RetainedLocalAttachment,
 } from "./localAttachments.ts";
 export { LocalAttachmentStore } from "./localAttachments.ts";

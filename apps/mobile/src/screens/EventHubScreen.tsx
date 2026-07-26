@@ -534,6 +534,7 @@ export function EventHubScreen({ navigation, route }: Props) {
           setSelectedDateId(dateId);
         }
       }}
+      onManageInvites={() => navigation.navigate('Invites', { rootEventId })}
       onPrimaryAction={action => {
         if (action.access === 'write' && action.id === 'review-event') {
           navigation.navigate('EventPublish', { rootEventId });

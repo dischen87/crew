@@ -146,6 +146,7 @@ export type EventHubModel =
 export type EventHubViewProps = {
   model: EventHubModel;
   onDateSelect(dateId: string): void;
+  onManageInvites(): void;
   onPrimaryAction(action: EventHubPrimaryAction): void;
   onSyncStatusPress(): void;
   onTabSelect(tab: EventHubTab): void;
@@ -348,6 +349,7 @@ function EventTimelineRow({
 export function EventHubView({
   model,
   onDateSelect,
+  onManageInvites,
   onPrimaryAction,
   onSyncStatusPress,
   onTabSelect,
@@ -431,6 +433,17 @@ export function EventHubView({
         <Text style={styles.participantCount}>
           {participantCountLabel(model.participants.length)}
         </Text>
+        {model.role === 'owner' || model.role === 'organizer' ? (
+          <Button
+            accessibilityHint="Öffnet die servergeprüfte Einladungsverwaltung für dieses Event."
+            icon={<AssetIcon name="crew" size={22} />}
+            label="Einladungen verwalten"
+            onPress={onManageInvites}
+            style={styles.invitesAction}
+            testID="event-hub-manage-invites"
+            variant="surface"
+          />
+        ) : null}
         <SyncStatus
           icon={<AssetIcon name="check" size={18} />}
           label={model.sync.label}
@@ -812,6 +825,9 @@ const styles = StyleSheet.create({
   feedTime: {
     ...typography.caption,
     color: colors.text,
+  },
+  invitesAction: {
+    marginTop: spacing.md,
   },
   locationRow: {
     alignItems: 'center',

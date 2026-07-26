@@ -20,6 +20,7 @@ test('registers bounded native iOS attachment processing', () => {
     CrewAttachmentMedia: 'CrewAttachmentMedia',
   });
   expect(project).toContain('CrewAttachmentMedia.mm in Sources');
+  expect(project).toContain('PhotosUI.framework in Frameworks');
   expect(native).toContain('kCGImageSourceCreateThumbnailWithTransform');
   expect(native).toContain('kCGImageSourceThumbnailMaxPixelSize');
   expect(native).toContain('kCGImageDestinationLossyCompressionQuality');
@@ -28,6 +29,32 @@ test('registers bounded native iOS attachment processing', () => {
   expect(native).toContain('UTTypeJPEG');
   expect(native).toContain('UTTypePNG');
   expect(native).toContain('UTTypeWebP');
+  expect(native).toContain('CGImageSourceGetCount(source) != 1');
+  expect(native).toContain('orientationValue < 1 || orientationValue > 8');
+  expect(native).toContain('PHPickerViewControllerDelegate');
+  expect(native).toContain('PHPickerFilter.imagesFilter');
+  expect(native).toContain('configuration.selectionLimit = 1');
+  expect(native).toContain(
+    'PHPickerConfigurationAssetRepresentationModeCurrent',
+  );
+  expect(native).toContain('loadFileRepresentationForTypeIdentifier');
+  expect(native).toContain(
+    '[self finishImagePicker:generation result:nil error:nil]',
+  );
+  expect(native).toContain('- (void)cancelPending:(NSString *)accountUserId');
+  expect(native).toContain('- (void)invalidate');
+  expect(native).toContain('_pickerGeneration');
+  expect(native).toContain('_pickerLoadProgress');
+  expect(native).toContain('_pickerWorkInFlight');
+  expect(native).toContain('_pickerCancelWaiters');
+  expect(native).toContain('dispatch_sync(_mediaQueue');
+  expect(native).toContain('[progress cancel]');
+  expect(native).toContain('CrewAttachmentMediaPickerUnavailable');
+  expect(native).toContain('CrewAttachmentMediaPickerFailed');
+  expect(native).not.toContain(
+    'reject(CrewErrorCode(safeError), safeError.localizedDescription, nil)',
+  );
+  expect(native).not.toContain('requestAuthorization');
   expect(native).toContain('copyItemAtURL:sourceURL');
   expect(native.indexOf('copyItemAtURL:sourceURL')).toBeLessThan(
     native.indexOf('CGImageSourceCreateWithURL('),
@@ -46,6 +73,7 @@ test('registers bounded native iOS attachment processing', () => {
   expect(native).toContain('ReconcileFinalGraceSeconds = 5 * 60');
   expect(native).toContain('timeIntervalSinceDate:modifiedAt');
   expect(native).toContain('NSFileModificationDate : NSDate.date');
+  expect(native.match(/CrewRefreshRetainedFile\(retainedURL/g)).toHaveLength(2);
   expect(native).toContain('removeItemAtURL:url');
   expect(native).toContain('NSFileProtectionComplete');
   expect(native).toContain('DISPATCH_QUEUE_SERIAL');
@@ -56,7 +84,7 @@ test('registers bounded native iOS attachment processing', () => {
   expect(native).toContain('NSURLIsSymbolicLinkKey');
   expect(native).toContain('CrewCaptureCurrentScreen');
   expect(native).toContain('MaxCapturePixelDimension = 2048');
-  expect(native).toContain('CrewPreviewRetainedPNG');
+  expect(native).toContain('CrewPreviewRetainedImage');
   expect(native).toContain('MaxPreviewPixelDimension = 512');
   expect(native).toContain(
     'NSURLSessionConfiguration.ephemeralSessionConfiguration',

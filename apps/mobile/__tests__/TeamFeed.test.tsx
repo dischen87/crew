@@ -22,8 +22,17 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import { contrastRatio, contrastThresholds } from '../src/design/contrast';
 import { Card } from '../src/design/primitives';
-import { colors } from '../src/design/theme';
+import { colors, componentMetrics } from '../src/design/theme';
 import { TeamFeedScreen, TeamFeedView } from '../src/screens/TeamFeedScreen';
+import {
+  discardTeamFeedPhoto,
+  markTeamFeedPhotoQueued,
+  pickTeamFeedPhoto,
+  prepareAndUploadTeamFeedPhoto,
+  previewTeamFeedPhoto,
+  recoveredTeamFeedPhoto,
+  type TeamFeedPhotoSelection,
+} from '../src/screens/TeamFeedPhotoRuntime';
 import {
   TEAM_FEED_MAX_LENGTH,
   TeamProductionRuntime,
@@ -36,7 +45,11 @@ const otherUserId = `usr_${'2'.repeat(32)}`;
 const rootEventId = 'evt_team-root';
 const eventId = 'evt_team-session';
 const mockDatabase = {};
+const otherMockDatabase = {};
 const mockGatewayClient = { request: jest.fn() };
+const mockUsePreventRemove = jest.fn();
+let mockAccountId = accountUserId;
+let mockPrivateDatabase = mockDatabase;
 let mockOnline = false;
 const metrics = {
   frame: { height: 844, width: 390, x: 0, y: 0 },
@@ -49,11 +62,11 @@ jest.mock('../src/app/GatewayProvider', () => ({
 
 jest.mock('../src/app/PrivateBootstrapGate', () => ({
   usePrivateDatabase: () => ({
-    accountId: `usr_${'1'.repeat(32)}`,
-    database: mockDatabase,
+    accountId: mockAccountId,
+    database: mockPrivateDatabase,
   }),
   usePrivateSessionLifecycle: () => ({
-    accountId: `usr_${'1'.repeat(32)}`,
+    accountId: mockAccountId,
     status: 'ready',
   }),
 }));
@@ -62,8 +75,41 @@ jest.mock('../src/screens/useOnlineState', () => ({
   useOnlineState: () => mockOnline,
 }));
 
+jest.mock('@react-navigation/native', () => ({
+  ...jest.requireActual('@react-navigation/native'),
+  usePreventRemove: (...args: unknown[]) => mockUsePreventRemove(...args),
+}));
+
+jest.mock('../src/screens/TeamFeedPhotoRuntime', () => ({
+  discardTeamFeedPhoto: jest.fn(),
+  markTeamFeedPhotoQueued: jest.fn(),
+  pickTeamFeedPhoto: jest.fn(),
+  prepareAndUploadTeamFeedPhoto: jest.fn(),
+  previewTeamFeedPhoto: jest.fn(),
+  recoveredTeamFeedPhoto: jest.fn(),
+}));
+
 beforeEach(() => {
   jest.restoreAllMocks();
+  jest.clearAllMocks();
+  jest.mocked(pickTeamFeedPhoto).mockReset();
+  jest.mocked(discardTeamFeedPhoto).mockReset();
+  jest.mocked(discardTeamFeedPhoto).mockResolvedValue();
+  jest.mocked(markTeamFeedPhotoQueued).mockReset();
+  jest
+    .mocked(markTeamFeedPhotoQueued)
+    .mockImplementation(async (_database, value) => ({
+      ...value,
+      lifecycleState: 'feed_queued',
+    }));
+  jest.mocked(prepareAndUploadTeamFeedPhoto).mockReset();
+  jest.mocked(previewTeamFeedPhoto).mockReset();
+  jest
+    .mocked(previewTeamFeedPhoto)
+    .mockResolvedValue('data:image/png;base64,QUJDRA==');
+  jest.mocked(recoveredTeamFeedPhoto).mockReset();
+  mockAccountId = accountUserId;
+  mockPrivateDatabase = mockDatabase;
   mockOnline = false;
 });
 
@@ -224,6 +270,44 @@ test('runtime creates one stable feed identity for concurrent submits and valida
     runtime.createFeedEntry(eventId, 'x'.repeat(TEAM_FEED_MAX_LENGTH + 1)),
   ).toThrow('1 to 10000 characters');
   expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+test('runtime preserves a prebound photo feed ID without a duplicate attachment commit', async () => {
+  const randomUUID = jest.fn(() => '00000000-0000-4000-8000-000000000099');
+  const runtime = await productionRuntime('participant', { randomUUID });
+  jest
+    .spyOn(MobileDataStore.prototype, 'listEventTree')
+    .mockResolvedValue(eventTree());
+  const enqueue = jest
+    .spyOn(MobileSyncEngine.prototype, 'enqueueMutation')
+    .mockResolvedValue(outbox('pending', 'fed_photo', 'Foto-Update', 1));
+  const feedEntryId = 'fed_00000000-0000-4000-8000-000000000010';
+
+  await runtime.createFeedEntry(eventId, 'Foto-Update', feedEntryId);
+
+  expect(randomUUID).not.toHaveBeenCalled();
+  expect(enqueue.mock.calls.map(call => call[3])).toEqual([
+    {
+      entityId: feedEntryId,
+      kind: 'feed.entry.create',
+      payload: {
+        content: 'Foto-Update',
+        eventId,
+        kind: 'message',
+        parentEntryId: null,
+      },
+    },
+  ]);
+});
+
+test('runtime rejects an invalid prebound photo feed ID before any outbox write', async () => {
+  const runtime = await productionRuntime('participant');
+  const enqueue = jest.spyOn(MobileSyncEngine.prototype, 'enqueueMutation');
+
+  expect(() =>
+    runtime.createFeedEntry(eventId, 'Foto-Update', 'att_wrong-kind'),
+  ).toThrow('Invalid team feed entry identity');
+  expect(enqueue).not.toHaveBeenCalled();
 });
 
 test('runtime rechecks the active account after the event read and performs no feed write after a switch', async () => {
@@ -716,6 +800,138 @@ test('Option-2 view hides unusable submit actions and blocks busy or viewer subm
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('Option-2 photo controls expose online, selected, retry and offline states without relying on color', async () => {
+  const onPickPhoto = jest.fn();
+  const baseProps = {
+    draft: 'Foto vom Treffpunkt',
+    error: null,
+    model: feedModel(),
+    onBack: jest.fn(),
+    onChange: jest.fn(),
+    onPickPhoto,
+    onRefresh: jest.fn(),
+    onSubmit: jest.fn(),
+    online: true,
+    submitting: false,
+  };
+  const renderer = await render(
+    <TeamFeedView
+      {...baseProps}
+      photo={{
+        available: true,
+        feedQueued: false,
+        message: null,
+        messageKind: null,
+        phase: 'empty',
+        previewDataUri: null,
+        reselect: false,
+      }}
+    />,
+  );
+
+  const picker = renderer.root.findByProps({
+    testID: 'team-feed-photo-pick',
+  });
+  expect(picker.props).toMatchObject({
+    disabled: false,
+    label: 'Foto auswählen',
+  });
+  expect(picker.props.accessibilityHint).toContain('genau ein Bild');
+  await ReactTestRenderer.act(() => picker.props.onPress());
+  expect(onPickPhoto).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>
+        <TeamFeedView
+          {...baseProps}
+          photo={{
+            available: true,
+            feedQueued: false,
+            message: 'Ein Foto ist ausgewählt.',
+            messageKind: 'info',
+            phase: 'selected',
+            previewDataUri: 'data:image/png;base64,QUJDRA==',
+            reselect: false,
+          }}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '1 FOTO AUSGEWÄHLT' }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props
+      .children,
+  ).toBe('Ein Foto ist ausgewählt.');
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-preview' }).props,
+  ).toMatchObject({
+    accessibilityLabel: 'Vorschau des ausgewählten Team-Fotos.',
+    source: { uri: 'data:image/png;base64,QUJDRA==' },
+  });
+
+  await ReactTestRenderer.act(() => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>
+        <TeamFeedView
+          {...baseProps}
+          draft=""
+          photo={{
+            available: true,
+            feedQueued: true,
+            message: 'Foto wartet auf erneutes Senden.',
+            messageKind: 'error',
+            phase: 'selected',
+            previewDataUri: 'data:image/png;base64,QUJDRA==',
+            reselect: false,
+          }}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+  expect(renderer.root.findByType(TextInput).props.editable).toBe(false);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props,
+  ).toMatchObject({ disabled: false, label: 'Foto erneut senden' });
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props,
+  ).toMatchObject({
+    accessibilityLiveRegion: 'assertive',
+    accessibilityRole: 'alert',
+  });
+
+  await ReactTestRenderer.act(() => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>
+        <TeamFeedView
+          {...baseProps}
+          photo={{
+            available: false,
+            feedQueued: false,
+            message: null,
+            messageKind: null,
+            phase: 'empty',
+            previewDataUri: null,
+            reselect: false,
+          }}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-pick' }).props,
+  ).toMatchObject({
+    accessibilityHint: expect.stringContaining('lokal gespeichert'),
+    disabled: true,
+  });
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.disabled,
+  ).toBe(false);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('production route loads the exact scope, queues text and returns without a direct service call', async () => {
   const model = feedModel();
   const runtime = {
@@ -723,6 +939,7 @@ test('production route loads the exact scope, queues text and returns without a 
       outbox('pending', 'fed_new', 'Hoi 👋', 1),
     ),
     loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
     refresh: jest.fn(async () => undefined),
   } as unknown as TeamProductionRuntime;
   const create = jest
@@ -764,6 +981,854 @@ test('production route loads the exact scope, queues text and returns without a 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('production route preserves feed-before-authoritative-photo-finalize ordering', async () => {
+  mockOnline = true;
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(async () =>
+      outbox('pending', 'fed_photo', 'Foto vom Treffpunkt', 1),
+    ),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  jest.mocked(prepareAndUploadTeamFeedPhoto).mockResolvedValue('upl_photo');
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+  jest.mocked(runtime.refresh).mockClear();
+  jest.mocked(runtime.loadFeed).mockClear();
+
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  expect(
+    renderer.root.findByProps({ accessibilityLabel: '1 FOTO AUSGEWÄHLT' }),
+  ).toBeTruthy();
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(runtime.createFeedEntry).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Foto vom Treffpunkt'),
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+
+  expect(runtime.createFeedEntry).toHaveBeenCalledWith(
+    eventId,
+    'Foto vom Treffpunkt',
+    selection.feedEntryId,
+  );
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledWith({
+    activeAccountUserId: expect.any(Function),
+    client: mockGatewayClient,
+    database: mockDatabase,
+    selection: { ...selection, lifecycleState: 'feed_queued' },
+  });
+  expect(markTeamFeedPhotoQueued).toHaveBeenCalledWith(mockDatabase, {
+    ...selection,
+    lifecycleState: 'feed_queued',
+  });
+  const createOrder = jest.mocked(runtime.createFeedEntry).mock
+    .invocationCallOrder[0] as number;
+  const markOrder = jest.mocked(markTeamFeedPhotoQueued).mock
+    .invocationCallOrder[0] as number;
+  const firstRefreshOrder = jest.mocked(runtime.refresh).mock
+    .invocationCallOrder[0] as number;
+  const uploadOrder = jest.mocked(prepareAndUploadTeamFeedPhoto).mock
+    .invocationCallOrder[0] as number;
+  const secondRefreshOrder = jest.mocked(runtime.refresh).mock
+    .invocationCallOrder[1] as number;
+  expect(createOrder).toBeLessThan(markOrder);
+  expect(markOrder).toBeLessThan(firstRefreshOrder);
+  expect(firstRefreshOrder).toBeLessThan(uploadOrder);
+  expect(uploadOrder).toBeLessThan(secondRefreshOrder);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props
+      .children,
+  ).toContain('sicher geprüft');
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-input' }).props.value,
+  ).toBe('');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('offline photo selection queues one feed and resumes finalize after reconnect', async () => {
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(async () =>
+      outbox('pending', 'fed_photo', 'Offline-Foto', 1),
+    ),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  jest.mocked(prepareAndUploadTeamFeedPhoto).mockResolvedValue('upl_photo');
+  const screen = () => (
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-offline-photo',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />
+  );
+  const renderer = await render(screen());
+
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-pick' }).props
+      .disabled,
+  ).toBe(false);
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Offline-Foto'),
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+
+  expect(runtime.createFeedEntry).toHaveBeenCalledTimes(1);
+  expect(markTeamFeedPhotoQueued).toHaveBeenCalledWith(mockDatabase, {
+    ...selection,
+    lifecycleState: 'feed_queued',
+  });
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(mockGatewayClient.request).not.toHaveBeenCalled();
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.label,
+  ).toBe('Foto erneut senden');
+
+  mockOnline = true;
+  await ReactTestRenderer.act(async () => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>{screen()}</SafeAreaProvider>,
+    );
+  });
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+
+  expect(runtime.createFeedEntry).toHaveBeenCalledTimes(1);
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledTimes(1);
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledWith({
+    activeAccountUserId: expect.any(Function),
+    client: mockGatewayClient,
+    database: mockDatabase,
+    selection: { ...selection, lifecycleState: 'feed_queued' },
+  });
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('selected photo has an accessible 48pt remove action and purges exactly once', async () => {
+  mockOnline = true;
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-remove-photo',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Text bleibt'),
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+
+  expect(previewTeamFeedPhoto).toHaveBeenCalledWith(selection);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-preview' }).props,
+  ).toMatchObject({
+    accessibilityLabel: 'Vorschau des ausgewählten Team-Fotos.',
+    source: { uri: 'data:image/png;base64,QUJDRA==' },
+  });
+  const remove = renderer.root.findByProps({
+    testID: 'team-feed-photo-remove',
+  });
+  expect(remove.props.label).toBe('Foto entfernen');
+  expect(remove.props.accessibilityHint).toContain('Text bleibt unverändert');
+  const removeControl = renderer.root.findByProps({
+    accessibilityLabel: 'Foto entfernen',
+  });
+  expect(
+    StyleSheet.flatten(removeControl.props.style({ pressed: false })).minHeight,
+  ).toBeGreaterThanOrEqual(componentMetrics.control.minimumTouchSize);
+  await ReactTestRenderer.act(async () => remove.props.onPress());
+
+  expect(discardTeamFeedPhoto).toHaveBeenCalledWith(mockDatabase, selection);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-input' }).props.value,
+  ).toBe('Text bleibt');
+  expect(
+    renderer.root.findAllByProps({ testID: 'team-feed-photo-remove' }),
+  ).toHaveLength(0);
+  await ReactTestRenderer.act(() => renderer.unmount());
+  expect(discardTeamFeedPhoto).toHaveBeenCalledTimes(1);
+});
+
+test('native removal and synchronous back stay blocked during a deferred local photo create', async () => {
+  mockOnline = true;
+  const model = feedModel();
+  let resolveCreate!: (value: OutboxItem) => void;
+  const runtime = {
+    createFeedEntry: jest.fn(
+      () =>
+        new Promise<OutboxItem>(resolve => {
+          resolveCreate = resolve;
+        }),
+    ),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  const goBack = jest.fn();
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack } as never}
+      route={{
+        key: 'team-feed-deferred-create',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Bleibt sicher'),
+  );
+  const submit = renderer.root.findByProps({ testID: 'team-feed-submit' });
+  const back = renderer.root.findByProps({ testID: 'team-feed-back' });
+
+  await ReactTestRenderer.act(async () => {
+    submit.props.onPress();
+    back.props.onPress();
+    await Promise.resolve();
+  });
+
+  expect(goBack).not.toHaveBeenCalled();
+  expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(
+    mockUsePreventRemove.mock.calls[
+      mockUsePreventRemove.mock.calls.length - 1
+    ]?.[0],
+  ).toBe(true);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+  expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(async () => {
+    resolveCreate(outbox('pending', selection.feedEntryId, 'Bleibt sicher', 1));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(markTeamFeedPhotoQueued).not.toHaveBeenCalled();
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+});
+
+test('unmount invalidates a deferred upload without deleting its queued media', async () => {
+  mockOnline = true;
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(async () =>
+      outbox('pending', 'fed_photo', 'Upload läuft', 1),
+    ),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  let resolveUpload!: (uploadId: string) => void;
+  jest.mocked(prepareAndUploadTeamFeedPhoto).mockImplementation(
+    () =>
+      new Promise<string>(resolve => {
+        resolveUpload = resolve;
+      }),
+  );
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-deferred-upload',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+  jest.mocked(runtime.refresh).mockClear();
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Upload läuft'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledTimes(1);
+  expect(runtime.refresh).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+  await ReactTestRenderer.act(async () => {
+    resolveUpload('upl_photo');
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(runtime.refresh).toHaveBeenCalledTimes(1);
+});
+
+test('recovered feed photo resumes without creating a duplicate feed entry', async () => {
+  mockOnline = true;
+  const model = feedModel();
+  const selection = {
+    ...photoSelection(),
+    lifecycleState: 'feed_queued' as const,
+    uploadId: 'upl_recovered',
+  };
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => ({
+      attachment: selection.prepared.attachment,
+      eventId,
+      state: 'feed_queued' as const,
+      uploadGeneration: 1,
+      uploadId: 'upl_recovered',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      updatedAt: '2026-07-20T12:00:00.000Z',
+    })),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  jest.mocked(recoveredTeamFeedPhoto).mockReturnValue(selection);
+  jest.mocked(prepareAndUploadTeamFeedPhoto).mockResolvedValue('upl_recovered');
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-recovered-photo',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+
+  expect(previewTeamFeedPhoto).toHaveBeenCalledWith(selection);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-preview' }).props
+      .source,
+  ).toEqual({ uri: 'data:image/png;base64,QUJDRA==' });
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+  expect(runtime.createFeedEntry).not.toHaveBeenCalled();
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledWith({
+    activeAccountUserId: expect.any(Function),
+    client: mockGatewayClient,
+    database: mockDatabase,
+    selection,
+  });
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('transient recovered preview failure preserves the queued photo retry', async () => {
+  const selection = {
+    ...photoSelection(),
+    lifecycleState: 'feed_queued' as const,
+    uploadId: 'upl_retry',
+  };
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => feedModel()),
+    recoverFeedPhoto: jest.fn(async () => ({
+      attachment: selection.prepared.attachment,
+      eventId,
+      state: 'feed_queued' as const,
+      uploadGeneration: 1,
+      uploadId: 'upl_retry',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      updatedAt: '2026-07-20T12:00:00.000Z',
+    })),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  jest.mocked(recoveredTeamFeedPhoto).mockReturnValue(selection);
+  jest
+    .mocked(previewTeamFeedPhoto)
+    .mockRejectedValueOnce(new Error('attachment_media_preview_failed'));
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-transient-preview',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+
+  expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props
+      .children,
+  ).toContain('vorübergehend');
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.label,
+  ).toBe('Foto erneut senden');
+  expect(
+    renderer.root.findAllByProps({ testID: 'team-feed-photo-preview' }),
+  ).toHaveLength(0);
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('missing recovered media is discarded and reselected onto the existing feed without a gateway call', async () => {
+  mockOnline = true;
+  const selection = {
+    ...photoSelection(),
+    lifecycleState: 'feed_queued' as const,
+    uploadId: 'upl_missing',
+  };
+  const model = {
+    ...feedModel(),
+    entries: [entry('queued', 'Dieser Text bleibt lokal gespeichert.')],
+  };
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => ({
+      attachment: selection.prepared.attachment,
+      eventId,
+      state: 'feed_queued' as const,
+      uploadGeneration: 1,
+      uploadId: 'upl_missing',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      updatedAt: '2026-07-20T12:00:00.000Z',
+    })),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  jest.mocked(recoveredTeamFeedPhoto).mockReturnValue(selection);
+  jest
+    .mocked(previewTeamFeedPhoto)
+    .mockRejectedValueOnce(new Error('attachment_media_missing'));
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-missing-photo',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+
+  expect(discardTeamFeedPhoto).toHaveBeenCalledWith(mockDatabase, selection);
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-pick' }).props.label,
+  ).toBe('Foto neu auswählen');
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-entry-queued' }),
+  ).toBeTruthy();
+  expect(
+    renderer.root.findAllByProps({ testID: 'team-feed-photo-preview' }),
+  ).toHaveLength(0);
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(mockGatewayClient.request).not.toHaveBeenCalled();
+
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue({
+    ...photoSelection(),
+    lifecycleState: 'selected',
+    uploadId: null,
+  });
+  jest
+    .mocked(prepareAndUploadTeamFeedPhoto)
+    .mockResolvedValue('upl_reselected');
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  expect(pickTeamFeedPhoto).toHaveBeenCalledWith(
+    mockDatabase,
+    accountUserId,
+    rootEventId,
+    eventId,
+    selection.feedEntryId,
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+  expect(runtime.createFeedEntry).not.toHaveBeenCalled();
+  expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test.each([
+  ['attachment_media_missing', true],
+  ['attachment_media_unsafe', true],
+  ['attachment_media_invalid', false],
+] as const)(
+  'upload media failure %s preserves retryable media and discards terminal local media',
+  async (failureCode, discardExpected) => {
+    mockOnline = true;
+    const model = {
+      ...feedModel(),
+      entries: [entry('queued', 'Dieser Text bleibt lokal gespeichert.')],
+    };
+    const runtime = {
+      createFeedEntry: jest.fn(async () =>
+        outbox(
+          'pending',
+          photoSelection().feedEntryId,
+          'Dieser Text bleibt lokal gespeichert.',
+          1,
+        ),
+      ),
+      loadFeed: jest.fn(async () => model),
+      recoverFeedPhoto: jest.fn(async () => null),
+      refresh: jest.fn(async () => undefined),
+    } as unknown as TeamProductionRuntime;
+    jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+    const selection = photoSelection();
+    const queuedSelection = {
+      ...selection,
+      lifecycleState: 'feed_queued' as const,
+    };
+    jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+    jest
+      .mocked(prepareAndUploadTeamFeedPhoto)
+      .mockRejectedValueOnce(new Error(failureCode))
+      .mockResolvedValueOnce('upl_replacement');
+    const renderer = await render(
+      <TeamFeedScreen
+        navigation={{ goBack: jest.fn() } as never}
+        route={{
+          key: 'team-feed-terminal-upload',
+          name: 'TeamFeed',
+          params: { eventId, rootEventId },
+        }}
+      />,
+    );
+    await ReactTestRenderer.act(async () =>
+      renderer.root
+        .findByProps({ testID: 'team-feed-photo-pick' })
+        .props.onPress(),
+    );
+    await ReactTestRenderer.act(() =>
+      renderer.root
+        .findByProps({ testID: 'team-feed-input' })
+        .props.onChangeText('Dieser Text bleibt lokal gespeichert.'),
+    );
+    await ReactTestRenderer.act(async () =>
+      renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+    );
+
+    if (!discardExpected) {
+      expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+      expect(
+        renderer.root.findByProps({ testID: 'team-feed-submit' }).props.label,
+      ).toBe('Foto erneut senden');
+      await ReactTestRenderer.act(async () =>
+        renderer.root
+          .findByProps({ testID: 'team-feed-submit' })
+          .props.onPress(),
+      );
+      expect(runtime.createFeedEntry).toHaveBeenCalledTimes(1);
+      expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledTimes(2);
+      await ReactTestRenderer.act(() => renderer.unmount());
+      return;
+    }
+
+    expect(discardTeamFeedPhoto).toHaveBeenCalledWith(
+      mockDatabase,
+      queuedSelection,
+    );
+    expect(
+      renderer.root.findByProps({ testID: 'team-feed-photo-pick' }).props.label,
+    ).toBe('Foto neu auswählen');
+    expect(
+      renderer.root.findByProps({ testID: 'team-feed-entry-queued' }),
+    ).toBeTruthy();
+    expect(runtime.createFeedEntry).toHaveBeenCalledTimes(1);
+
+    jest.mocked(pickTeamFeedPhoto).mockResolvedValue({
+      ...selection,
+      lifecycleState: 'selected',
+      uploadId: null,
+    });
+    await ReactTestRenderer.act(async () =>
+      renderer.root
+        .findByProps({ testID: 'team-feed-photo-pick' })
+        .props.onPress(),
+    );
+    expect(pickTeamFeedPhoto).toHaveBeenLastCalledWith(
+      mockDatabase,
+      accountUserId,
+      rootEventId,
+      eventId,
+      selection.feedEntryId,
+    );
+    await ReactTestRenderer.act(async () =>
+      renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+    );
+
+    expect(runtime.createFeedEntry).toHaveBeenCalledTimes(1);
+    expect(prepareAndUploadTeamFeedPhoto).toHaveBeenCalledTimes(2);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  },
+);
+
+test('same-scope recovery restart never discards a successfully restored selected photo', async () => {
+  const selection = photoSelection();
+  const recovered = {
+    attachment: selection.prepared.attachment,
+    eventId,
+    state: 'selected' as const,
+    uploadGeneration: 1,
+    uploadId: null,
+    createdAt: '2026-07-20T12:00:00.000Z',
+    updatedAt: '2026-07-20T12:00:00.000Z',
+  };
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => feedModel()),
+    recoverFeedPhoto: jest.fn(async () => recovered),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  jest.mocked(recoveredTeamFeedPhoto).mockReturnValue(selection);
+  let resolveFirstPreview!: (value: string) => void;
+  jest
+    .mocked(previewTeamFeedPhoto)
+    .mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFirstPreview = resolve;
+        }),
+    )
+    .mockResolvedValueOnce('data:image/png;base64,U0VDT05E');
+  const screen = () => (
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-same-scope-preview',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />
+  );
+  const renderer = await render(screen());
+
+  mockOnline = true;
+  await ReactTestRenderer.act(async () => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>{screen()}</SafeAreaProvider>,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-preview' }).props
+      .source,
+  ).toEqual({ uri: 'data:image/png;base64,U0VDT05E' });
+
+  await ReactTestRenderer.act(async () => {
+    resolveFirstPreview('data:image/png;base64,RklSU1Q=');
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(discardTeamFeedPhoto).not.toHaveBeenCalled();
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-preview' }).props
+      .source,
+  ).toEqual({ uri: 'data:image/png;base64,U0VDT05E' });
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('late preview from the previous account is discarded and never published', async () => {
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  const selection = photoSelection();
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValue(selection);
+  let resolvePreview!: (value: string) => void;
+  jest.mocked(previewTeamFeedPhoto).mockReturnValue(
+    new Promise(resolve => {
+      resolvePreview = resolve;
+    }),
+  );
+  const screen = () => (
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed-late-preview',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />
+  );
+  const renderer = await render(screen());
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress();
+    await Promise.resolve();
+  });
+  expect(previewTeamFeedPhoto).toHaveBeenCalledWith(selection);
+
+  mockAccountId = otherUserId;
+  mockPrivateDatabase = otherMockDatabase;
+  await ReactTestRenderer.act(async () => {
+    renderer.update(
+      <SafeAreaProvider initialMetrics={metrics}>{screen()}</SafeAreaProvider>,
+    );
+    await Promise.resolve();
+  });
+  await ReactTestRenderer.act(async () => {
+    resolvePreview('data:image/png;base64,TEFURQ==');
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(
+    renderer.root.findAllByProps({ testID: 'team-feed-photo-preview' }),
+  ).toHaveLength(0);
+  expect(discardTeamFeedPhoto).toHaveBeenCalledWith(mockDatabase, selection);
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('picker cancel and failure leave the text-only post path available', async () => {
+  const model = feedModel();
+  const runtime = {
+    createFeedEntry: jest.fn(async () =>
+      outbox('pending', 'fed_text', 'Text bleibt möglich', 1),
+    ),
+    loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
+    refresh: jest.fn(async () => undefined),
+  } as unknown as TeamProductionRuntime;
+  jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
+  jest.mocked(pickTeamFeedPhoto).mockResolvedValueOnce(null);
+  mockOnline = true;
+  const renderer = await render(
+    <TeamFeedScreen
+      navigation={{ goBack: jest.fn() } as never}
+      route={{
+        key: 'team-feed',
+        name: 'TeamFeed',
+        params: { eventId, rootEventId },
+      }}
+    />,
+  );
+
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props,
+  ).toMatchObject({ accessibilityLiveRegion: 'polite' });
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props
+      .children,
+  ).toContain('Keine Fotoauswahl');
+
+  jest
+    .mocked(pickTeamFeedPhoto)
+    .mockRejectedValueOnce(new Error('attachment_media_picker_failed'));
+  await ReactTestRenderer.act(async () =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-photo-pick' })
+      .props.onPress(),
+  );
+  expect(
+    renderer.root.findByProps({ testID: 'team-feed-photo-status' }).props,
+  ).toMatchObject({ accessibilityRole: 'alert' });
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'team-feed-input' })
+      .props.onChangeText('Text bleibt möglich'),
+  );
+  await ReactTestRenderer.act(async () =>
+    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.onPress(),
+  );
+  expect(runtime.createFeedEntry).toHaveBeenCalledWith(
+    eventId,
+    'Text bleibt möglich',
+  );
+  expect(prepareAndUploadTeamFeedPhoto).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('production route exposes a rejected queued entry as an assistive attention transition', async () => {
   const queued = {
     ...feedModel(),
@@ -777,6 +1842,7 @@ test('production route exposes a rejected queued entry as an assistive attention
   const runtime = {
     createFeedEntry: jest.fn(),
     loadFeed: jest.fn(async () => (refreshed ? attention : queued)),
+    recoverFeedPhoto: jest.fn(async () => null),
     refresh: jest.fn(async () => {
       refreshed = true;
     }),
@@ -836,6 +1902,7 @@ test('production route keeps unsaved text in the field when the durable enqueue 
       throw new Error('local write failed');
     }),
     loadFeed: jest.fn(async () => model),
+    recoverFeedPhoto: jest.fn(async () => null),
     refresh: jest.fn(async () => undefined),
   } as unknown as TeamProductionRuntime;
   jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
@@ -883,6 +1950,7 @@ test('production route clears a durably saved draft and names refresh when proje
       .mockResolvedValueOnce(model)
       .mockResolvedValueOnce(model)
       .mockRejectedValueOnce(new Error('projection unavailable')),
+    recoverFeedPhoto: jest.fn(async () => null),
     refresh: jest.fn(async () => undefined),
   } as unknown as TeamProductionRuntime;
   jest.spyOn(TeamProductionRuntime, 'create').mockResolvedValue(runtime);
@@ -1061,6 +2129,40 @@ function feedModel(): TeamFeedViewModel {
     eventTitle: 'Team Retreat',
     role: 'participant',
     rootEventId,
+  };
+}
+
+function photoSelection(): TeamFeedPhotoSelection {
+  const photoSha = 'b'.repeat(64);
+  const feedEntryId = 'fed_00000000-0000-4000-8000-000000000010';
+  return {
+    feedEntryId,
+    lifecycleState: 'selected',
+    prepared: {
+      attachment: {
+        accountUserId,
+        attachmentId: 'att_00000000-0000-4000-8000-000000000011',
+        rootEventId,
+        targetEntryId: feedEntryId,
+        retainedFileKey: `${photoSha}.jpg`,
+        contentType: 'image/jpeg',
+        byteCount: 1234,
+        sha256: photoSha,
+        pixelWidth: 640,
+        pixelHeight: 480,
+        wasNormalized: true,
+        retainedAt: '2026-07-20T12:00:00.000Z',
+      },
+      uploadPreparation: {
+        attachmentId: 'att_00000000-0000-4000-8000-000000000011',
+        targetEntryId: feedEntryId,
+        contentType: 'image/jpeg',
+        byteCount: 1234,
+        sha256: photoSha,
+      },
+    },
+    uploadGeneration: 1,
+    uploadId: null,
   };
 }
 

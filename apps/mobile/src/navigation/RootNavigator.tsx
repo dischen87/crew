@@ -14,6 +14,8 @@ import {
 } from '../screens/FeedbackRoutes';
 import { GolfScorecardRouteScreen } from '../screens/GolfScorecardScreen';
 import { InboundGateScreen } from '../screens/InboundGateScreen';
+import { InviteEditorScreen } from '../screens/InviteEditorScreen';
+import { InviteManagerScreen } from '../screens/InviteManagerScreen';
 import { InvitePreviewScreen } from '../screens/InvitePreviewScreen';
 import { NativeE2EEvidenceRouteScreen } from '../screens/NativeE2EEvidenceScreen';
 import { RecapScreen } from '../screens/RecapScreen';
@@ -170,6 +172,20 @@ export function RootNavigator({ privateStatus }: RootNavigatorProps) {
           privateStatus === 'ready' ? TeamDecisionScreen : PrivateFallback
         }
         options={{ headerShown: false, title: 'Entscheidung' }}
+      />
+      <Stack.Screen
+        name="Invites"
+        component={
+          privateStatus === 'ready' ? InviteManagerScreen : PrivateFallback
+        }
+        options={{ headerShown: false, title: 'Einladungen' }}
+      />
+      <Stack.Screen
+        name="InviteEditor"
+        component={
+          privateStatus === 'ready' ? InviteEditorScreen : PrivateFallback
+        }
+        options={{ headerShown: false, title: 'Einladung erstellen' }}
       />
       <Stack.Screen
         name="InvitePreview"

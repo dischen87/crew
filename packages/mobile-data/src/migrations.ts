@@ -2122,6 +2122,53 @@ BEGIN
 END;
 `,
 	},
+	{
+		version: 23,
+		name: "feed_photo_lifecycle",
+		sql: `
+CREATE TABLE local_feed_photo_lifecycle (
+  account_user_id TEXT NOT NULL CHECK (account_user_id LIKE 'usr_%'),
+  attachment_id TEXT NOT NULL CHECK (
+    attachment_id LIKE 'att_%' AND length(attachment_id) BETWEEN 5 AND 100
+  ),
+  event_id TEXT CHECK (
+    event_id IS NULL OR
+    (event_id LIKE 'evt_%' AND length(event_id) BETWEEN 5 AND 100)
+  ),
+  state TEXT NOT NULL CHECK (
+    state IN ('selected', 'feed_queued', 'cleanup_pending')
+  ),
+  upload_generation INTEGER NOT NULL DEFAULT 1 CHECK (
+    upload_generation BETWEEN 1 AND 20
+  ),
+  upload_id TEXT CHECK (
+    upload_id IS NULL OR
+    (upload_id LIKE 'upl_%' AND length(upload_id) BETWEEN 5 AND 100)
+  ),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (account_user_id, attachment_id),
+  FOREIGN KEY (account_user_id, attachment_id)
+    REFERENCES local_attachment_media (account_user_id, attachment_id)
+    ON DELETE CASCADE,
+  CHECK (
+    state <> 'selected' OR upload_id IS NULL
+  )
+);
+
+CREATE INDEX local_feed_photo_lifecycle_by_state
+  ON local_feed_photo_lifecycle (
+    account_user_id, state, updated_at, attachment_id
+  );
+
+CREATE TRIGGER local_feed_photo_identity_immutable
+BEFORE UPDATE OF account_user_id, attachment_id, event_id, created_at
+ON local_feed_photo_lifecycle
+BEGIN
+  SELECT RAISE(ABORT, 'feed photo identity is immutable');
+END;
+`,
+	},
 ];
 
 interface AppliedMigrationRow {

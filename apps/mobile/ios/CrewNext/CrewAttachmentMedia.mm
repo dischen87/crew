@@ -2,6 +2,7 @@
 
 #import <CommonCrypto/CommonDigest.h>
 #import <ImageIO/ImageIO.h>
+#import <PhotosUI/PhotosUI.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -46,6 +47,8 @@ typedef NS_ENUM(NSInteger, CrewAttachmentMediaErrorCode) {
   CrewAttachmentMediaUploadFailed = 12,
   CrewAttachmentMediaPreviewUnavailable = 13,
   CrewAttachmentMediaPreviewFailed = 14,
+  CrewAttachmentMediaPickerUnavailable = 15,
+  CrewAttachmentMediaPickerFailed = 16,
 };
 
 typedef NS_ENUM(NSInteger, CrewAttachmentMediaKind) {
@@ -100,6 +103,13 @@ NSString *CrewMediaExtension(CrewAttachmentMediaKind kind) {
   }
 }
 
+CrewAttachmentMediaKind CrewMediaKindForExtension(NSString *extension) {
+  if ([extension isEqualToString:@"jpg"]) return CrewAttachmentMediaJPEG;
+  if ([extension isEqualToString:@"png"]) return CrewAttachmentMediaPNG;
+  if ([extension isEqualToString:@"webp"]) return CrewAttachmentMediaWebP;
+  return CrewAttachmentMediaUnknown;
+}
+
 BOOL CrewReadDimensions(CGImageSourceRef source,
                         NSInteger *pixelWidth,
                         NSInteger *pixelHeight,
@@ -111,7 +121,10 @@ BOOL CrewReadDimensions(CGImageSourceRef source,
   NSNumber *height = properties[(__bridge NSString *)kCGImagePropertyPixelHeight];
   NSNumber *imageOrientation =
       properties[(__bridge NSString *)kCGImagePropertyOrientation];
-  if (width.integerValue < 1 || height.integerValue < 1) {
+  NSInteger orientationValue =
+      imageOrientation ? imageOrientation.integerValue : 1;
+  if (width.integerValue < 1 || height.integerValue < 1 ||
+      orientationValue < 1 || orientationValue > 8) {
     if (error) {
       *error = CrewMediaError(CrewAttachmentMediaUnsafeImage,
                               @"The selected image has invalid dimensions.");
@@ -120,7 +133,7 @@ BOOL CrewReadDimensions(CGImageSourceRef source,
   }
   *pixelWidth = width.integerValue;
   *pixelHeight = height.integerValue;
-  *orientation = imageOrientation ? imageOrientation.integerValue : 1;
+  *orientation = orientationValue;
   return YES;
 }
 
@@ -191,6 +204,13 @@ BOOL CrewSynchronizeFile(NSURL *url, NSError **error) {
   return [handle closeAndReturnError:error];
 }
 
+BOOL CrewRefreshRetainedFile(NSURL *url, NSError **error) {
+  return [NSFileManager.defaultManager
+      setAttributes:@{ NSFileModificationDate : NSDate.date }
+       ofItemAtPath:url.path
+              error:error];
+}
+
 BOOL CrewIsValidAccountUserId(NSString *accountUserId) {
   if (accountUserId.length != 36 ||
       ![accountUserId hasPrefix:@"usr_"]) {
@@ -209,18 +229,16 @@ BOOL CrewIsRetainedFileKey(NSString *fileKey) {
     return NO;
   }
   NSString *extension = fileKey.pathExtension.lowercaseString;
-  if (![@[ @"jpg", @"png", @"webp" ] containsObject:extension]) return NO;
+  if (![fileKey.pathExtension isEqualToString:extension] ||
+      ![@[ @"jpg", @"png", @"webp" ] containsObject:extension]) {
+    return NO;
+  }
   NSString *digest = fileKey.stringByDeletingPathExtension;
   if (digest.length != 64) return NO;
   NSCharacterSet *nonHex =
       [[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"]
           invertedSet];
   return [digest rangeOfCharacterFromSet:nonHex].location == NSNotFound;
-}
-
-BOOL CrewIsRetainedScreenshotKey(NSString *fileKey) {
-  return CrewIsRetainedFileKey(fileKey) &&
-         [fileKey.pathExtension isEqualToString:@"png"];
 }
 
 BOOL CrewValidatePrivateDirectory(NSURL *directory,
@@ -452,7 +470,7 @@ BOOL CrewPurgeRetained(NSString *accountUserId,
   }
   NSMutableOrderedSet<NSString *> *keys = [NSMutableOrderedSet orderedSet];
   for (id fileKey in retainedFileKeys) {
-    if (!CrewIsRetainedScreenshotKey(fileKey)) {
+    if (!CrewIsRetainedFileKey(fileKey)) {
       if (error) {
         *error = CrewMediaError(CrewAttachmentMediaInvalidArgument,
                                 @"Retained image purge request is invalid.");
@@ -752,6 +770,7 @@ NSDictionary *CrewNormalizeAndRetain(NSString *accountUserId,
                                       error:error]) {
           return nil;
         }
+        if (!CrewRefreshRetainedFile(retainedURL, error)) return nil;
 
         result = @{
           @"retainedFileKey" : fileKey,
@@ -797,6 +816,33 @@ UIWindow *CrewActiveKeyWindow(void) {
           !CGRectIsEmpty(window.bounds)) {
         return window;
       }
+    }
+  }
+  return nil;
+}
+
+UIViewController *CrewVisibleViewController(UIViewController *controller) {
+  if (controller.presentedViewController) {
+    return CrewVisibleViewController(controller.presentedViewController);
+  }
+  if ([controller isKindOfClass:UINavigationController.class]) {
+    return CrewVisibleViewController(
+        ((UINavigationController *)controller).visibleViewController);
+  }
+  if ([controller isKindOfClass:UITabBarController.class]) {
+    return CrewVisibleViewController(
+        ((UITabBarController *)controller).selectedViewController);
+  }
+  return controller;
+}
+
+NSString *CrewPickerTypeIdentifier(NSItemProvider *provider) {
+  NSArray<UTType *> *supported =
+      @[ UTTypeHEIC, UTTypeHEIF, UTTypeJPEG, UTTypePNG, UTTypeWebP ];
+  for (UTType *preferred in supported) {
+    for (NSString *identifier in provider.registeredTypeIdentifiers) {
+      UTType *registered = [UTType typeWithIdentifier:identifier];
+      if ([registered conformsToType:preferred]) return identifier;
     }
   }
   return nil;
@@ -950,6 +996,14 @@ NSDictionary *CrewRetainCapturedPNG(NSString *accountUserId,
       return nil;
     }
   }
+  NSError *refreshError = nil;
+  if (!CrewRefreshRetainedFile(retainedURL, &refreshError)) {
+    if (error) {
+      *error = CrewMediaError(CrewAttachmentMediaStorageFailed,
+                              @"Screen capture could not be retained.");
+    }
+    return nil;
+  }
   return @{
     @"retainedFileKey" : fileKey,
     @"contentType" : @"image/png",
@@ -1052,15 +1106,12 @@ BOOL CrewValidateUploadFields(NSArray *grantFields,
   return YES;
 }
 
-NSData *CrewReadRetainedPNG(NSString *accountUserId,
-                            NSString *retainedFileKey,
-                            NSError **error) {
+NSData *CrewReadRetainedImage(NSString *accountUserId,
+                              NSString *retainedFileKey,
+                              NSError **error) {
   NSString *sha256 = retainedFileKey.stringByDeletingPathExtension;
   if (!CrewIsValidAccountUserId(accountUserId) ||
-      ![retainedFileKey.pathExtension isEqualToString:@"png"] ||
-      !CrewIsSHA256(sha256) ||
-      ![retainedFileKey isEqualToString:
-                               [sha256 stringByAppendingString:@".png"]]) {
+      !CrewIsRetainedFileKey(retainedFileKey) || !CrewIsSHA256(sha256)) {
     if (error) {
       *error = CrewMediaError(CrewAttachmentMediaInvalidArgument,
                               @"Retained image request is invalid.");
@@ -1092,8 +1143,6 @@ NSData *CrewReadRetainedPNG(NSString *accountUserId,
   NSData *data = [NSData dataWithContentsOfURL:retainedURL
                                        options:NSDataReadingMappedIfSafe
                                          error:&resourceError];
-  static const unsigned char pngSignature[] =
-      {0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
   if (!data) {
     if (error) {
       *error = CrewMediaError(CrewAttachmentMediaStorageFailed,
@@ -1102,10 +1151,41 @@ NSData *CrewReadRetainedPNG(NSString *accountUserId,
     return nil;
   }
   if (retainedBytes != (long long)data.length ||
-      data.length < sizeof(pngSignature) || data.length > MaxRetainedBytes ||
-      memcmp(data.bytes, pngSignature, sizeof(pngSignature)) != 0 ||
+      data.length < 1 || data.length > MaxRetainedBytes ||
       ![CrewSHA256Data(data) isEqualToString:sha256]) {
     if (error) {
+      *error = CrewMediaError(CrewAttachmentMediaUnsafeImage,
+                              @"Retained image is unsafe.");
+    }
+    return nil;
+  }
+  CGImageSourceRef source = CGImageSourceCreateWithData(
+      (__bridge CFDataRef)data,
+      (__bridge CFDictionaryRef)@{
+        (__bridge NSString *)kCGImageSourceShouldCache : @NO,
+      });
+  CrewAttachmentMediaKind expectedKind =
+      CrewMediaKindForExtension(retainedFileKey.pathExtension.lowercaseString);
+  CrewAttachmentMediaKind actualKind = CrewAttachmentMediaUnknown;
+  NSInteger width = 0;
+  NSInteger height = 0;
+  NSInteger orientation = 1;
+  if (source) {
+    CFStringRef identifier = CGImageSourceGetType(source);
+    UTType *type = identifier
+                       ? [UTType typeWithIdentifier:
+                                     (__bridge NSString *)identifier]
+                       : nil;
+    actualKind = type ? CrewMediaKindForType(type) : CrewAttachmentMediaUnknown;
+  }
+  BOOL valid = source && CGImageSourceGetCount(source) == 1 &&
+               actualKind == expectedKind &&
+               CrewReadDimensions(source, &width, &height, &orientation, error) &&
+               width <= MaxPixelDimension && height <= MaxPixelDimension &&
+               width <= MaxDecodedPixels / height;
+  if (source) CFRelease(source);
+  if (!valid) {
+    if (error && !*error) {
       *error = CrewMediaError(CrewAttachmentMediaUnsafeImage,
                               @"Retained image is unsafe.");
     }
@@ -1114,10 +1194,11 @@ NSData *CrewReadRetainedPNG(NSString *accountUserId,
   return data;
 }
 
-NSString *CrewPreviewRetainedPNG(NSString *accountUserId,
-                                 NSString *retainedFileKey,
-                                 NSError **error) {
-  NSData *sourceData = CrewReadRetainedPNG(accountUserId, retainedFileKey, error);
+NSString *CrewPreviewRetainedImage(NSString *accountUserId,
+                                   NSString *retainedFileKey,
+                                   NSError **error) {
+  NSData *sourceData =
+      CrewReadRetainedImage(accountUserId, retainedFileKey, error);
   if (!sourceData) return nil;
   NSDictionary *sourceOptions = @{
     (__bridge NSString *)kCGImageSourceShouldCache : @NO,
@@ -1134,9 +1215,7 @@ NSString *CrewPreviewRetainedPNG(NSString *accountUserId,
   }
   NSString *result = nil;
   @try {
-    if (CGImageSourceGetCount(source) != 1 ||
-        ![(__bridge NSString *)CGImageSourceGetType(source)
-            isEqualToString:UTTypePNG.identifier]) {
+    if (CGImageSourceGetCount(source) != 1) {
       if (error) {
         *error = CrewMediaError(CrewAttachmentMediaUnsafeImage,
                                 @"Retained image is unsafe.");
@@ -1148,9 +1227,9 @@ NSString *CrewPreviewRetainedPNG(NSString *accountUserId,
     NSInteger orientation = 1;
     if (!CrewReadDimensions(source, &sourceWidth, &sourceHeight, &orientation,
                             error) ||
-        sourceWidth > MaxCapturePixelDimension ||
-        sourceHeight > MaxCapturePixelDimension ||
-        sourceWidth > MaxCapturePixels / sourceHeight) {
+        sourceWidth > MaxPixelDimension ||
+        sourceHeight > MaxPixelDimension ||
+        sourceWidth > MaxDecodedPixels / sourceHeight) {
       if (error && !*error) {
         *error = CrewMediaError(CrewAttachmentMediaUnsafeImage,
                                 @"Retained image is unsafe.");
@@ -1201,9 +1280,12 @@ NSData *CrewReadUploadFile(NSString *accountUserId,
                            NSString *sha256,
                            NSError **error) {
   if (!CrewIsSHA256(sha256) ||
-      ![retainedFileKey isEqualToString:
-                               [sha256 stringByAppendingString:@".png"]] ||
-      ![contentType isEqualToString:@"image/png"] || byteCount < 1 ||
+      !CrewIsRetainedFileKey(retainedFileKey) ||
+      ![retainedFileKey.stringByDeletingPathExtension isEqualToString:sha256] ||
+      ![CrewMediaContentType(
+          CrewMediaKindForExtension(retainedFileKey.pathExtension.lowercaseString))
+          isEqualToString:contentType] ||
+      byteCount < 1 ||
       byteCount > MaxRetainedBytes ||
       byteCount != (double)((long long)byteCount)) {
     if (error) {
@@ -1212,7 +1294,7 @@ NSData *CrewReadUploadFile(NSString *accountUserId,
     }
     return nil;
   }
-  NSData *data = CrewReadRetainedPNG(accountUserId, retainedFileKey, error);
+  NSData *data = CrewReadRetainedImage(accountUserId, retainedFileKey, error);
   if (!data) return nil;
   if (data.length != (NSUInteger)byteCount) {
     if (error) {
@@ -1271,7 +1353,9 @@ BOOL CrewPrepareRetainedUpload(NSString *accountUserId,
       [NSString stringWithFormat:
                     @"Content-Disposition: form-data; name=\"file\"; filename=\"%@\"\r\n",
                     retainedFileKey]);
-  CrewAppendMultipartString(multipart, @"Content-Type: image/png\r\n\r\n");
+  CrewAppendMultipartString(
+      multipart,
+      [NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", contentType]);
   [multipart appendData:fileData];
   CrewAppendMultipartString(multipart,
                             [NSString stringWithFormat:@"\r\n--%@--\r\n", boundary]);
@@ -1345,6 +1429,10 @@ NSString *CrewErrorCode(NSError *error) {
       return @"attachment_media_preview_unavailable";
     case CrewAttachmentMediaPreviewFailed:
       return @"attachment_media_preview_failed";
+    case CrewAttachmentMediaPickerUnavailable:
+      return @"attachment_media_picker_unavailable";
+    case CrewAttachmentMediaPickerFailed:
+      return @"attachment_media_picker_failed";
   }
   return @"attachment_media_io";
 }
@@ -1356,12 +1444,22 @@ void CrewRejectSafe(RCTPromiseRejectBlock reject, NSError *error) {
 
 }  // namespace
 
-@interface CrewAttachmentMedia () <NSURLSessionDataDelegate>
+@interface CrewAttachmentMedia () <NSURLSessionDataDelegate,
+                                    PHPickerViewControllerDelegate>
 @end
 
 @implementation CrewAttachmentMedia {
   dispatch_queue_t _mediaQueue;
   NSMapTable<NSURLSessionTask *, NSDictionary *> *_uploadCallbacks;
+  NSString *_pickerAccountUserId;
+  RCTPromiseResolveBlock _pickerResolve;
+  RCTPromiseRejectBlock _pickerReject;
+  PHPickerViewController *_pickerViewController;
+  NSProgress *_pickerLoadProgress;
+  NSMutableArray *_pickerCancelWaiters;
+  NSUInteger _pickerGeneration;
+  BOOL _pickerWorkInFlight;
+  BOOL _invalidated;
 }
 
 + (NSString *)moduleName {
@@ -1375,8 +1473,256 @@ void CrewRejectSafe(RCTPromiseRejectBlock reject, NSError *error) {
     _mediaQueue = dispatch_queue_create(
         "app.crew.next.attachment-media", DISPATCH_QUEUE_SERIAL);
     _uploadCallbacks = [NSMapTable strongToStrongObjectsMapTable];
+    _pickerCancelWaiters = [NSMutableArray array];
   }
   return self;
+}
+
+- (void)pickImageAndRetain:(NSString *)accountUserId
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject {
+  if (!CrewIsValidAccountUserId(accountUserId)) {
+    CrewRejectSafe(reject,
+                   CrewMediaError(CrewAttachmentMediaInvalidArgument,
+                                  @"Image picker request is invalid."));
+    return;
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UIWindow *window = CrewActiveKeyWindow();
+    UIViewController *presenter =
+        window ? CrewVisibleViewController(window.rootViewController) : nil;
+    @synchronized(self) {
+      if (self->_invalidated || self->_pickerResolve) {
+        CrewRejectSafe(reject,
+                       CrewMediaError(CrewAttachmentMediaPickerUnavailable,
+                                      @"Image picker is unavailable."));
+        return;
+      }
+    }
+    if (!presenter || !presenter.view.window) {
+      CrewRejectSafe(reject,
+                     CrewMediaError(CrewAttachmentMediaPickerUnavailable,
+                                    @"Image picker is unavailable."));
+      return;
+    }
+    PHPickerConfiguration *configuration =
+        [[PHPickerConfiguration alloc] init];
+    configuration.filter = PHPickerFilter.imagesFilter;
+    configuration.selectionLimit = 1;
+    configuration.preferredAssetRepresentationMode =
+        PHPickerConfigurationAssetRepresentationModeCurrent;
+    PHPickerViewController *picker =
+        [[PHPickerViewController alloc] initWithConfiguration:configuration];
+    picker.delegate = self;
+    @synchronized(self) {
+      if (self->_invalidated || self->_pickerResolve) {
+        CrewRejectSafe(reject,
+                       CrewMediaError(CrewAttachmentMediaPickerUnavailable,
+                                      @"Image picker is unavailable."));
+        return;
+      }
+      self->_pickerGeneration += 1;
+      self->_pickerAccountUserId = [accountUserId copy];
+      self->_pickerResolve = [resolve copy];
+      self->_pickerReject = [reject copy];
+      self->_pickerViewController = picker;
+      self->_pickerLoadProgress = nil;
+      self->_pickerWorkInFlight = NO;
+    }
+    [presenter presentViewController:picker animated:YES completion:nil];
+  });
+}
+
+- (void)finishImagePicker:(NSUInteger)generation
+                   result:(NSDictionary *)result
+                    error:(NSError *)error {
+  RCTPromiseResolveBlock resolve = nil;
+  RCTPromiseRejectBlock reject = nil;
+  NSArray *cancelWaiters = nil;
+  @synchronized(self) {
+    if (_invalidated || generation != _pickerGeneration || !_pickerResolve) {
+      return;
+    }
+    resolve = _pickerResolve;
+    reject = _pickerReject;
+    cancelWaiters = [_pickerCancelWaiters copy];
+    [_pickerCancelWaiters removeAllObjects];
+    _pickerAccountUserId = nil;
+    _pickerResolve = nil;
+    _pickerReject = nil;
+    _pickerViewController = nil;
+    _pickerLoadProgress = nil;
+    _pickerWorkInFlight = NO;
+  }
+  if (!resolve || !reject) return;
+  if (error) {
+    CrewRejectSafe(reject, error);
+  } else {
+    resolve(result);
+  }
+  for (RCTPromiseResolveBlock waiter in cancelWaiters) waiter(nil);
+}
+
+- (void)picker:(PHPickerViewController *)picker
+    didFinishPicking:(NSArray<PHPickerResult *> *)results {
+  [picker dismissViewControllerAnimated:YES completion:nil];
+  __block NSUInteger generation = 0;
+  __block NSString *accountUserId = nil;
+  @synchronized(self) {
+    if (_invalidated || picker != _pickerViewController || !_pickerResolve) {
+      return;
+    }
+    generation = _pickerGeneration;
+    accountUserId = [_pickerAccountUserId copy];
+    _pickerViewController = nil;
+  }
+  if (results.count == 0) {
+    [self finishImagePicker:generation result:nil error:nil];
+    return;
+  }
+  if (results.count != 1) {
+    [self finishImagePicker:generation
+                     result:nil
+                      error:CrewMediaError(CrewAttachmentMediaPickerFailed,
+                                           @"Image picker failed.")];
+    return;
+  }
+  NSItemProvider *provider = results.firstObject.itemProvider;
+  NSString *typeIdentifier = CrewPickerTypeIdentifier(provider);
+  if (!typeIdentifier) {
+    [self finishImagePicker:generation
+                     result:nil
+                      error:CrewMediaError(CrewAttachmentMediaUnsupportedType,
+                                           @"Image type is unsupported.")];
+    return;
+  }
+  NSProgress *progress = [provider
+      loadFileRepresentationForTypeIdentifier:typeIdentifier
+                            completionHandler:^(NSURL *url, NSError *providerError) {
+    @synchronized(self) {
+      if (self->_invalidated || generation != self->_pickerGeneration ||
+          !self->_pickerResolve) {
+        return;
+      }
+      self->_pickerWorkInFlight = YES;
+    }
+    __block NSDictionary *result = nil;
+    __block NSError *error = nil;
+    if (!url || providerError) {
+      error = CrewMediaError(CrewAttachmentMediaPickerFailed,
+                             @"Image picker failed.");
+    } else {
+      dispatch_sync(self->_mediaQueue, ^{
+        @autoreleasepool {
+          result = CrewNormalizeAndRetain(accountUserId,
+                                          url.absoluteString, &error);
+        }
+      });
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self finishImagePicker:generation
+                       result:result
+                        error:error ?: (result ? nil : CrewMediaError(
+                            CrewAttachmentMediaPickerFailed,
+                            @"Image picker failed."))];
+    });
+  }];
+  @synchronized(self) {
+    if (_invalidated || generation != _pickerGeneration || !_pickerResolve) {
+      [progress cancel];
+    } else {
+      _pickerLoadProgress = progress;
+    }
+  }
+}
+
+- (void)cancelPending:(NSString *)accountUserId
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject {
+  if (!CrewIsValidAccountUserId(accountUserId)) {
+    CrewRejectSafe(reject,
+                   CrewMediaError(CrewAttachmentMediaInvalidArgument,
+                                  @"Image picker cancellation is invalid."));
+    return;
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    RCTPromiseResolveBlock pickerResolve = nil;
+    PHPickerViewController *picker = nil;
+    NSProgress *progress = nil;
+    BOOL waitForWork = NO;
+    @synchronized(self) {
+      if (self->_invalidated ||
+          ![self->_pickerAccountUserId isEqualToString:accountUserId]) {
+        resolve(nil);
+        return;
+      }
+      if (self->_pickerWorkInFlight) {
+        [self->_pickerCancelWaiters addObject:[resolve copy]];
+        waitForWork = YES;
+      } else {
+        pickerResolve = self->_pickerResolve;
+        picker = self->_pickerViewController;
+        progress = self->_pickerLoadProgress;
+        self->_pickerGeneration += 1;
+        self->_pickerAccountUserId = nil;
+        self->_pickerResolve = nil;
+        self->_pickerReject = nil;
+        self->_pickerViewController = nil;
+        self->_pickerLoadProgress = nil;
+      }
+    }
+    if (waitForWork) return;
+    [progress cancel];
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    if (pickerResolve) pickerResolve(nil);
+    dispatch_async(self->_mediaQueue, ^{
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(nil);
+      });
+    });
+  });
+}
+
+- (void)invalidate {
+  __block RCTPromiseRejectBlock pickerReject = nil;
+  __block PHPickerViewController *picker = nil;
+  __block NSProgress *progress = nil;
+  __block NSArray *cancelWaiters = nil;
+  void (^invalidatePicker)(void) = ^{
+    @synchronized(self) {
+      if (self->_invalidated) return;
+      self->_invalidated = YES;
+      self->_pickerGeneration += 1;
+      pickerReject = self->_pickerReject;
+      picker = self->_pickerViewController;
+      progress = self->_pickerLoadProgress;
+      cancelWaiters = [self->_pickerCancelWaiters copy];
+      [self->_pickerCancelWaiters removeAllObjects];
+      self->_pickerAccountUserId = nil;
+      self->_pickerResolve = nil;
+      self->_pickerReject = nil;
+      self->_pickerViewController = nil;
+      self->_pickerLoadProgress = nil;
+    }
+    [progress cancel];
+    [picker dismissViewControllerAnimated:NO completion:nil];
+  };
+  if (NSThread.isMainThread) {
+    invalidatePicker();
+  } else {
+    dispatch_sync(dispatch_get_main_queue(), invalidatePicker);
+  }
+  dispatch_sync(_mediaQueue, ^{
+    @synchronized(self) {
+      self->_pickerWorkInFlight = NO;
+    }
+  });
+  if (pickerReject) {
+    CrewRejectSafe(pickerReject,
+                   CrewMediaError(CrewAttachmentMediaPickerUnavailable,
+                                  @"Image picker is unavailable."));
+  }
+  for (RCTPromiseResolveBlock waiter in cancelWaiters) waiter(nil);
 }
 
 - (void)captureCurrentScreen:(NSString *)accountUserId
@@ -1421,7 +1767,7 @@ void CrewRejectSafe(RCTPromiseRejectBlock reject, NSError *error) {
     @autoreleasepool {
       NSError *error = nil;
       NSString *preview =
-          CrewPreviewRetainedPNG(accountUserId, retainedFileKey, &error);
+          CrewPreviewRetainedImage(accountUserId, retainedFileKey, &error);
       if (preview) {
         resolve(preview);
       } else {
@@ -1549,7 +1895,7 @@ didCompleteWithError:(NSError *)networkError {
         NSError *safeError = error ?: CrewMediaError(
                                           CrewAttachmentMediaStorageFailed,
                                           @"Retained images could not be reconciled.");
-        reject(CrewErrorCode(safeError), safeError.localizedDescription, nil);
+        CrewRejectSafe(reject, safeError);
       }
     }
   });
@@ -1588,7 +1934,7 @@ didCompleteWithError:(NSError *)networkError {
         NSError *safeError = error ?: CrewMediaError(
                                           CrewAttachmentMediaConversionFailed,
                                           @"The selected image could not be processed.");
-        reject(CrewErrorCode(safeError), safeError.localizedDescription, nil);
+        CrewRejectSafe(reject, safeError);
       }
     }
   });

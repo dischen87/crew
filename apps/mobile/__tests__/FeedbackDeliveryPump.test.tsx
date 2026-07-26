@@ -7,7 +7,11 @@ import { focusManager, onlineManager } from '@tanstack/react-query';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import { FeedbackDeliveryPump } from '../src/app/FeedbackDeliveryPump';
-import { createFeedbackAttachmentUploadTransport } from '../src/media/attachmentMedia';
+import {
+  createFeedbackAttachmentUploadTransport,
+  quiesceAttachmentMedia,
+  resumeAttachmentMedia,
+} from '../src/media/attachmentMedia';
 import { secureUuidV4 } from '../src/storage/secureRandom';
 
 const mockAccountId = `usr_${'a'.repeat(32)}`;
@@ -36,11 +40,15 @@ jest.mock('../src/app/GatewayProvider', () => ({
   useGatewayClient: () => mockClient,
 }));
 
-jest.mock('../src/media/attachmentMedia', () => ({
-  createFeedbackAttachmentUploadTransport: jest.fn(
-    () => mockAttachmentUploadTransport,
-  ),
-}));
+jest.mock('../src/media/attachmentMedia', () => {
+  const actual = jest.requireActual('../src/media/attachmentMedia');
+  return {
+    ...actual,
+    createFeedbackAttachmentUploadTransport: jest.fn(
+      () => mockAttachmentUploadTransport,
+    ),
+  };
+});
 
 jest.mock('../src/app/PrivateBootstrapGate', () => ({
   usePrivateDatabase: () => ({
@@ -129,6 +137,51 @@ test('never blocks rendering and reloads a failed authentication asynchronously'
   });
   expect(mockLifecycle.reloadSession).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
+test('quiesce drains the complete controller flight and rejects new drains', async () => {
+  let completeDrain: (receipts: FeedbackSubmissionReceipt[]) => void = () => {};
+  mockController.drain.mockReturnValueOnce(
+    new Promise(resolve => {
+      completeDrain = resolve;
+    }),
+  );
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+  try {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<FeedbackDeliveryPump />);
+      await flush();
+    });
+    expect(mockController.drain).toHaveBeenCalledTimes(1);
+
+    let drained = false;
+    const quiescence = quiesceAttachmentMedia(mockAccountId, {
+      nativeModule: { cancelPending: async () => undefined },
+    }).then(() => {
+      drained = true;
+    });
+    await flush();
+    expect(drained).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      completeDrain([]);
+      await flush();
+    });
+    await quiescence;
+    expect(drained).toBe(true);
+
+    focusManager.setFocused(false);
+    await ReactTestRenderer.act(async () => {
+      focusManager.setFocused(true);
+      await flush();
+    });
+    expect(mockController.drain).toHaveBeenCalledTimes(1);
+  } finally {
+    resumeAttachmentMedia(mockAccountId);
+    if (renderer) {
+      await ReactTestRenderer.act(async () => renderer?.unmount());
+    }
+  }
 });
 
 test('injects the getRandomValues UUID provider for Release feedback replay', async () => {

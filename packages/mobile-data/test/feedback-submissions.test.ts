@@ -11,6 +11,7 @@ import {
 } from "@crew/mobile-client";
 import type { SqlDatabase, SqlExecutor, SqlValue } from "../src/database.ts";
 import {
+	FeedbackScreenshotStore,
 	FeedbackSubmissionAccountChangedError,
 	FeedbackSubmissionAuthenticationError,
 	FeedbackSubmissionController,
@@ -18,11 +19,13 @@ import {
 	type FeedbackSubmissionInput,
 	MobileDataStore,
 	migrate,
+	sha256Hex,
 } from "../src/index.ts";
 
 class BunDatabase implements SqlDatabase {
 	readonly sqlite: Database;
 	afterRun: ((sql: string) => void) | null = null;
+	transactionCount = 0;
 
 	constructor(path = ":memory:") {
 		this.sqlite = new Database(path, { create: true });
@@ -54,6 +57,7 @@ class BunDatabase implements SqlDatabase {
 	async transaction<Result>(
 		work: (transaction: SqlExecutor) => Promise<Result>,
 	): Promise<Result> {
+		this.transactionCount += 1;
 		this.sqlite.exec("BEGIN IMMEDIATE");
 		try {
 			const result = await work(this);
@@ -93,6 +97,243 @@ afterEach(() => {
 });
 
 describe("durable feedback submissions", () => {
+	test("exposes read-only domain-separated evidence without local secrets", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		const active = { value: accountA };
+		const controller = testController(database, null, active);
+		const rootEventId = "evt_trip";
+		const feedbackId = "fbk_private_evidence";
+		const attachmentId = "att_private_evidence";
+		const screenshotSha = "4".repeat(64);
+		await database.run(
+			`INSERT INTO root_sync_state (
+  account_user_id, root_event_id, authorization_scope_version
+) VALUES (?, ?, 1)`,
+			[accountA, rootEventId],
+		);
+		await new FeedbackScreenshotStore(database).retain({
+			accountUserId: accountA,
+			feedbackId,
+			rootEventId,
+			attachmentId,
+			retainedFileKey: `${screenshotSha}.png`,
+			contentType: "image/png",
+			byteCount: 256,
+			sha256: screenshotSha,
+			pixelWidth: 16,
+			pixelHeight: 16,
+			wasNormalized: true,
+			retainedAt: new Date(baseTime).toISOString(),
+		});
+		await controller.enqueue(
+			accountA,
+			feedbackInput(feedbackId, { attachmentId, rootEventId }),
+		);
+		await database.run(
+			`INSERT INTO root_sync_state (
+  account_user_id, root_event_id, authorization_scope_version
+) VALUES (?, ?, 1)`,
+			[accountA, "evt_foreign"],
+		);
+		await controller.enqueue(
+			accountA,
+			feedbackInput("fbk_foreign_evidence", {
+				eventId: null,
+				rootEventId: "evt_foreign",
+			}),
+		);
+		const stored = required(
+			await database.first<{
+				command_fingerprint: string;
+				idempotency_key: string;
+			}>(
+				`SELECT command_fingerprint, idempotency_key
+FROM feedback_submissions WHERE feedback_id = ?`,
+				[feedbackId],
+			),
+		);
+		database.afterRun = () => {
+			throw new Error("Evidence must be SELECT-only");
+		};
+		const transactionCount = database.transactionCount;
+		const evidence = await controller.readEvidence(accountA, rootEventId);
+		database.afterRun = null;
+
+		expect(database.transactionCount).toBe(transactionCount + 1);
+		expect(evidence).toEqual({
+			pendingCount: 1,
+			sendingCount: 0,
+			attentionCount: 0,
+			deliveredCount: 0,
+			truncated: false,
+			rows: [
+				{
+					state: "pending",
+					screenshotState: "consented",
+					submissionFingerprint: await sha256Hex(
+						`crew.feedback.command.evidence.v1\u0000${stored.command_fingerprint}`,
+					),
+					idempotencyFingerprint: await sha256Hex(
+						`crew.feedback.idempotency.evidence.v1\u0000${stored.idempotency_key}`,
+					),
+					screenshotFingerprint: await sha256Hex(
+						`crew.feedback.screenshot.evidence.v1\u0000image/png\u0000256\u0000${screenshotSha}`,
+					),
+					commandFingerprintMatches: true,
+					screenshotBindingMatches: true,
+					screenshotMetadataMatches: true,
+				},
+			],
+		});
+		const serialized = JSON.stringify(evidence);
+		for (const secret of [
+			accountA,
+			rootEventId,
+			"evt_foreign",
+			feedbackId,
+			"fbk_foreign_evidence",
+			attachmentId,
+			"Feedback title",
+			"Feedback body",
+			stored.command_fingerprint,
+			stored.idempotency_key,
+			`${screenshotSha}.png`,
+			screenshotSha,
+			"token-private",
+		]) {
+			expect(serialized).not.toContain(secret);
+		}
+		active.value = accountB;
+		await expect(
+			controller.readEvidence(accountA, rootEventId),
+		).rejects.toBeInstanceOf(FeedbackSubmissionAccountChangedError);
+		database.close();
+	});
+
+	test("conceals mismatched screenshot rows instead of fingerprinting foreign metadata", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		for (const rootEventId of ["evt_trip", "evt_foreign"]) {
+			await database.run(
+				`INSERT INTO root_sync_state (
+  account_user_id, root_event_id, authorization_scope_version
+) VALUES (?, ?, 1)`,
+				[accountA, rootEventId],
+			);
+		}
+		const feedbackId = "fbk_mismatched_screenshot";
+		const foreignSha = "9".repeat(64);
+		await new FeedbackScreenshotStore(database).retain({
+			accountUserId: accountA,
+			feedbackId,
+			rootEventId: "evt_foreign",
+			attachmentId: "att_foreign",
+			retainedFileKey: `${foreignSha}.png`,
+			contentType: "image/png",
+			byteCount: 512,
+			sha256: foreignSha,
+			pixelWidth: 16,
+			pixelHeight: 16,
+			wasNormalized: true,
+			retainedAt: new Date(baseTime).toISOString(),
+		});
+		await insertEvidenceSubmission(database, {
+			createdAt: new Date(baseTime).toISOString(),
+			feedbackId,
+			marker: "private-mismatched-command",
+			rootEventId: "evt_trip",
+			screenshotAttachmentId: "att_expected",
+			state: "pending",
+		});
+
+		const evidence = await testController(database, null, {
+			value: accountA,
+		}).readEvidence(accountA, "evt_trip");
+
+		expect(evidence.rows).toHaveLength(1);
+		expect(evidence.rows[0]).toMatchObject({
+			state: "pending",
+			screenshotState: null,
+			screenshotFingerprint: null,
+			screenshotBindingMatches: false,
+			screenshotMetadataMatches: null,
+		});
+		const serialized = JSON.stringify(evidence);
+		for (const secret of [
+			"evt_foreign",
+			"att_foreign",
+			`${foreignSha}.png`,
+			foreignSha,
+		]) {
+			expect(serialized).not.toContain(secret);
+		}
+		database.close();
+	});
+
+	test("caps newest-first evidence after prioritizing actionable states", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		const rootEventId = "evt_evidence_cap";
+		await insertEvidenceSubmission(database, {
+			createdAt: new Date(baseTime).toISOString(),
+			feedbackId: "fbk_priority_attention",
+			marker: "attention",
+			rootEventId,
+			state: "attention",
+		});
+		await insertEvidenceSubmission(database, {
+			createdAt: new Date(baseTime + 1).toISOString(),
+			feedbackId: "fbk_priority_sending",
+			marker: "sending",
+			rootEventId,
+			state: "sending",
+		});
+		for (let index = 1; index <= 100; index += 1) {
+			await insertEvidenceSubmission(database, {
+				createdAt: new Date(baseTime + index * 1_000).toISOString(),
+				feedbackId: `fbk_pending_${String(index).padStart(3, "0")}`,
+				marker: `pending-${index}`,
+				rootEventId,
+				state: "pending",
+			});
+		}
+		await insertEvidenceSubmission(database, {
+			createdAt: new Date(baseTime + 200_000).toISOString(),
+			feedbackId: "fbk_priority_delivered",
+			marker: "delivered",
+			rootEventId,
+			state: "delivered",
+		});
+
+		const evidence = await testController(database, null, {
+			value: accountA,
+		}).readEvidence(accountA, rootEventId);
+
+		expect(evidence).toMatchObject({
+			pendingCount: 100,
+			sendingCount: 1,
+			attentionCount: 1,
+			deliveredCount: 1,
+			truncated: true,
+		});
+		expect(evidence.rows).toHaveLength(100);
+		expect(evidence.rows.slice(0, 2).map(({ state }) => state)).toEqual([
+			"attention",
+			"sending",
+		]);
+		expect(
+			evidence.rows.slice(2).every(({ state }) => state === "pending"),
+		).toBe(true);
+		expect(evidence.rows[2]?.submissionFingerprint).toBe(
+			await evidenceSubmissionFingerprint("pending-100"),
+		);
+		expect(evidence.rows[99]?.submissionFingerprint).toBe(
+			await evidenceSubmissionFingerprint("pending-3"),
+		);
+		database.close();
+	});
+
 	test("binds one feedback identity to canonical text and allow-listed diagnostics", async () => {
 		const database = new BunDatabase();
 		await migrate(database);
@@ -861,6 +1102,51 @@ function feedbackInput(
 		},
 		...overrides,
 	};
+}
+
+async function insertEvidenceSubmission(
+	database: SqlDatabase,
+	input: {
+		createdAt: string;
+		feedbackId: string;
+		marker: string;
+		rootEventId: string;
+		screenshotAttachmentId?: string;
+		state: "attention" | "delivered" | "pending" | "sending";
+	},
+): Promise<void> {
+	const commandJson = JSON.stringify({ marker: input.marker });
+	await database.run(
+		`INSERT INTO feedback_submissions (
+  account_user_id, feedback_id, command_json, command_fingerprint,
+  idempotency_key, screenshot_attachment_id, root_event_id, state,
+  lease_owner, lease_expires_at, created_at, updated_at, delivered_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[
+			accountA,
+			input.feedbackId,
+			input.state === "delivered" ? null : commandJson,
+			await sha256Hex(commandJson),
+			`evidence-${input.feedbackId}`,
+			input.screenshotAttachmentId ?? null,
+			input.rootEventId,
+			input.state,
+			input.state === "sending" ? "lease-evidence" : null,
+			input.state === "sending"
+				? new Date(Date.parse(input.createdAt) + 60_000).toISOString()
+				: null,
+			input.createdAt,
+			input.createdAt,
+			input.state === "delivered" ? input.createdAt : null,
+		],
+	);
+}
+
+async function evidenceSubmissionFingerprint(marker: string): Promise<string> {
+	const commandFingerprint = await sha256Hex(JSON.stringify({ marker }));
+	return sha256Hex(
+		`crew.feedback.command.evidence.v1\u0000${commandFingerprint}`,
+	);
 }
 
 function required<Value>(value: Value | null | undefined): Value {

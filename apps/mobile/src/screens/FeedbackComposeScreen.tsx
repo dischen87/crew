@@ -14,6 +14,7 @@ import {
   usePrivateSessionLifecycle,
 } from '../app/PrivateBootstrapGate';
 import { runtimeFeedbackDiagnostics } from '../app/runtimeConfig';
+import { runAttachmentMediaOperation } from '../media/attachmentMedia';
 import { secureUuidV4 } from '../storage/secureRandom';
 import {
   FeedbackComposeRuntime,
@@ -449,9 +450,11 @@ export function FeedbackComposeScreen({
           retrying: resume,
         });
       }
-      const delivery = resume
-        ? controller.resumeAndDrain(accountUserId)
-        : controller.drain(accountUserId);
+      const delivery = runAttachmentMediaOperation(accountUserId, () =>
+        resume
+          ? controller.resumeAndDrain(accountUserId)
+          : controller.drain(accountUserId),
+      );
       return delivery
         .then(async receipts => {
           if (activeSourceBindingRef.current !== expectedSourceBindingKey) {
@@ -468,6 +471,12 @@ export function FeedbackComposeScreen({
           }
         })
         .catch(async error => {
+          if (
+            error instanceof Error &&
+            error.message === 'attachment_media_unavailable'
+          ) {
+            return;
+          }
           if (activeSourceBindingRef.current !== expectedSourceBindingKey) {
             return;
           }

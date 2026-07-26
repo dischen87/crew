@@ -6,7 +6,10 @@ import {
 } from '@crew/mobile-data';
 import { focusManager, onlineManager } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
-import { createFeedbackAttachmentUploadTransport } from '../media/attachmentMedia';
+import {
+  createFeedbackAttachmentUploadTransport,
+  runAttachmentMediaOperation,
+} from '../media/attachmentMedia';
 import { secureUuidV4 } from '../storage/secureRandom';
 import { useGatewayClient } from './GatewayProvider';
 import {
@@ -76,9 +79,11 @@ export function FeedbackDeliveryPump() {
         return;
       }
       clearDueTimer();
-      const delivery = resume
-        ? controller.resumeAndDrain(accountUserId)
-        : controller.drain(accountUserId);
+      const delivery = runAttachmentMediaOperation(accountUserId, () =>
+        resume
+          ? controller.resumeAndDrain(accountUserId)
+          : controller.drain(accountUserId),
+      );
       delivery.then(scheduleNext).catch(error => {
         if (
           error instanceof FeedbackSubmissionAccountChangedError ||

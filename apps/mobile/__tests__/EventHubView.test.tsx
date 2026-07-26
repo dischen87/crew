@@ -39,6 +39,7 @@ async function renderHub(
   const props: React.ComponentProps<typeof EventHubView> = {
     model,
     onDateSelect: jest.fn(),
+    onManageInvites: jest.fn(),
     onPrimaryAction: jest.fn(),
     onSyncStatusPress: jest.fn(),
     onTabSelect: jest.fn(),
@@ -364,6 +365,37 @@ test('announces sync and participant truth without relying on color', async () =
   ).toBeTruthy();
 
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('offers invite management only to owners and organizers', async () => {
+  const onManageInvites = jest.fn();
+  const owner = await renderHub(
+    { ...turkeyGolfEventHubModel, role: 'owner' },
+    { onManageInvites },
+  );
+  const action = owner.renderer.root.findByProps({
+    testID: 'event-hub-manage-invites',
+  });
+  expect(action.props.accessibilityHint).toContain('servergeprüfte');
+  await ReactTestRenderer.act(() => action.props.onPress());
+  expect(onManageInvites).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => owner.renderer.unmount());
+
+  for (const role of ['participant', 'viewer'] as const) {
+    const model = {
+      ...turkeyGolfEventHubModel,
+      primaryAction:
+        role === 'viewer' ? turkeyGolfEventHubModel.primaryAction : null,
+      role,
+    } as EventHubModel;
+    const readOnly = await renderHub(model);
+    expect(
+      readOnly.renderer.root.findAllByProps({
+        testID: 'event-hub-manage-invites',
+      }),
+    ).toHaveLength(0);
+    await ReactTestRenderer.act(() => readOnly.renderer.unmount());
+  }
 });
 
 test('uses the singular participant copy for exactly one person', async () => {

@@ -11,10 +11,15 @@ import {
 import {
   captureCurrentScreenAttachment,
   createFeedbackAttachmentUploadTransport,
+  discardFeedPhotoAttachment,
   normalizeAndRetainAttachment,
+  pickAndRetainAttachment,
   previewRetainedAttachment,
   purgeRetainedAttachmentFiles,
+  quiesceAttachmentMedia,
+  reconcileFeedPhotoAttachments,
   reconcileRetainedAttachmentFiles,
+  resumeAttachmentMedia,
   uploadRetainedAttachment,
   verifiedAttachmentCommit,
 } from '../src/media/attachmentMedia';
@@ -34,6 +39,248 @@ function fakeStore() {
     retain: jest.fn(async (attachment: RetainedLocalAttachment) => attachment),
   } satisfies Pick<LocalAttachmentStore, 'listRetainedFileKeys' | 'retain'>;
 }
+
+test('picker cancel returns null without durable identity or a source URI', async () => {
+  const store = fakeStore();
+  const nativeModule = {
+    pickImageAndRetain: jest.fn(async () => null),
+  };
+
+  await expect(
+    pickAndRetainAttachment(
+      store,
+      {
+        accountUserId: draft.accountUserId,
+        attachmentId: draft.attachmentId,
+        rootEventId: draft.rootEventId,
+        targetEntryId: draft.targetEntryId,
+      },
+      { nativeModule },
+    ),
+  ).resolves.toBeNull();
+  expect(nativeModule.pickImageAndRetain).toHaveBeenCalledWith(
+    draft.accountUserId,
+  );
+  expect(store.retain).not.toHaveBeenCalled();
+  expect(
+    JSON.stringify(nativeModule.pickImageAndRetain.mock.calls),
+  ).not.toMatch(/(?:content|file):\/\//);
+});
+
+test('picker retains only normalized metadata and hides native causes', async () => {
+  const sha256 = '4'.repeat(64);
+  const store = fakeStore();
+  const prepared = await pickAndRetainAttachment(
+    store,
+    {
+      accountUserId: draft.accountUserId,
+      attachmentId: draft.attachmentId,
+      rootEventId: draft.rootEventId,
+      targetEntryId: draft.targetEntryId,
+    },
+    {
+      nativeModule: {
+        pickImageAndRetain: async () => ({
+          retainedFileKey: `${sha256}.jpg`,
+          contentType: 'image/jpeg',
+          byteCount: 4096,
+          sha256,
+          pixelWidth: 3024,
+          pixelHeight: 4032,
+          wasNormalized: true,
+        }),
+      },
+      now: () => retainedAt,
+    },
+  );
+
+  expect(prepared?.attachment).toMatchObject({
+    retainedFileKey: `${sha256}.jpg`,
+    contentType: 'image/jpeg',
+    wasNormalized: true,
+    retainedAt: retainedAt.toISOString(),
+  });
+  expect(JSON.stringify(prepared)).not.toMatch(/(?:content|file):\/\//);
+
+  await expect(
+    pickAndRetainAttachment(
+      store,
+      {
+        accountUserId: draft.accountUserId,
+        attachmentId: draft.attachmentId,
+        rootEventId: draft.rootEventId,
+        targetEntryId: draft.targetEntryId,
+      },
+      {
+        nativeModule: {
+          pickImageAndRetain: async () =>
+            Promise.reject(new Error('content://private/provider/42')),
+        },
+      },
+    ),
+  ).rejects.toThrow(/^attachment_media_picker_failed$/);
+});
+
+test('quiesce cancels a presented picker, blocks new work, and is idempotent', async () => {
+  let resolvePicker: (value: null) => void = () => {};
+  const pickerResult = new Promise<null>(resolve => {
+    resolvePicker = resolve;
+  });
+  const store = fakeStore();
+  const nativeModule = {
+    pickImageAndRetain: jest.fn(() => pickerResult),
+    cancelPending: jest.fn(async () => {
+      resolvePicker(null);
+    }),
+  };
+  const operation = pickAndRetainAttachment(
+    store,
+    {
+      accountUserId: draft.accountUserId,
+      attachmentId: draft.attachmentId,
+      rootEventId: draft.rootEventId,
+      targetEntryId: draft.targetEntryId,
+    },
+    { nativeModule },
+  );
+
+  const first = quiesceAttachmentMedia(draft.accountUserId, { nativeModule });
+  const second = quiesceAttachmentMedia(draft.accountUserId, { nativeModule });
+
+  expect(second).toBe(first);
+  await expect(operation).resolves.toBeNull();
+  await expect(first).resolves.toBeUndefined();
+  expect(nativeModule.cancelPending).toHaveBeenCalledTimes(1);
+  await expect(
+    pickAndRetainAttachment(
+      store,
+      {
+        accountUserId: draft.accountUserId,
+        attachmentId: 'att_blocked',
+        rootEventId: draft.rootEventId,
+        targetEntryId: draft.targetEntryId,
+      },
+      { nativeModule },
+    ),
+  ).rejects.toThrow(/^attachment_media_picker_unavailable$/);
+
+  resumeAttachmentMedia(draft.accountUserId);
+});
+
+test('quiesce drains the durable retain before private data can close', async () => {
+  const sha256 = '5'.repeat(64);
+  let releaseRetain: () => void = () => {};
+  let announceRetain: () => void = () => {};
+  const retainGate = new Promise<void>(resolve => {
+    releaseRetain = resolve;
+  });
+  const retainStarted = new Promise<void>(resolve => {
+    announceRetain = resolve;
+  });
+  const store = fakeStore();
+  jest
+    .mocked(store.retain)
+    .mockImplementation(async (attachment: RetainedLocalAttachment) => {
+      announceRetain();
+      await retainGate;
+      return attachment;
+    });
+  const nativeModule = {
+    pickImageAndRetain: jest.fn(async () => ({
+      retainedFileKey: `${sha256}.jpg`,
+      contentType: 'image/jpeg' as const,
+      byteCount: 4096,
+      sha256,
+      pixelWidth: 3024,
+      pixelHeight: 4032,
+      wasNormalized: true,
+    })),
+    cancelPending: jest.fn(async () => undefined),
+  };
+  const operation = pickAndRetainAttachment(
+    store,
+    {
+      accountUserId: draft.accountUserId,
+      attachmentId: 'att_drain',
+      rootEventId: draft.rootEventId,
+      targetEntryId: draft.targetEntryId,
+    },
+    { nativeModule, now: () => retainedAt },
+  );
+  await retainStarted;
+
+  let drained = false;
+  const quiescence = quiesceAttachmentMedia(draft.accountUserId, {
+    nativeModule,
+  }).then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+
+  releaseRetain();
+  await expect(operation).resolves.toMatchObject({
+    attachment: { attachmentId: 'att_drain' },
+  });
+  await quiescence;
+  expect(drained).toBe(true);
+
+  resumeAttachmentMedia(draft.accountUserId);
+});
+
+test('quiesce also drains legacy normalize through its SQLite retain', async () => {
+  const sha256 = '6'.repeat(64);
+  let releaseRetain: () => void = () => {};
+  let announceRetain: () => void = () => {};
+  const retainGate = new Promise<void>(resolve => {
+    releaseRetain = resolve;
+  });
+  const retainStarted = new Promise<void>(resolve => {
+    announceRetain = resolve;
+  });
+  const store = fakeStore();
+  jest
+    .mocked(store.retain)
+    .mockImplementation(async (attachment: RetainedLocalAttachment) => {
+      announceRetain();
+      await retainGate;
+      return attachment;
+    });
+  const nativeModule = {
+    reconcileRetained: jest.fn(async () => undefined),
+    normalizeAndRetain: jest.fn(async () => ({
+      retainedFileKey: `${sha256}.jpg`,
+      contentType: 'image/jpeg' as const,
+      byteCount: 4096,
+      sha256,
+      pixelWidth: 1200,
+      pixelHeight: 800,
+      wasNormalized: true,
+    })),
+    cancelPending: jest.fn(async () => undefined),
+  };
+  const operation = normalizeAndRetainAttachment(store, draft, {
+    nativeModule,
+    now: () => retainedAt,
+  });
+  await retainStarted;
+
+  let drained = false;
+  const quiescence = quiesceAttachmentMedia(draft.accountUserId, {
+    nativeModule,
+  }).then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+
+  releaseRetain();
+  await operation;
+  await quiescence;
+  expect(drained).toBe(true);
+
+  resumeAttachmentMedia(draft.accountUserId);
+});
 
 test('captures only on an explicit call and accepts a bounded normalized PNG', async () => {
   const sha256 = '9'.repeat(64);
@@ -137,6 +384,25 @@ test('returns only a bounded ephemeral retained screenshot preview', async () =>
   expect(preview).not.toContain('file://');
 });
 
+test.each(['jpg', 'png', 'webp'])(
+  'previews a retained %s without exposing its private path',
+  async extension => {
+    const preview = 'data:image/png;base64,Ym91bmRlZCBwbmc=';
+    const nativeModule = { previewRetained: jest.fn(async () => preview) };
+    const retainedFileKey = `${'6'.repeat(64)}.${extension}`;
+
+    await expect(
+      previewRetainedAttachment(draft.accountUserId, retainedFileKey, {
+        nativeModule,
+      }),
+    ).resolves.toBe(preview);
+    expect(nativeModule.previewRetained).toHaveBeenCalledWith(
+      draft.accountUserId,
+      retainedFileKey,
+    );
+  },
+);
+
 test.each([
   ['usr_wrong', `${'7'.repeat(64)}.png`],
   [draft.accountUserId, '../private.png'],
@@ -239,6 +505,30 @@ test('adapts a bounded POST grant to native fields without exposing a file URI',
   );
 });
 
+test('uploads a normalized JPEG with its verified retained identity', async () => {
+  const sha256 = '5'.repeat(64);
+  const nativeModule = { uploadRetained: jest.fn(async () => undefined) };
+  await uploadRetainedAttachment(
+    {
+      ...uploadInput,
+      retainedFileKey: `${sha256}.jpg`,
+      contentType: 'image/jpeg',
+      sha256,
+    },
+    { nativeModule, now: () => retainedAt },
+  );
+
+  expect(nativeModule.uploadRetained).toHaveBeenCalledWith(
+    uploadInput.accountUserId,
+    `${sha256}.jpg`,
+    uploadInput.grant.url,
+    expect.any(Array),
+    'image/jpeg',
+    uploadInput.byteCount,
+    sha256,
+  );
+});
+
 test('fails closed before native upload for expired, non-HTTPS, or mismatched grants', async () => {
   const nativeModule = { uploadRetained: jest.fn(async () => undefined) };
   for (const input of [
@@ -313,9 +603,9 @@ test('purges exact screenshot keys through bounded sequential native batches', a
 
   expect(calls.map(batch => batch.length)).toEqual([64, 64, 2]);
   expect(calls.flat()).toEqual(retainedFileKeys);
-  expect(nativeModule.purgeRetained.mock.calls.every(([, keys]) => keys.length > 0)).toBe(
-    true,
-  );
+  expect(
+    nativeModule.purgeRetained.mock.calls.every(([, keys]) => keys.length > 0),
+  ).toBe(true);
 });
 
 test('skips an empty purge allow-list and validates every key before native deletion', async () => {
@@ -333,6 +623,22 @@ test('skips an empty purge allow-list and validates every key before native dele
     ),
   ).rejects.toThrow(/^attachment_media_invalid$/);
   expect(nativeModule.purgeRetained).not.toHaveBeenCalled();
+});
+
+test('purges retained JPEG, PNG, and WebP identities', async () => {
+  const keys = ['jpg', 'png', 'webp'].map(
+    (extension, index) => `${String(index + 4).repeat(64)}.${extension}`,
+  );
+  const nativeModule = { purgeRetained: jest.fn(async () => undefined) };
+
+  await purgeRetainedAttachmentFiles(draft.accountUserId, keys, {
+    nativeModule,
+  });
+
+  expect(nativeModule.purgeRetained).toHaveBeenCalledWith(
+    draft.accountUserId,
+    keys,
+  );
 });
 
 test('preserves only safe native purge codes and hides private causes', async () => {
@@ -354,6 +660,114 @@ test('preserves only safe native purge codes and hides private causes', async ()
       }),
     ).rejects.toThrow(new RegExp(`^${expected}$`));
   }
+});
+
+test('feed photo discard purges native data before finalizing its durable row', async () => {
+  const calls: string[] = [];
+  const retainedFileKey = `${'7'.repeat(64)}.jpg`;
+  const store = {
+    planFeedPhotoDiscard: jest.fn(async () => {
+      calls.push('plan');
+      return {
+        attachmentIds: ['att_feed'],
+        purgeFileKeys: [retainedFileKey],
+      };
+    }),
+    finalizeFeedPhotoCleanup: jest.fn(async () => {
+      calls.push('finalize');
+    }),
+  };
+  const nativeModule = {
+    purgeRetained: jest.fn(async () => {
+      calls.push('purge');
+    }),
+  };
+
+  await discardFeedPhotoAttachment(store, draft.accountUserId, 'att_feed', {
+    nativeModule,
+    now: () => retainedAt,
+  });
+
+  expect(calls).toEqual(['plan', 'purge', 'finalize']);
+  expect(store.planFeedPhotoDiscard).toHaveBeenCalledWith(
+    draft.accountUserId,
+    'att_feed',
+    retainedAt.toISOString(),
+  );
+  expect(store.finalizeFeedPhotoCleanup).toHaveBeenCalledWith(
+    draft.accountUserId,
+    ['att_feed'],
+  );
+});
+
+test('feed photo cleanup never finalizes when native purge fails', async () => {
+  const store = {
+    planFeedPhotoDiscard: jest.fn(async () => ({
+      attachmentIds: ['att_feed'],
+      purgeFileKeys: [`${'7'.repeat(64)}.jpg`],
+    })),
+    finalizeFeedPhotoCleanup: jest.fn(async () => undefined),
+  };
+
+  await expect(
+    discardFeedPhotoAttachment(store, draft.accountUserId, 'att_feed', {
+      nativeModule: {
+        purgeRetained: async () =>
+          Promise.reject(new Error('private purge failure')),
+      },
+    }),
+  ).rejects.toThrow(/^attachment_media_purge_failed$/);
+  expect(store.finalizeFeedPhotoCleanup).not.toHaveBeenCalled();
+});
+
+test('feed photo reconciliation directly finalizes an empty native purge plan', async () => {
+  const attachment: RetainedLocalAttachment = {
+    accountUserId: draft.accountUserId,
+    attachmentId: 'att_feed',
+    rootEventId: draft.rootEventId,
+    targetEntryId: draft.targetEntryId,
+    retainedFileKey: `${'7'.repeat(64)}.jpg`,
+    contentType: 'image/jpeg',
+    byteCount: 4096,
+    sha256: '7'.repeat(64),
+    pixelWidth: 1200,
+    pixelHeight: 800,
+    wasNormalized: false,
+    retainedAt: retainedAt.toISOString(),
+  };
+  const photos = [
+    {
+      attachment,
+      eventId: null,
+      state: 'selected' as const,
+      uploadGeneration: 0,
+      uploadId: null,
+      createdAt: retainedAt.toISOString(),
+      updatedAt: retainedAt.toISOString(),
+    },
+  ];
+  const store = {
+    reconcileFeedPhotos: jest.fn(async () => ({
+      photos,
+      cleanup: { attachmentIds: [], purgeFileKeys: [] },
+    })),
+    finalizeFeedPhotoCleanup: jest.fn(async () => undefined),
+  };
+  const nativeModule = { purgeRetained: jest.fn(async () => undefined) };
+
+  await expect(
+    reconcileFeedPhotoAttachments(
+      store,
+      draft.accountUserId,
+      draft.rootEventId,
+      { nativeModule, now: () => retainedAt },
+    ),
+  ).resolves.toBe(photos);
+  expect(nativeModule.purgeRetained).not.toHaveBeenCalled();
+  expect(store.finalizeFeedPhotoCleanup).toHaveBeenCalledWith(
+    draft.accountUserId,
+    [],
+  );
 });
 
 test.each([
@@ -638,14 +1052,16 @@ test('restart reconciliation removes a DB-failure orphan and preserves reference
     migrateDatabase: jest.fn(async () => undefined),
     initializeDeviceIdentities: jest.fn(async () => undefined),
     purgeDeniedRoots: jest.fn(async () => undefined),
-    purgeFeedbackSubmissions: jest.fn(async () => undefined),
-    listFeedbackScreenshotFileKeys: jest.fn(async () => []),
-    purgeRetainedFeedbackScreenshots: jest.fn(async () => undefined),
+    purgePrivateData: jest.fn(async () => undefined),
+    listRetainedFileKeysForPurge: jest.fn(async () => []),
+    purgeRetainedFiles: jest.fn(async () => undefined),
+    quiesceAttachmentMedia: jest.fn(async () => undefined),
     reconcileAttachments: jest.fn(async accountId => {
       await reconcileRetainedAttachmentFiles(restartedStore, accountId, {
         nativeModule,
       });
     }),
+    resumeAttachmentMedia: jest.fn(),
     clearPrivateState: jest.fn(async () => undefined),
   });
 

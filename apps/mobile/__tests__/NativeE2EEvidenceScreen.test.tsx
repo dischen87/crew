@@ -1,4 +1,9 @@
-import { MobileSyncEngine, type OutboxEvidence } from '@crew/mobile-data';
+import {
+  FeedbackSubmissionController,
+  type FeedbackSubmissionEvidence,
+  MobileSyncEngine,
+  type OutboxEvidence,
+} from '@crew/mobile-data';
 import type React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -13,7 +18,7 @@ import {
 const accountA = `usr_${'1'.repeat(32)}`;
 const accountB = `usr_${'2'.repeat(32)}`;
 const mockClient = { request: jest.fn() };
-const mockDatabase = {};
+let mockDatabase: object = {};
 let mockAccountId: string | null = accountA;
 let mockDatabaseAccountId = accountA;
 let mockLifecycleStatus = 'ready';
@@ -42,10 +47,14 @@ jest.mock('../src/app/PrivateBootstrapGate', () => ({
 beforeEach(() => {
   jest.restoreAllMocks();
   mockAccountId = accountA;
+  mockDatabase = {};
   mockDatabaseAccountId = accountA;
   mockLifecycleStatus = 'ready';
   mockRequestId = 'crew-e2e.ios';
   mockClient.request.mockReset();
+  jest
+    .spyOn(FeedbackSubmissionController.prototype, 'readEvidence')
+    .mockResolvedValue(feedbackEvidence('f'));
 });
 
 test('renders only the bounded evidence contract and full SHA-256 fingerprints', async () => {
@@ -99,6 +108,70 @@ test('renders only the bounded evidence contract and full SHA-256 fingerprints',
     'raw-device-must-not-render',
     'raw-request-must-not-render',
     'raw-token-must-not-render',
+  ]) {
+    expect(text).not.toContain(raw);
+  }
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('renders only sanitized feedback states, matches and domain-separated fingerprints', async () => {
+  const submission = '1'.repeat(64);
+  const idempotency = '2'.repeat(64);
+  const screenshot = '3'.repeat(64);
+  const sample = {
+    pendingCount: 1,
+    sendingCount: 2,
+    attentionCount: 3,
+    deliveredCount: 4,
+    truncated: false,
+    rows: [
+      {
+        state: 'attention',
+        screenshotState: 'committed',
+        submissionFingerprint: submission,
+        idempotencyFingerprint: idempotency,
+        screenshotFingerprint: screenshot,
+        commandFingerprintMatches: true,
+        screenshotBindingMatches: false,
+        screenshotMetadataMatches: null,
+        accountUserId: 'raw-feedback-account',
+        feedbackId: 'raw-feedback-id',
+        title: 'raw-feedback-title',
+        body: 'raw-feedback-body',
+        retainedFileKey: 'raw-retained-file-key',
+        token: 'raw-feedback-token',
+        screenshotSha256: 'raw-screenshot-sha',
+      },
+    ],
+  } as unknown as FeedbackSubmissionEvidence;
+  const renderer = await render(
+    <NativeE2EEvidenceView
+      evidence={evidence('a')}
+      feedbackEvidence={sample}
+      onBack={jest.fn()}
+      onRefresh={jest.fn()}
+      status="ready"
+    />,
+  );
+  const text = textInside(renderer);
+
+  expect(text).toContain('Feedback-Ausgang');
+  expect(text).toContain('Feedback ausstehend');
+  expect(text).toContain('COMMITTED');
+  expect(text).toContain('Command-Fingerprint stimmt: JA');
+  expect(text).toContain('Screenshot-Bindung stimmt: NEIN');
+  expect(text).toContain('Screenshot-Metadaten stimmen: NICHT ANWENDBAR');
+  for (const fingerprint of [submission, idempotency, screenshot]) {
+    expect(text).toContain(fingerprint);
+  }
+  for (const raw of [
+    'raw-feedback-account',
+    'raw-feedback-id',
+    'raw-feedback-title',
+    'raw-feedback-body',
+    'raw-retained-file-key',
+    'raw-feedback-token',
+    'raw-screenshot-sha',
   ]) {
     expect(text).not.toContain(raw);
   }
@@ -192,6 +265,9 @@ test('keeps 390px metric labels and values scalable and unclipped for Accessibil
 
 test('fails closed without the development request ID, active account or exact root', async () => {
   const read = jest.spyOn(MobileSyncEngine.prototype, 'readOutboxEvidence');
+  const feedbackRead = jest.mocked(
+    FeedbackSubmissionController.prototype.readEvidence,
+  );
   mockRequestId = null;
   const disabled = await renderRoute('evt_native');
   expect(textInside(disabled)).toContain('nicht aktiviert');
@@ -211,6 +287,7 @@ test('fails closed without the development request ID, active account or exact r
   const invalidRoot = await renderRoute('invalid');
   expect(textInside(invalidRoot)).toContain('nicht aktiviert');
   expect(read).not.toHaveBeenCalled();
+  expect(feedbackRead).not.toHaveBeenCalled();
   expect(mockClient.request).not.toHaveBeenCalled();
   await ReactTestRenderer.act(async () => invalidRoot.unmount());
 });
@@ -249,20 +326,100 @@ test('conceals stale evidence when the root or account changes', async () => {
   await ReactTestRenderer.act(async () => renderer.unmount());
 });
 
-test('keeps loading and read errors generic and refreshes through SELECT-only evidence', async () => {
-  const first = deferred<OutboxEvidence>();
+test('conceals stale same-account evidence when the private database reopens', async () => {
+  const oldFeedback = deferred<FeedbackSubmissionEvidence>();
+  const newOutbox = deferred<OutboxEvidence>();
+  const newFeedback = deferred<FeedbackSubmissionEvidence>();
   const read = jest
     .spyOn(MobileSyncEngine.prototype, 'readOutboxEvidence')
+    .mockResolvedValueOnce(evidence('a'))
+    .mockReturnValueOnce(newOutbox.promise);
+  const feedbackRead = jest.mocked(
+    FeedbackSubmissionController.prototype.readEvidence,
+  );
+  feedbackRead
+    .mockReset()
+    .mockReturnValueOnce(oldFeedback.promise)
+    .mockReturnValueOnce(newFeedback.promise);
+  const renderer = await renderScreen('evt_reopen');
+  expect(textInside(renderer)).toContain('WIRD GEPRÜFT');
+
+  mockDatabase = {};
+  await updateScreen(renderer, 'evt_reopen');
+  expect(textInside(renderer)).toContain('WIRD GEPRÜFT');
+  expect(textInside(renderer)).not.toContain('a'.repeat(64));
+
+  newOutbox.resolve(evidence('n'));
+  newFeedback.resolve(feedbackEvidence('n'));
+  await ReactTestRenderer.act(async () => undefined);
+  expect(textInside(renderer)).toContain('n'.repeat(64));
+
+  oldFeedback.resolve(feedbackEvidence('o'));
+  await ReactTestRenderer.act(async () => undefined);
+  expect(textInside(renderer)).toContain('n'.repeat(64));
+  expect(textInside(renderer)).not.toContain('a'.repeat(64));
+  expect(textInside(renderer)).not.toContain('o'.repeat(64));
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(feedbackRead).toHaveBeenCalledTimes(2);
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('resets ready evidence across a same-account private lifecycle reload', async () => {
+  const nextOutbox = deferred<OutboxEvidence>();
+  const nextFeedback = deferred<FeedbackSubmissionEvidence>();
+  const read = jest
+    .spyOn(MobileSyncEngine.prototype, 'readOutboxEvidence')
+    .mockResolvedValueOnce(evidence('a'))
+    .mockReturnValueOnce(nextOutbox.promise);
+  const feedbackRead = jest.mocked(
+    FeedbackSubmissionController.prototype.readEvidence,
+  );
+  feedbackRead
+    .mockReset()
+    .mockResolvedValueOnce(feedbackEvidence('a'))
+    .mockReturnValueOnce(nextFeedback.promise);
+  const renderer = await renderScreen('evt_lifecycle');
+  expect(textInside(renderer)).toContain('a'.repeat(64));
+
+  mockLifecycleStatus = 'loading';
+  await updateScreen(renderer, 'evt_lifecycle');
+  expect(textInside(renderer)).toContain('nicht aktiviert');
+  expect(textInside(renderer)).not.toContain('a'.repeat(64));
+
+  mockLifecycleStatus = 'ready';
+  await updateScreen(renderer, 'evt_lifecycle');
+  expect(textInside(renderer)).toContain('WIRD GEPRÜFT');
+  expect(textInside(renderer)).not.toContain('a'.repeat(64));
+
+  nextOutbox.resolve(evidence('n'));
+  nextFeedback.resolve(feedbackEvidence('n'));
+  await ReactTestRenderer.act(async () => undefined);
+  expect(textInside(renderer)).toContain('n'.repeat(64));
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(feedbackRead).toHaveBeenCalledTimes(2);
+  await ReactTestRenderer.act(async () => renderer.unmount());
+});
+
+test('keeps feedback read errors generic and refreshes both SELECT-only evidence blocks', async () => {
+  const first = deferred<FeedbackSubmissionEvidence>();
+  const read = jest
+    .spyOn(MobileSyncEngine.prototype, 'readOutboxEvidence')
+    .mockResolvedValue(evidence('e'));
+  const feedbackRead = jest.mocked(
+    FeedbackSubmissionController.prototype.readEvidence,
+  );
+  feedbackRead
+    .mockReset()
     .mockReturnValueOnce(first.promise)
-    .mockResolvedValueOnce(evidence('e'));
+    .mockResolvedValueOnce(feedbackEvidence('r'));
   const renderer = await renderScreen('evt_loading');
   expect(textInside(renderer)).toContain('WIRD GEPRÜFT');
-  first.reject(new Error('token raw-error-secret'));
+  first.reject(new Error('token raw-feedback-error-secret'));
   await ReactTestRenderer.act(async () => undefined);
   expect(textInside(renderer)).toContain(
     'Der lokale Nachweis konnte nicht sicher gelesen werden.',
   );
-  expect(textInside(renderer)).not.toContain('raw-error-secret');
+  expect(textInside(renderer)).not.toContain('raw-feedback-error-secret');
 
   await ReactTestRenderer.act(async () => {
     renderer.root
@@ -271,8 +428,9 @@ test('keeps loading and read errors generic and refreshes through SELECT-only ev
       })
       .props.onPress();
   });
-  expect(textInside(renderer)).toContain('e'.repeat(64));
+  expect(textInside(renderer)).toContain('r'.repeat(64));
   expect(read).toHaveBeenCalledTimes(2);
+  expect(feedbackRead).toHaveBeenCalledTimes(2);
   expect(mockClient.request).not.toHaveBeenCalled();
   await ReactTestRenderer.act(async () => renderer.unmount());
 });
@@ -284,6 +442,28 @@ function evidence(character: string): OutboxEvidence {
     pullCursorFingerprint: character.repeat(64),
     rows: [],
     truncated: false,
+  };
+}
+
+function feedbackEvidence(character: string): FeedbackSubmissionEvidence {
+  return {
+    pendingCount: 0,
+    sendingCount: 0,
+    attentionCount: 0,
+    deliveredCount: 0,
+    truncated: false,
+    rows: [
+      {
+        state: 'delivered',
+        screenshotState: null,
+        submissionFingerprint: character.repeat(64),
+        idempotencyFingerprint: character.repeat(64),
+        screenshotFingerprint: null,
+        commandFingerprintMatches: null,
+        screenshotBindingMatches: true,
+        screenshotMetadataMatches: null,
+      },
+    ],
   };
 }
 

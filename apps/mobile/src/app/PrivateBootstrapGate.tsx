@@ -2,7 +2,7 @@ import {
   listFeedbackScreenshotFileKeysForPurge,
   LocalAttachmentStore,
   migrate,
-  purgeFeedbackSubmissions as purgeStoredFeedbackSubmissions,
+  MobileDataStore,
   type SqlDatabase,
 } from '@crew/mobile-data';
 import type { Session, SessionStore } from '@crew/mobile-client';
@@ -22,7 +22,9 @@ import {
 } from '../storage/databaseKey';
 import {
   purgeRetainedAttachmentFiles,
+  quiesceAttachmentMedia,
   reconcileRetainedAttachmentFiles,
+  resumeAttachmentMedia,
 } from '../media/attachmentMedia';
 import { openAccountDatabase } from '../storage/opSqliteAdapter';
 import { deniedRootRegistry } from '../storage/deniedRoots';
@@ -52,19 +54,18 @@ export type PrivateBootstrapDependencies = {
     database: SqlDatabase,
   ): Promise<void>;
   purgeDeniedRoots(accountId: string, database: SqlDatabase): Promise<void>;
-  purgeFeedbackSubmissions(
-    accountId: string,
-    database: SqlDatabase,
-  ): Promise<void>;
-  listFeedbackScreenshotFileKeys(
+  purgePrivateData(accountId: string, database: SqlDatabase): Promise<void>;
+  listRetainedFileKeysForPurge(
     accountId: string,
     database: SqlDatabase,
   ): Promise<readonly string[]>;
-  purgeRetainedFeedbackScreenshots(
+  purgeRetainedFiles(
     accountId: string,
     retainedFileKeys: readonly string[],
   ): Promise<void>;
+  quiesceAttachmentMedia(accountId: string): Promise<void>;
   reconcileAttachments(accountId: string, database: SqlDatabase): Promise<void>;
+  resumeAttachmentMedia(accountId: string): void;
   clearPrivateState(accountId: string): Promise<void> | void;
 };
 
@@ -115,21 +116,27 @@ const defaultDependencies: PrivateBootstrapDependencies = {
   purgeDeniedRoots(accountId, database) {
     return deniedRootRegistry.purgeRecorded(accountId, database);
   },
-  purgeFeedbackSubmissions(accountId, database) {
-    return purgeStoredFeedbackSubmissions(database, accountId);
+  purgePrivateData(accountId, database) {
+    return new MobileDataStore(database).clearUserData(accountId);
   },
-  listFeedbackScreenshotFileKeys(accountId, database) {
-    return listFeedbackScreenshotFileKeysForPurge(database, accountId);
+  async listRetainedFileKeysForPurge(accountId, database) {
+    const [attachments, feedbackScreenshots] = await Promise.all([
+      new LocalAttachmentStore(database).listRetainedFileKeys(accountId),
+      listFeedbackScreenshotFileKeysForPurge(database, accountId),
+    ]);
+    return [...attachments, ...feedbackScreenshots];
   },
-  purgeRetainedFeedbackScreenshots(accountId, retainedFileKeys) {
+  purgeRetainedFiles(accountId, retainedFileKeys) {
     return purgeRetainedAttachmentFiles(accountId, retainedFileKeys);
   },
+  quiesceAttachmentMedia,
   reconcileAttachments(accountId, database) {
     return reconcileRetainedAttachmentFiles(
       new LocalAttachmentStore(database),
       accountId,
     );
   },
+  resumeAttachmentMedia,
   clearPrivateState(accountId) {
     queryClient.removeQueries({ queryKey: ['private', accountId] });
   },
@@ -164,6 +171,7 @@ export async function bootstrapPrivateDatabase(
     await dependencies.initializeDeviceIdentities(accountId, database);
     await dependencies.purgeDeniedRoots(accountId, database);
     await dependencies.reconcileAttachments(accountId, database);
+    dependencies.resumeAttachmentMedia(accountId);
     return { status: 'ready', accountId, database };
   } catch {
     if (database) await closeQuietly(database);
@@ -187,14 +195,24 @@ export function PrivateBootstrapGate({
   const mountedRef = useRef(true);
   const transitionTailRef = useRef<Promise<void>>(Promise.resolve());
 
-  const publish = useCallback((next: typeof result) => {
-    if (!mountedRef.current) {
-      if (next.status === 'ready') ignore(closeQuietly(next.database));
-      return;
-    }
-    resultRef.current = next;
-    setResult(next);
-  }, []);
+  const publish = useCallback(
+    (next: typeof result) => {
+      if (!mountedRef.current) {
+        if (next.status === 'ready') {
+          ignore(
+            dependencies
+              .quiesceAttachmentMedia(next.accountId)
+              .then(() => closeQuietly(next.database))
+              .then(() => dependencies.clearPrivateState(next.accountId)),
+          );
+        }
+        return;
+      }
+      resultRef.current = next;
+      setResult(next);
+    },
+    [dependencies],
+  );
 
   const concealAndClose = useCallback(
     async (purgeFeedback: boolean, expectedAccountId?: string) => {
@@ -208,6 +226,7 @@ export function PrivateBootstrapGate({
       }
       publish({ status: 'loading' });
       if (previous.status !== 'ready') return;
+      await dependencies.quiesceAttachmentMedia(previous.accountId);
       if (!purgeFeedback) {
         await closeQuietly(previous.database);
         await dependencies.clearPrivateState(previous.accountId);
@@ -217,15 +236,15 @@ export function PrivateBootstrapGate({
       let failed = false;
       try {
         const retainedFileKeys =
-          await dependencies.listFeedbackScreenshotFileKeys(
+          await dependencies.listRetainedFileKeysForPurge(
             previous.accountId,
             previous.database,
           );
-        await dependencies.purgeRetainedFeedbackScreenshots(
+        await dependencies.purgeRetainedFiles(
           previous.accountId,
           retainedFileKeys,
         );
-        await dependencies.purgeFeedbackSubmissions(
+        await dependencies.purgePrivateData(
           previous.accountId,
           previous.database,
         );
@@ -408,11 +427,11 @@ export function PrivateBootstrapGate({
       const previous = resultRef.current;
       resultRef.current = { status: 'loading' };
       if (previous.status === 'ready') {
-        ignore(closeQuietly(previous.database));
         ignore(
-          Promise.resolve().then(() =>
-            dependencies.clearPrivateState(previous.accountId),
-          ),
+          dependencies
+            .quiesceAttachmentMedia(previous.accountId)
+            .then(() => closeQuietly(previous.database))
+            .then(() => dependencies.clearPrivateState(previous.accountId)),
         );
       }
     };

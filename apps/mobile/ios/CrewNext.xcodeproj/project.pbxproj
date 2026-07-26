@@ -13,6 +13,7 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A741BF122F22000100A77ACE /* CrewAttachmentMedia.mm in Sources */ = {isa = PBXBuildFile; fileRef = A741BF112F22000100A77ACE /* CrewAttachmentMedia.mm */; };
+		A741BF142F22000100A77ACE /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A741BF132F22000100A77ACE /* PhotosUI.framework */; };
 		D4C3A1012F23000100D5A451 /* DM Sans.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D4C3A1002F23000100D5A451 /* DM Sans.ttf */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +30,7 @@
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = CrewNext/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A741BF102F22000100A77ACE /* CrewAttachmentMedia.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CrewAttachmentMedia.h; path = CrewNext/CrewAttachmentMedia.h; sourceTree = "<group>"; };
 		A741BF112F22000100A77ACE /* CrewAttachmentMedia.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CrewAttachmentMedia.mm; path = CrewNext/CrewAttachmentMedia.mm; sourceTree = "<group>"; };
+		A741BF132F22000100A77ACE /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		D4C3A1002F23000100D5A451 /* DM Sans.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "DM Sans.ttf"; path = "../assets/fonts/DM Sans.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -38,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A741BF142F22000100A77ACE /* PhotosUI.framework in Frameworks */,
 				0C80B921A6F3F58F76C31292 /* libPods-CrewNext.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -64,6 +67,7 @@
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A741BF132F22000100A77ACE /* PhotosUI.framework */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				5DCACB8F33CDC322A6C60F78 /* libPods-CrewNext.a */,
 			);

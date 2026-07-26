@@ -1,7 +1,11 @@
 import {
+  FeedbackSubmissionController,
   MobileSyncEngine,
+  type FeedbackSubmissionEvidence,
+  type FeedbackSubmissionEvidenceRow,
   type OutboxEvidence,
   type OutboxEvidenceRow,
+  type SqlDatabase,
 } from '@crew/mobile-data';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useRef, useState } from 'react';
@@ -30,9 +34,23 @@ type RouteProps = NativeStackScreenProps<
 >;
 
 type EvidenceState =
-  | { key: string; status: 'loading' }
-  | { key: string; status: 'error' }
-  | { evidence: OutboxEvidence; key: string; status: 'ready' };
+  | {
+      database: SqlDatabase | null;
+      key: string;
+      status: 'loading';
+    }
+  | {
+      database: SqlDatabase;
+      key: string;
+      status: 'error';
+    }
+  | {
+      database: SqlDatabase;
+      evidence: OutboxEvidence;
+      feedbackEvidence: FeedbackSubmissionEvidence;
+      key: string;
+      status: 'ready';
+    };
 
 export function NativeE2EEvidenceRouteScreen({
   navigation,
@@ -74,6 +92,8 @@ export function NativeE2EEvidenceScreen({
   const lifecycle = usePrivateSessionLifecycle();
   const activeAccountRef = useRef(lifecycle.accountId);
   activeAccountRef.current = lifecycle.accountId;
+  const activeDatabaseRef = useRef(privateDatabase.database);
+  activeDatabaseRef.current = privateDatabase.database;
   const accountUserId =
     lifecycle.status === 'ready' &&
     lifecycle.accountId === privateDatabase.accountId
@@ -89,27 +109,57 @@ export function NativeE2EEvidenceScreen({
       : null;
   const [refreshRequest, setRefreshRequest] = useState(0);
   const [state, setState] = useState<EvidenceState>({
+    database: null,
     key: '',
     status: 'loading',
   });
 
   useEffect(() => {
-    if (!scopeKey || !accountUserId || !client) return;
+    if (!scopeKey || !accountUserId || !client) {
+      setState({ database: null, key: '', status: 'loading' });
+      return;
+    }
     let cancelled = false;
-    const engine = new MobileSyncEngine(privateDatabase.database, client, {
+    const database = privateDatabase.database;
+    const engine = new MobileSyncEngine(database, client, {
       activeAccountUserId: () => activeAccountRef.current,
       randomUUID: secureUuidV4,
     });
-    setState({ key: scopeKey, status: 'loading' });
-    engine.readOutboxEvidence(accountUserId, rootEventId).then(
-      evidence => {
-        if (!cancelled && activeAccountRef.current === accountUserId) {
-          setState({ evidence, key: scopeKey, status: 'ready' });
+    const feedback = new FeedbackSubmissionController(database, null, {
+      activeAccountUserId: () => activeAccountRef.current,
+      randomUUID: secureUuidV4,
+    });
+    setState({
+      database,
+      key: scopeKey,
+      status: 'loading',
+    });
+    Promise.all([
+      engine.readOutboxEvidence(accountUserId, rootEventId),
+      feedback.readEvidence(accountUserId, rootEventId),
+    ]).then(
+      ([evidence, feedbackEvidence]) => {
+        if (
+          !cancelled &&
+          activeAccountRef.current === accountUserId &&
+          activeDatabaseRef.current === database
+        ) {
+          setState({
+            database,
+            evidence,
+            feedbackEvidence,
+            key: scopeKey,
+            status: 'ready',
+          });
         }
       },
       () => {
-        if (!cancelled && activeAccountRef.current === accountUserId) {
-          setState({ key: scopeKey, status: 'error' });
+        if (
+          !cancelled &&
+          activeAccountRef.current === accountUserId &&
+          activeDatabaseRef.current === database
+        ) {
+          setState({ database, key: scopeKey, status: 'error' });
         }
       },
     );
@@ -129,13 +179,22 @@ export function NativeE2EEvidenceScreen({
     return <NativeE2EEvidenceView onBack={onBack} status="disabled" />;
   }
   const visibleState =
-    state.key === scopeKey
+    state.key === scopeKey && state.database === privateDatabase.database
       ? state
-      : { key: scopeKey, status: 'loading' as const };
+      : {
+          database: privateDatabase.database,
+          key: scopeKey,
+          status: 'loading' as const,
+        };
   return (
     <NativeE2EEvidenceView
       evidence={
         visibleState.status === 'ready' ? visibleState.evidence : undefined
+      }
+      feedbackEvidence={
+        visibleState.status === 'ready'
+          ? visibleState.feedbackEvidence
+          : undefined
       }
       onBack={onBack}
       onRefresh={() => setRefreshRequest(value => value + 1)}
@@ -146,11 +205,13 @@ export function NativeE2EEvidenceScreen({
 
 export function NativeE2EEvidenceView({
   evidence,
+  feedbackEvidence,
   onBack,
   onRefresh,
   status,
 }: {
   evidence?: OutboxEvidence;
+  feedbackEvidence?: FeedbackSubmissionEvidence;
   onBack(): void;
   onRefresh?(): void;
   status: 'disabled' | 'error' | 'loading' | 'ready';
@@ -218,6 +279,9 @@ export function NativeE2EEvidenceView({
               <EvidenceRow key={`${row.clientSequence}:${index}`} row={row} />
             ))}
           </View>
+          {feedbackEvidence ? (
+            <FeedbackEvidenceSection evidence={feedbackEvidence} />
+          ) : null}
         </>
       ) : null}
 
@@ -290,6 +354,104 @@ function EvidenceRow({ row }: { row: OutboxEvidenceRow }) {
   );
 }
 
+function FeedbackEvidenceSection({
+  evidence,
+}: {
+  evidence: FeedbackSubmissionEvidence;
+}) {
+  return (
+    <View style={styles.section} testID="native-e2e-feedback-evidence">
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        Feedback-Ausgang
+      </Text>
+      <View accessibilityRole="summary" style={styles.summary}>
+        <EvidenceMetric
+          label="Feedback ausstehend"
+          value={evidence.pendingCount}
+        />
+        <EvidenceMetric
+          label="Feedback sendend"
+          value={evidence.sendingCount}
+        />
+        <EvidenceMetric
+          label="Feedback Aufmerksamkeit"
+          value={evidence.attentionCount}
+        />
+        <EvidenceMetric
+          label="Feedback zugestellt"
+          value={evidence.deliveredCount}
+        />
+        <EvidenceMetric
+          label="Feedback gekürzt"
+          value={evidence.truncated ? 'JA' : 'NEIN'}
+        />
+      </View>
+      <View accessibilityRole="list" style={styles.rows}>
+        {evidence.rows.map((row, index) => (
+          <FeedbackEvidenceRow key={index} row={row} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function FeedbackEvidenceRow({ row }: { row: FeedbackSubmissionEvidenceRow }) {
+  return (
+    <Card
+      accessibilityRole="summary"
+      style={styles.row}
+      tone={row.state === 'attention' ? 'brand' : 'surface'}
+    >
+      <View style={styles.rowHeader}>
+        <StatusChip label={row.state.toUpperCase()} tone="lavender" />
+        <Text style={styles.sequence}>
+          {row.screenshotState?.toUpperCase() ?? 'OHNE SCREENSHOT'}
+        </Text>
+      </View>
+      <Fingerprint
+        label="Submission · Evidence SHA-256"
+        value={row.submissionFingerprint}
+      />
+      <Fingerprint
+        label="Idempotenz · Evidence SHA-256"
+        value={row.idempotencyFingerprint}
+      />
+      <Fingerprint
+        label="Screenshot · Evidence SHA-256"
+        value={row.screenshotFingerprint}
+      />
+      <MatchValue
+        label="Command-Fingerprint stimmt"
+        value={row.commandFingerprintMatches}
+      />
+      <MatchValue
+        label="Screenshot-Bindung stimmt"
+        value={row.screenshotBindingMatches}
+      />
+      <MatchValue
+        label="Screenshot-Metadaten stimmen"
+        value={row.screenshotMetadataMatches}
+      />
+    </Card>
+  );
+}
+
+function MatchValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: boolean | null;
+}) {
+  return (
+    <Text style={styles.match}>
+      {`${label}: ${
+        value === null ? 'NICHT ANWENDBAR' : value ? 'JA' : 'NEIN'
+      }`}
+    </Text>
+  );
+}
+
 function Fingerprint({
   label,
   testID,
@@ -333,6 +495,10 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
   },
+  match: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
   metric: {
     gap: spacing.xs,
     width: '100%',
@@ -355,6 +521,13 @@ const styles = StyleSheet.create({
   },
   rows: {
     gap: spacing.md,
+  },
+  section: {
+    gap: spacing.md,
+  },
+  sectionTitle: {
+    ...typography.subheading,
+    color: colors.text,
   },
   sequence: {
     ...typography.bodyStrong,

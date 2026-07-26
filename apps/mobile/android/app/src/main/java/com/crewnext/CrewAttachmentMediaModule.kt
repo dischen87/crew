@@ -1,12 +1,14 @@
 package com.crewnext
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.media.ExifInterface
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -21,8 +23,11 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import com.facebook.fbreact.specs.NativeCrewAttachmentMediaSpec
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
@@ -41,6 +46,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLException
 import kotlin.math.max
@@ -54,10 +60,162 @@ class CrewAttachmentMediaModule(
   // PURGE_SINGLE_WRITER_INVARIANT: every attachment file mutation uses this executor.
   private val mediaExecutor = Executors.newSingleThreadExecutor()
   private val mainHandler = Handler(Looper.getMainLooper())
+  private val pickerContract = ActivityResultContracts.PickVisualMedia()
+  private val pickerLock = Any()
+  private var pendingPicker: PendingPicker? = null
+  private var activePickerWork: PickerWork? = null
+  private var moduleInvalidated = false
+  private val pickerListener = object : BaseActivityEventListener() {
+    override fun onActivityResult(
+      activity: Activity,
+      requestCode: Int,
+      resultCode: Int,
+      data: Intent?,
+    ) {
+      if (requestCode != PICK_IMAGE_REQUEST) return
+      val pending = synchronized(pickerLock) { pendingPicker } ?: return
+      if (resultCode == Activity.RESULT_CANCELED) {
+        synchronized(pickerLock) {
+          if (pendingPicker === pending) {
+            pending.also { pendingPicker = null }
+          } else {
+            null
+          }
+        }?.promise?.resolve(null)
+        return
+      }
+      val uri = try {
+        pickerContract.parseResult(resultCode, data)
+      } catch (_: Throwable) {
+        null
+      }
+      if (
+        resultCode != Activity.RESULT_OK || uri?.scheme != "content"
+      ) {
+        synchronized(pickerLock) {
+          if (pendingPicker === pending) {
+            pending.also { pendingPicker = null }
+          } else {
+            null
+          }
+        }?.promise?.rejectSafe(PICKER_FAILED)
+        return
+      }
+      val work = synchronized(pickerLock) {
+        if (pendingPicker !== pending || moduleInvalidated) {
+          null
+        } else {
+          pendingPicker = null
+          PickerWork(pending.accountUserId, pending.promise).also {
+            activePickerWork = it
+          }
+        }
+      }
+      if (work != null) runPickerWork(work, uri)
+    }
+  }
+
+  init {
+    reactContext.addActivityEventListener(pickerListener)
+  }
 
   override fun invalidate() {
-    mediaExecutor.shutdownNow()
+    reactApplicationContext.removeActivityEventListener(pickerListener)
+    val pending = synchronized(pickerLock) {
+      moduleInvalidated = true
+      pendingPicker.also { pendingPicker = null }
+    }
+    pending?.promise?.rejectSafe(PICKER_UNAVAILABLE)
+    mediaExecutor.shutdown()
+    try {
+      if (!mediaExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+        mediaExecutor.shutdownNow()
+        mediaExecutor.awaitTermination(5, TimeUnit.SECONDS)
+      }
+    } catch (_: InterruptedException) {
+      Thread.currentThread().interrupt()
+      mediaExecutor.shutdownNow()
+    }
     super.invalidate()
+  }
+
+  override fun cancelPending(accountUserId: String, promise: Promise) {
+    if (!ACCOUNT.matches(accountUserId)) {
+      promise.rejectSafe(INVALID)
+      return
+    }
+    var cancelled: PendingPicker? = null
+    var waitsForWork = false
+    synchronized(pickerLock) {
+      if (moduleInvalidated) {
+        promise.resolve(null)
+        return
+      }
+      pendingPicker?.let {
+        if (it.accountUserId == accountUserId) {
+          cancelled = it
+          pendingPicker = null
+        }
+      }
+      activePickerWork?.let {
+        if (it.accountUserId == accountUserId) {
+          it.cancelWaiters += promise
+          waitsForWork = true
+        }
+      }
+    }
+    cancelled?.promise?.resolve(null)
+    if (!waitsForWork) promise.resolve(null)
+  }
+
+  override fun pickImageAndRetain(accountUserId: String, promise: Promise) {
+    if (!ACCOUNT.matches(accountUserId)) {
+      promise.rejectSafe(INVALID)
+      return
+    }
+    mainHandler.post {
+      if (synchronized(pickerLock) { moduleInvalidated }) {
+        promise.rejectSafe(PICKER_UNAVAILABLE)
+        return@post
+      }
+      val activity = reactApplicationContext.currentActivity
+      if (
+        reactApplicationContext.lifecycleState != LifecycleState.RESUMED ||
+        activity == null || activity.isFinishing || activity.isDestroyed
+      ) {
+        promise.rejectSafe(PICKER_UNAVAILABLE)
+        return@post
+      }
+      val intent = pickerContract.createIntent(
+        activity,
+        PickVisualMediaRequest.Builder()
+          .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+          .build(),
+      )
+      if (intent.resolveActivity(activity.packageManager) == null) {
+        promise.rejectSafe(PICKER_UNAVAILABLE)
+        return@post
+      }
+      val pending = PendingPicker(accountUserId, promise)
+      synchronized(pickerLock) {
+        if (
+          moduleInvalidated || pendingPicker != null ||
+          activePickerWork != null
+        ) {
+          promise.rejectSafe(PICKER_UNAVAILABLE)
+          return@post
+        }
+        pendingPicker = pending
+      }
+      try {
+        activity.startActivityForResult(intent, PICK_IMAGE_REQUEST)
+      } catch (_: Throwable) {
+        synchronized(pickerLock) {
+          if (pendingPicker === pending) pendingPicker = null
+        }
+        promise.rejectSafe(PICKER_UNAVAILABLE)
+      }
+    }
   }
 
   override fun captureCurrentScreen(accountUserId: String, promise: Promise) {
@@ -143,7 +301,7 @@ class CrewAttachmentMediaModule(
     promise: Promise,
   ) {
     runMedia(promise, PREVIEW_FAILED) {
-      previewRetainedPng(accountUserId, retainedFileKey)
+      previewRetainedImage(accountUserId, retainedFileKey)
     }
   }
 
@@ -158,7 +316,7 @@ class CrewAttachmentMediaModule(
     promise: Promise,
   ) {
     runMedia(promise, UPLOAD_FAILED) {
-      uploadRetainedPng(
+      uploadRetainedImage(
         accountUserId,
         retainedFileKey,
         grantUrl,
@@ -210,7 +368,7 @@ class CrewAttachmentMediaModule(
       for (index in 0 until retainedFileKeys.size()) {
         if (retainedFileKeys.getType(index) != ReadableType.String) fail(INVALID)
         val key = retainedFileKeys.getString(index) ?: fail(INVALID)
-        if (!PNG_KEY.matches(key)) fail(INVALID)
+        if (!RETAINED_KEY.matches(key)) fail(INVALID)
         keys += key
       }
 
@@ -510,16 +668,10 @@ class CrewAttachmentMediaModule(
     }
   }
 
-  private fun previewRetainedPng(accountUserId: String, retainedFileKey: String): String {
-    val file = resolveRetainedPng(accountUserId, retainedFileKey)
+  private fun previewRetainedImage(accountUserId: String, retainedFileKey: String): String {
+    val file = resolveRetainedImage(accountUserId, retainedFileKey)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.path, bounds)
-    if (
-      bounds.outMimeType != "image/png" || bounds.outWidth < 1 || bounds.outHeight < 1 ||
-      bounds.outWidth > MAX_CAPTURE_EDGE || bounds.outHeight > MAX_CAPTURE_EDGE ||
-      bounds.outWidth.toLong() * bounds.outHeight > MAX_PIXELS ||
-      isAnimated(file, "image/png")
-    ) fail(UNSAFE)
     val decoded = decodeBoundedBitmap(
       file,
       bounds.outWidth,
@@ -555,7 +707,7 @@ class CrewAttachmentMediaModule(
     }
   }
 
-  private fun uploadRetainedPng(
+  private fun uploadRetainedImage(
     accountUserId: String,
     retainedFileKey: String,
     grantUrl: String,
@@ -565,11 +717,12 @@ class CrewAttachmentMediaModule(
     expectedSha256: String,
   ) {
     if (
-      !SHA256.matches(expectedSha256) || retainedFileKey != "$expectedSha256.png" ||
-      contentType != "image/png" || byteCount < 1 || byteCount > MAX_RETAINED_BYTES ||
+      !SHA256.matches(expectedSha256) ||
+      retainedFileKey != "$expectedSha256${EXTENSION_BY_MIME[contentType] ?: ""}" ||
+      contentType !in RETAINED_MIME || byteCount < 1 || byteCount > MAX_RETAINED_BYTES ||
       byteCount != byteCount.toLong().toDouble()
     ) fail(INVALID)
-    val file = resolveRetainedPng(accountUserId, retainedFileKey)
+    val file = resolveRetainedImage(accountUserId, retainedFileKey)
     if (file.length().toDouble() != byteCount) fail(UNSAFE)
     val fields = validateUploadFields(grantFields)
     val uri = try {
@@ -594,7 +747,7 @@ class CrewAttachmentMediaModule(
     prefix.writeUtf8(
       "Content-Disposition: form-data; name=\"file\"; filename=\"$retainedFileKey\"\r\n",
     )
-    prefix.writeUtf8("Content-Type: image/png\r\n\r\n")
+    prefix.writeUtf8("Content-Type: $contentType\r\n\r\n")
     val suffix = "\r\n--$boundary--\r\n".toByteArray(StandardCharsets.UTF_8)
     val contentLength = prefix.size().toLong() + file.length() + suffix.size
     if (CookieHandler.getDefault() != null) fail(UPLOAD_UNAVAILABLE)
@@ -674,10 +827,9 @@ class CrewAttachmentMediaModule(
     return fields
   }
 
-  private fun resolveRetainedPng(accountUserId: String, retainedFileKey: String): File {
+  private fun resolveRetainedImage(accountUserId: String, retainedFileKey: String): File {
     if (
-      !ACCOUNT.matches(accountUserId) || !PNG_KEY.matches(retainedFileKey) ||
-      retainedFileKey != "${retainedFileKey.removeSuffix(".png")}.png"
+      !ACCOUNT.matches(accountUserId) || !RETAINED_KEY.matches(retainedFileKey)
     ) fail(INVALID)
     val directory = attachmentDirectory(accountUserId)
     val file = File(directory, retainedFileKey)
@@ -688,13 +840,17 @@ class CrewAttachmentMediaModule(
       file.canonicalFile.name != retainedFileKey ||
       file.length() !in 1..MAX_RETAINED_BYTES
     ) fail(UNSAFE)
-    FileInputStream(file).use { input ->
-      val signature = ByteArray(PNG_SIGNATURE.size)
-      if (input.read(signature) != signature.size || !signature.contentEquals(PNG_SIGNATURE)) {
-        fail(UNSAFE)
-      }
-    }
-    if (sha256(file) != retainedFileKey.removeSuffix(".png")) fail(UNSAFE)
+    val expectedMime = MIME_BY_EXTENSION[retainedFileKey.substringAfterLast('.')]
+      ?: fail(INVALID)
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, bounds)
+    if (
+      bounds.outMimeType != expectedMime || bounds.outWidth < 1 || bounds.outHeight < 1 ||
+      bounds.outWidth > MAX_IMAGE_EDGE || bounds.outHeight > MAX_IMAGE_EDGE ||
+      bounds.outWidth.toLong() * bounds.outHeight > MAX_PIXELS ||
+      isAnimated(file, expectedMime) ||
+      sha256(file) != retainedFileKey.substringBeforeLast('.')
+    ) fail(UNSAFE)
     return file
   }
 
@@ -781,22 +937,40 @@ class CrewAttachmentMediaModule(
   }
 
   private fun readOrientation(file: File): Int = try {
-    ExifInterface(file.path).getAttributeInt(
+    val orientation = ExifInterface(file.path).getAttributeInt(
       ExifInterface.TAG_ORIENTATION,
-      ExifInterface.ORIENTATION_NORMAL,
+      ExifInterface.ORIENTATION_UNDEFINED,
     )
+    when (orientation) {
+      ExifInterface.ORIENTATION_UNDEFINED -> ExifInterface.ORIENTATION_NORMAL
+      in VALID_ORIENTATIONS -> orientation
+      else -> fail(UNSAFE)
+    }
   } catch (_: Throwable) {
-    ExifInterface.ORIENTATION_NORMAL
+    fail(UNSAFE)
   }
 
   private fun isAnimated(file: File, mime: String): Boolean = try {
     when (mime) {
       "image/png" -> pngHasAnimation(file)
       "image/webp" -> webpHasAnimation(file)
+      "image/heif", "image/heic" -> heifHasMultipleImages(file)
       else -> false
     }
   } catch (_: Throwable) {
     true
+  }
+
+  private fun heifHasMultipleImages(file: File): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return true
+    val retriever = MediaMetadataRetriever()
+    return try {
+      retriever.setDataSource(file.absolutePath)
+      retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_IMAGE_COUNT)
+        ?.toIntOrNull() != 1
+    } finally {
+      retriever.release()
+    }
   }
 
   private fun pngHasAnimation(file: File): Boolean {
@@ -877,7 +1051,57 @@ class CrewAttachmentMediaModule(
     }
   }
 
+  private fun runPickerWork(work: PickerWork, uri: Uri) {
+    try {
+      mediaExecutor.execute {
+        var result: Any? = null
+        var failureCode: String? = null
+        try {
+          result = normalizeAndRetainImage(work.accountUserId, uri.toString())
+        } catch (failure: MediaFailure) {
+          failureCode = failure.safeCode
+        } catch (_: Throwable) {
+          failureCode = PICKER_FAILED
+        }
+        val completion = synchronized(pickerLock) {
+          if (activePickerWork === work) activePickerWork = null
+          PickerCompletion(
+            invalidated = moduleInvalidated,
+            cancelWaiters = work.cancelWaiters.toList(),
+          )
+        }
+        if (!completion.invalidated) {
+          if (failureCode == null) work.promise.resolve(result)
+          else work.promise.rejectSafe(failureCode)
+          completion.cancelWaiters.forEach { it.resolve(null) }
+        }
+      }
+    } catch (_: Throwable) {
+      val completion = synchronized(pickerLock) {
+        if (activePickerWork === work) activePickerWork = null
+        PickerCompletion(
+          invalidated = moduleInvalidated,
+          cancelWaiters = work.cancelWaiters.toList(),
+        )
+      }
+      if (!completion.invalidated) {
+        work.promise.rejectSafe(PICKER_FAILED)
+        completion.cancelWaiters.forEach { it.resolve(null) }
+      }
+    }
+  }
+
   private data class UploadField(val name: String, val value: String)
+  private data class PendingPicker(val accountUserId: String, val promise: Promise)
+  private data class PickerWork(
+    val accountUserId: String,
+    val promise: Promise,
+    val cancelWaiters: MutableList<Promise> = mutableListOf(),
+  )
+  private data class PickerCompletion(
+    val invalidated: Boolean,
+    val cancelWaiters: List<Promise>,
+  )
 
   private class MediaFailure(val safeCode: String) : RuntimeException()
 
@@ -914,6 +1138,7 @@ class CrewAttachmentMediaModule(
     private const val MAX_GRANT_FIELD_VALUE_BYTES = 16 * 1024
     private const val MAX_GRANT_FIELD_BYTES = 64 * 1024
     private const val MAX_PURGE_BATCH = 64
+    private const val PICK_IMAGE_REQUEST = 0x4352
 
     private const val INVALID_SOURCE = "attachment_media_invalid_source"
     private const val UNSUPPORTED = "attachment_media_unsupported"
@@ -924,6 +1149,8 @@ class CrewAttachmentMediaModule(
     private const val MISSING = "attachment_media_missing"
     private const val CAPTURE_UNAVAILABLE = "attachment_media_capture_unavailable"
     private const val CAPTURE_FAILED = "attachment_media_capture_failed"
+    private const val PICKER_UNAVAILABLE = "attachment_media_picker_unavailable"
+    private const val PICKER_FAILED = "attachment_media_picker_failed"
     private const val PREVIEW_FAILED = "attachment_media_preview_failed"
     private const val UPLOAD_RETRYABLE = "attachment_media_upload_retryable"
     private const val UPLOAD_UNAVAILABLE = "attachment_media_upload_unavailable"
@@ -931,7 +1158,6 @@ class CrewAttachmentMediaModule(
 
     private val ACCOUNT = Regex("^usr_[a-f0-9]{32}$")
     private val SHA256 = Regex("^[a-f0-9]{64}$")
-    private val PNG_KEY = Regex("^[a-f0-9]{64}\\.png$")
     private val RETAINED_KEY = Regex("^[a-f0-9]{64}\\.(?:jpg|png|webp)$")
     private val FIELD_NAME = Regex("^[A-Za-z0-9_.-]{1,128}$")
     private val SUPPORTED_MIME = setOf(
@@ -941,14 +1167,32 @@ class CrewAttachmentMediaModule(
       "image/heif",
       "image/heic",
     )
+    private val RETAINED_MIME = setOf("image/jpeg", "image/png", "image/webp")
+    private val EXTENSION_BY_MIME = mapOf(
+      "image/jpeg" to ".jpg",
+      "image/png" to ".png",
+      "image/webp" to ".webp",
+    )
+    private val MIME_BY_EXTENSION = mapOf(
+      "jpg" to "image/jpeg",
+      "png" to "image/png",
+      "webp" to "image/webp",
+    )
     private val ROTATED_ORIENTATIONS = setOf(
       ExifInterface.ORIENTATION_TRANSPOSE,
       ExifInterface.ORIENTATION_ROTATE_90,
       ExifInterface.ORIENTATION_TRANSVERSE,
       ExifInterface.ORIENTATION_ROTATE_270,
     )
-    private val PNG_SIGNATURE = byteArrayOf(
-      0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    private val VALID_ORIENTATIONS = setOf(
+      ExifInterface.ORIENTATION_NORMAL,
+      ExifInterface.ORIENTATION_FLIP_HORIZONTAL,
+      ExifInterface.ORIENTATION_ROTATE_180,
+      ExifInterface.ORIENTATION_FLIP_VERTICAL,
+      ExifInterface.ORIENTATION_TRANSPOSE,
+      ExifInterface.ORIENTATION_ROTATE_90,
+      ExifInterface.ORIENTATION_TRANSVERSE,
+      ExifInterface.ORIENTATION_ROTATE_270,
     )
   }
 }

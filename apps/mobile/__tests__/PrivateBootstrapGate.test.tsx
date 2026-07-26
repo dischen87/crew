@@ -9,6 +9,12 @@ import {
   type PrivateBootstrapDependencies,
   usePrivateSessionLifecycle,
 } from '../src/app/PrivateBootstrapGate';
+import {
+  captureCurrentScreenAttachment,
+  quiesceAttachmentMedia,
+  resumeAttachmentMedia,
+  runAttachmentMediaOperation,
+} from '../src/media/attachmentMedia';
 import { DatabaseKeyStorageUnavailableError } from '../src/storage/databaseKey';
 
 const accountId = `usr_${'a'.repeat(32)}`;
@@ -54,10 +60,12 @@ function dependencies(
     migrateDatabase: jest.fn(async () => undefined),
     initializeDeviceIdentities: jest.fn(async () => undefined),
     purgeDeniedRoots: jest.fn(async () => undefined),
-    purgeFeedbackSubmissions: jest.fn(async () => undefined),
-    listFeedbackScreenshotFileKeys: jest.fn(async () => []),
-    purgeRetainedFeedbackScreenshots: jest.fn(async () => undefined),
+    purgePrivateData: jest.fn(async () => undefined),
+    listRetainedFileKeysForPurge: jest.fn(async () => []),
+    purgeRetainedFiles: jest.fn(async () => undefined),
+    quiesceAttachmentMedia: jest.fn(async () => undefined),
     reconcileAttachments: jest.fn(async () => undefined),
+    resumeAttachmentMedia: jest.fn(),
     clearPrivateState: jest.fn(async () => undefined),
   };
 }
@@ -73,7 +81,7 @@ test('keeps key generation, SQLCipher open and migration off signed-out boot', a
   expect(deps.migrateDatabase).not.toHaveBeenCalled();
   expect(deps.initializeDeviceIdentities).not.toHaveBeenCalled();
   expect(deps.purgeDeniedRoots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(deps.reconcileAttachments).not.toHaveBeenCalled();
 });
 
@@ -93,7 +101,7 @@ test('fails closed when the protected session cannot be read', async () => {
   expect(deps.migrateDatabase).not.toHaveBeenCalled();
   expect(deps.initializeDeviceIdentities).not.toHaveBeenCalled();
   expect(deps.purgeDeniedRoots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(deps.reconcileAttachments).not.toHaveBeenCalled();
 });
 
@@ -260,6 +268,126 @@ test('keeps private navigation gated until migration completes and closes on unm
   expect(database.close).toHaveBeenCalledTimes(1);
 });
 
+test('logout drains a captured file through its DB bind before listing and closing', async () => {
+  const retainedFileKey = `${'c'.repeat(64)}.png`;
+  const retainedFileKeys: string[] = [];
+  const calls: string[] = [];
+  let closed = false;
+  let releaseCapture: (value: {
+    retainedFileKey: string;
+    contentType: 'image/png';
+    byteCount: number;
+    sha256: string;
+    pixelWidth: number;
+    pixelHeight: number;
+    wasNormalized: true;
+  }) => void = () => {};
+  const nativeCapture = new Promise<{
+    retainedFileKey: string;
+    contentType: 'image/png';
+    byteCount: number;
+    sha256: string;
+    pixelWidth: number;
+    pixelHeight: number;
+    wasNormalized: true;
+  }>(resolve => {
+    releaseCapture = resolve;
+  });
+  const database = {
+    close: jest.fn(async () => {
+      closed = true;
+      calls.push('close');
+    }),
+  } as unknown as ClosableSqlDatabase;
+  const deps = dependencies(session, database);
+  deps.resumeAttachmentMedia = resumeAttachmentMedia;
+  deps.quiesceAttachmentMedia = id =>
+    quiesceAttachmentMedia(id, {
+      nativeModule: {
+        cancelPending: async () => {
+          calls.push('cancel-picker');
+        },
+      },
+    });
+  jest
+    .mocked(deps.listRetainedFileKeysForPurge)
+    .mockImplementation(async () => {
+      calls.push('list');
+      expect(closed).toBe(false);
+      return [...retainedFileKeys];
+    });
+  jest.mocked(deps.purgeRetainedFiles).mockImplementation(async (_id, keys) => {
+    calls.push(`purge:${keys.join(',')}`);
+  });
+  jest.mocked(deps.purgePrivateData).mockImplementation(async () => {
+    calls.push('purge-db');
+  });
+  let lifecycle!: ReturnType<typeof usePrivateSessionLifecycle>;
+
+  function Probe() {
+    lifecycle = usePrivateSessionLifecycle();
+    return <View testID={`drain-${lifecycle.status}`} />;
+  }
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <PrivateBootstrapGate dependencies={deps}>
+        {() => <Probe />}
+      </PrivateBootstrapGate>,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  calls.length = 0;
+
+  const capture = runAttachmentMediaOperation(accountId, async () => {
+    const captured = await captureCurrentScreenAttachment(accountId, {
+      nativeModule: {
+        captureCurrentScreen: async () => nativeCapture,
+      },
+    });
+    expect(closed).toBe(false);
+    calls.push('retain-db');
+    retainedFileKeys.push(captured.retainedFileKey);
+  });
+  let logout!: Promise<void>;
+  await ReactTestRenderer.act(async () => {
+    logout = lifecycle.replaceSession(null);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(calls).toContain('cancel-picker');
+  expect(calls).not.toContain('list');
+  expect(database.close).not.toHaveBeenCalled();
+
+  await ReactTestRenderer.act(async () => {
+    releaseCapture({
+      retainedFileKey,
+      contentType: 'image/png',
+      byteCount: 4096,
+      sha256: 'c'.repeat(64),
+      pixelWidth: 390,
+      pixelHeight: 844,
+      wasNormalized: true,
+    });
+    await capture;
+    await logout;
+  });
+
+  expect(calls).toEqual([
+    'cancel-picker',
+    'retain-db',
+    'list',
+    `purge:${retainedFileKey}`,
+    'purge-db',
+    'close',
+  ]);
+  resumeAttachmentMedia(accountId);
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
 test('closes old private state before atomically replacing the account session', async () => {
   const secondAccountId = `usr_${'b'.repeat(32)}`;
   const secondSession: Session = {
@@ -320,18 +448,28 @@ test('closes old private state before atomically replacing the account session',
     purgeDeniedRoots: jest.fn(async id => {
       calls.push(`purge:${id}`);
     }),
-    purgeFeedbackSubmissions: jest.fn(async id => {
-      calls.push(`purge-feedback:${id}`);
+    purgePrivateData: jest.fn(async id => {
+      calls.push(`purge-private:${id}`);
     }),
-    listFeedbackScreenshotFileKeys: jest.fn(async id => {
-      calls.push(`list-feedback-files:${id}`);
-      return [`${'7'.repeat(64)}.png`];
+    listRetainedFileKeysForPurge: jest.fn(async id => {
+      calls.push(`list-retained-files:${id}`);
+      return [
+        `${'7'.repeat(64)}.jpg`,
+        `${'8'.repeat(64)}.png`,
+        `${'9'.repeat(64)}.webp`,
+      ];
     }),
-    purgeRetainedFeedbackScreenshots: jest.fn(async (id, retainedFileKeys) => {
-      calls.push(`purge-feedback-files:${id}:${retainedFileKeys.length}`);
+    purgeRetainedFiles: jest.fn(async (id, retainedFileKeys) => {
+      calls.push(`purge-retained-files:${id}:${retainedFileKeys.length}`);
+    }),
+    quiesceAttachmentMedia: jest.fn(async id => {
+      calls.push(`quiesce:${id}`);
     }),
     reconcileAttachments: jest.fn(async id => {
       calls.push(`reconcile:${id}`);
+    }),
+    resumeAttachmentMedia: jest.fn(id => {
+      calls.push(`resume:${id}`);
     }),
     clearPrivateState: jest.fn(async id => {
       calls.push(`clear:${id}`);
@@ -367,6 +505,7 @@ test('closes old private state before atomically replacing the account session',
 
   expect(calls).toEqual([
     `get:${accountId}`,
+    `quiesce:${accountId}`,
     `close:${accountId}`,
     `clear:${accountId}`,
     `cas:${accountId}->${secondAccountId}`,
@@ -377,6 +516,7 @@ test('closes old private state before atomically replacing the account session',
     `identity:${secondAccountId}`,
     `purge:${secondAccountId}`,
     `reconcile:${secondAccountId}`,
+    `resume:${secondAccountId}`,
   ]);
   expect(
     renderer!.root.findByProps({ testID: `account-${secondAccountId}` }),
@@ -388,9 +528,10 @@ test('closes old private state before atomically replacing the account session',
   });
   expect(calls).toEqual([
     `get:${secondAccountId}`,
-    `list-feedback-files:${secondAccountId}`,
-    `purge-feedback-files:${secondAccountId}:1`,
-    `purge-feedback:${secondAccountId}`,
+    `quiesce:${secondAccountId}`,
+    `list-retained-files:${secondAccountId}`,
+    `purge-retained-files:${secondAccountId}:3`,
+    `purge-private:${secondAccountId}`,
     `close:${secondAccountId}`,
     `clear:${secondAccountId}`,
     `cas:${secondAccountId}->none`,
@@ -464,9 +605,9 @@ test('never lets an A logout queued behind an A-to-B switch purge or replace B',
 
   expect(String(staleLogoutFailure)).toBe('Error: Session replacement failed');
   expect(storedSession).toBe(secondSession);
-  expect(deps.listFeedbackScreenshotFileKeys).not.toHaveBeenCalled();
-  expect(deps.purgeRetainedFeedbackScreenshots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.listRetainedFileKeysForPurge).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledTimes(1);
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledWith(
     session,
@@ -488,10 +629,10 @@ test('keeps logout retries fail-closed after a native file purge failure', async
   const deps = dependencies(session, database);
   const retainedFileKey = `${'7'.repeat(64)}.png`;
   jest
-    .mocked(deps.listFeedbackScreenshotFileKeys)
+    .mocked(deps.listRetainedFileKeysForPurge)
     .mockResolvedValueOnce([retainedFileKey]);
   jest
-    .mocked(deps.purgeRetainedFeedbackScreenshots)
+    .mocked(deps.purgeRetainedFiles)
     .mockRejectedValueOnce(new Error(`/private/${retainedFileKey}`));
   let lifecycle!: ReturnType<typeof usePrivateSessionLifecycle>;
 
@@ -517,15 +658,14 @@ test('keeps logout retries fail-closed after a native file purge failure', async
   });
 
   expect(String(failure)).toBe('Error: Session replacement failed');
-  expect(deps.listFeedbackScreenshotFileKeys).toHaveBeenCalledWith(
+  expect(deps.listRetainedFileKeysForPurge).toHaveBeenCalledWith(
     accountId,
     database,
   );
-  expect(deps.purgeRetainedFeedbackScreenshots).toHaveBeenCalledWith(
-    accountId,
-    [retainedFileKey],
-  );
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).toHaveBeenCalledWith(accountId, [
+    retainedFileKey,
+  ]);
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(database.close).toHaveBeenCalledTimes(1);
   expect(deps.clearPrivateState).toHaveBeenCalledWith(accountId);
   expect(deps.sessionStore.compareAndSet).not.toHaveBeenCalled();
@@ -537,8 +677,8 @@ test('keeps logout retries fail-closed after a native file purge failure', async
     failure = await lifecycle.replaceSession(null).catch(error => error);
   });
   expect(String(failure)).toBe('Error: Session replacement failed');
-  expect(deps.listFeedbackScreenshotFileKeys).toHaveBeenCalledTimes(1);
-  expect(deps.purgeRetainedFeedbackScreenshots).toHaveBeenCalledTimes(1);
+  expect(deps.listRetainedFileKeysForPurge).toHaveBeenCalledTimes(1);
+  expect(deps.purgeRetainedFiles).toHaveBeenCalledTimes(1);
   expect(database.close).toHaveBeenCalledTimes(1);
   expect(deps.sessionStore.compareAndSet).not.toHaveBeenCalled();
   await expect(deps.sessionStore.get()).resolves.toBe(session);
@@ -582,9 +722,9 @@ test('blocks logout before purge when the protected session belongs to a newer a
     );
   });
 
-  expect(deps.listFeedbackScreenshotFileKeys).not.toHaveBeenCalled();
-  expect(deps.purgeRetainedFeedbackScreenshots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.listRetainedFileKeysForPurge).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(deps.sessionStore.compareAndSet).not.toHaveBeenCalled();
   expect(database.close).toHaveBeenCalledTimes(1);
   expect(deps.clearPrivateState).toHaveBeenCalledWith(accountId);
@@ -647,18 +787,12 @@ test('never purges or replaces a newer account when the session races A to B', a
   });
 
   expect(storedSession).toBe(secondSession);
-  expect(deps.listFeedbackScreenshotFileKeys).toHaveBeenCalledWith(
+  expect(deps.listRetainedFileKeysForPurge).toHaveBeenCalledWith(
     accountId,
     database,
   );
-  expect(deps.purgeRetainedFeedbackScreenshots).toHaveBeenCalledWith(
-    accountId,
-    [],
-  );
-  expect(deps.purgeFeedbackSubmissions).toHaveBeenCalledWith(
-    accountId,
-    database,
-  );
+  expect(deps.purgeRetainedFiles).toHaveBeenCalledWith(accountId, []);
+  expect(deps.purgePrivateData).toHaveBeenCalledWith(accountId, database);
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledWith(session, null);
 
   await ReactTestRenderer.act(async () => {
@@ -680,17 +814,15 @@ test('clears private state but blocks logout CAS when the database cannot close'
     return session;
   });
   jest
-    .mocked(deps.listFeedbackScreenshotFileKeys)
+    .mocked(deps.listRetainedFileKeysForPurge)
     .mockImplementation(async () => {
       calls.push('list');
       return [];
     });
-  jest
-    .mocked(deps.purgeRetainedFeedbackScreenshots)
-    .mockImplementation(async () => {
-      calls.push('purge-files');
-    });
-  jest.mocked(deps.purgeFeedbackSubmissions).mockImplementation(async () => {
+  jest.mocked(deps.purgeRetainedFiles).mockImplementation(async () => {
+    calls.push('purge-files');
+  });
+  jest.mocked(deps.purgePrivateData).mockImplementation(async () => {
     calls.push('purge-db');
   });
   jest.mocked(deps.clearPrivateState).mockImplementation(async () => {
@@ -783,7 +915,7 @@ test('keeps Retry primary recovery non-destructive and reopens the same account'
   ).toBeTruthy();
   expect(lifecycle.accountId).toBe(accountId);
   expect(deps.sessionStore.compareAndSet).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(firstDatabase.close).toHaveBeenCalledTimes(1);
 
   await ReactTestRenderer.act(async () => renderer!.unmount());
@@ -833,9 +965,9 @@ test('continues signed-out exactly once for known A and defers unopened private-
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledWith(session, null);
   expect(deps.clearPrivateState).toHaveBeenCalledTimes(1);
   expect(deps.clearPrivateState).toHaveBeenCalledWith(accountId);
-  expect(deps.listFeedbackScreenshotFileKeys).not.toHaveBeenCalled();
-  expect(deps.purgeRetainedFeedbackScreenshots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.listRetainedFileKeysForPurge).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(renderer.root.findByProps({ testID: 'known-signedOut' })).toBeTruthy();
 
   await ReactTestRenderer.act(async () => renderer.unmount());
@@ -876,9 +1008,9 @@ test('exposes a non-destructive signed-out surface when the account is unknown a
   expect(deps.sessionStore.get).toHaveBeenCalledTimes(1);
   expect(deps.sessionStore.compareAndSet).not.toHaveBeenCalled();
   expect(deps.clearPrivateState).not.toHaveBeenCalled();
-  expect(deps.listFeedbackScreenshotFileKeys).not.toHaveBeenCalled();
-  expect(deps.purgeRetainedFeedbackScreenshots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.listRetainedFileKeysForPurge).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
 
   await ReactTestRenderer.act(async () => renderer.unmount());
   renderer = await renderGate(deps, <Probe />);
@@ -937,9 +1069,9 @@ test('never clears newer B when A changes during unavailable safe exit', async (
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledTimes(1);
   expect(deps.sessionStore.compareAndSet).toHaveBeenCalledWith(session, null);
   expect(deps.clearPrivateState).not.toHaveBeenCalled();
-  expect(deps.listFeedbackScreenshotFileKeys).not.toHaveBeenCalled();
-  expect(deps.purgeRetainedFeedbackScreenshots).not.toHaveBeenCalled();
-  expect(deps.purgeFeedbackSubmissions).not.toHaveBeenCalled();
+  expect(deps.listRetainedFileKeysForPurge).not.toHaveBeenCalled();
+  expect(deps.purgeRetainedFiles).not.toHaveBeenCalled();
+  expect(deps.purgePrivateData).not.toHaveBeenCalled();
   expect(
     renderer.root.findByProps({ testID: `race-${secondAccountId}` }),
   ).toBeTruthy();

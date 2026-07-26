@@ -2,6 +2,7 @@ import type { GatewayRequest } from '@crew/mobile-client';
 import {
   FeedbackAttachmentUploadError,
   type AttachmentContentType,
+  type FeedPhotoLifecycle,
   type FeedbackAttachmentUploadInput,
   type FeedbackAttachmentUploadTransport,
   type LocalAttachmentStore,
@@ -41,6 +42,15 @@ export interface AttachmentMediaOptions {
   now?: () => Date;
 }
 
+export interface AttachmentMediaPickerOptions {
+  nativeModule?: Pick<NativeAttachmentMedia, 'pickImageAndRetain'> | null;
+  now?: () => Date;
+}
+
+export interface AttachmentMediaQuiesceOptions {
+  nativeModule?: Pick<NativeAttachmentMedia, 'cancelPending'> | null;
+}
+
 export interface AttachmentReconciliationOptions {
   nativeModule?: Pick<NativeAttachmentMedia, 'reconcileRetained'> | null;
 }
@@ -62,6 +72,18 @@ export interface RetainedAttachmentPurgeOptions {
   nativeModule?: Pick<NativeAttachmentMedia, 'purgeRetained'> | null;
 }
 
+export interface FeedPhotoLifecycleOptions
+  extends RetainedAttachmentPurgeOptions {
+  now?: () => Date;
+}
+
+type RetainedAttachmentUploadInput = Omit<
+  FeedbackAttachmentUploadInput,
+  'contentType'
+> & {
+  contentType: AttachmentContentType;
+};
+
 const contentTypes = new Set<AttachmentContentType>([
   'image/jpeg',
   'image/png',
@@ -78,6 +100,15 @@ const captureErrorCodes = new Set([
   'attachment_media_unsafe',
   'attachment_media_storage',
   'attachment_media_invalid',
+]);
+const pickerErrorCodes = new Set([
+  'attachment_media_picker_unavailable',
+  'attachment_media_picker_failed',
+  'attachment_media_invalid',
+  'attachment_media_unsupported',
+  'attachment_media_unsafe',
+  'attachment_media_conversion',
+  'attachment_media_storage',
 ]);
 const uploadErrorCodes = new Set([
   'attachment_media_missing',
@@ -101,38 +132,188 @@ const purgeErrorCodes = new Set([
   'attachment_media_unsafe',
   'attachment_media_storage',
 ]);
-const retainedScreenshotKeyPattern = /^[a-f0-9]{64}\.png$/;
+const retainedFileKeyPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/;
 const purgeBatchSize = 64;
+const mediaOperations = new Map<string, Set<Promise<unknown>>>();
+const mediaQuiescence = new Map<string, Promise<void>>();
+const quiescedMediaAccounts = new Set<string>();
 
-export async function captureCurrentScreenAttachment(
+export function runAttachmentMediaOperation<Result>(
   accountUserId: string,
-  options: ScreenCaptureOptions = {},
-): Promise<NativeRetainedAttachment> {
+  operation: () => Promise<Result>,
+): Promise<Result> {
   if (!/^usr_[a-f0-9]{32}$/.test(accountUserId)) {
-    throw new Error('attachment_media_invalid');
+    return Promise.reject(new Error('attachment_media_invalid'));
+  }
+  if (quiescedMediaAccounts.has(accountUserId)) {
+    return Promise.reject(new Error('attachment_media_unavailable'));
+  }
+  let pending: Promise<Result>;
+  try {
+    pending = operation();
+  } catch (error) {
+    pending = Promise.reject(error);
+  }
+  return trackMediaOperation(accountUserId, pending);
+}
+
+export function pickAndRetainAttachment(
+  store: Pick<LocalAttachmentStore, 'retain'>,
+  draft: Omit<AttachmentMediaDraft, 'sourceUri'>,
+  options: AttachmentMediaPickerOptions = {},
+): Promise<PreparedAttachmentMedia | null> {
+  if (!/^usr_[a-f0-9]{32}$/.test(draft.accountUserId)) {
+    return Promise.reject(new Error('attachment_media_invalid'));
+  }
+  if (quiescedMediaAccounts.has(draft.accountUserId)) {
+    return Promise.reject(new Error('attachment_media_picker_unavailable'));
   }
   const nativeModule = options.nativeModule ?? NativeCrewAttachmentMedia;
   if (!nativeModule) {
-    throw new Error('attachment_media_capture_unavailable');
+    return Promise.reject(new Error('attachment_media_picker_unavailable'));
   }
-  try {
-    const result = validateNativeResult(
-      await nativeModule.captureCurrentScreen(accountUserId),
-    );
-    if (
-      result.contentType !== 'image/png' ||
-      result.wasNormalized !== true ||
-      result.pixelWidth > 2048 ||
-      result.pixelHeight > 2048 ||
-      result.pixelWidth * result.pixelHeight > 16 * 1024 * 1024
-    ) {
-      throw new Error('invalid capture result');
+  return trackMediaOperation(
+    draft.accountUserId,
+    (async () => {
+      let native: ReturnType<typeof validateNativeResult>;
+      try {
+        const result = await nativeModule.pickImageAndRetain(
+          draft.accountUserId,
+        );
+        if (result === null) return null;
+        native = validateNativeResult(result);
+      } catch (error) {
+        throw new Error(
+          safeErrorCode(
+            error,
+            pickerErrorCodes,
+            'attachment_media_picker_failed',
+          ),
+        );
+      }
+      return retainPreparedAttachment(
+        store,
+        draft,
+        native,
+        options.now ?? (() => new Date()),
+      );
+    })(),
+  );
+}
+
+export function quiesceAttachmentMedia(
+  accountUserId: string,
+  options: AttachmentMediaQuiesceOptions = {},
+): Promise<void> {
+  if (!/^usr_[a-f0-9]{32}$/.test(accountUserId)) {
+    return Promise.reject(new Error('attachment_media_invalid'));
+  }
+  quiescedMediaAccounts.add(accountUserId);
+  const existing = mediaQuiescence.get(accountUserId);
+  if (existing) return existing;
+
+  const nativeModule = options.nativeModule ?? NativeCrewAttachmentMedia;
+  const quiescence = (async () => {
+    if (nativeModule) {
+      try {
+        await nativeModule.cancelPending(accountUserId);
+      } catch {
+        // A registered operation still keeps the database open below. If no
+        // operation exists, there is no picker write left to drain.
+      }
     }
-    return result;
-  } catch (error) {
-    const code = captureErrorCode(error);
-    throw new Error(code);
+    while (true) {
+      const active = [...(mediaOperations.get(accountUserId) ?? [])];
+      if (active.length === 0) return;
+      await Promise.allSettled(active);
+    }
+  })();
+  mediaQuiescence.set(accountUserId, quiescence);
+  quiescence.then(
+    () => undefined,
+    () => {
+      if (mediaQuiescence.get(accountUserId) === quiescence) {
+        mediaQuiescence.delete(accountUserId);
+      }
+    },
+  );
+  return quiescence;
+}
+
+export function resumeAttachmentMedia(accountUserId: string): void {
+  if (!/^usr_[a-f0-9]{32}$/.test(accountUserId)) {
+    throw new Error('attachment_media_invalid');
   }
+  if ((mediaOperations.get(accountUserId)?.size ?? 0) !== 0) {
+    throw new Error('attachment_media_picker_unavailable');
+  }
+  mediaQuiescence.delete(accountUserId);
+  quiescedMediaAccounts.delete(accountUserId);
+}
+
+function trackMediaOperation<Result>(
+  accountUserId: string,
+  operation: Promise<Result>,
+): Promise<Result> {
+  const operations = mediaOperations.get(accountUserId) ?? new Set();
+  mediaOperations.set(accountUserId, operations);
+  operations.add(operation);
+  const remove = () => {
+    operations.delete(operation);
+    if (operations.size === 0) mediaOperations.delete(accountUserId);
+  };
+  operation.then(
+    () => remove(),
+    () => remove(),
+  );
+  return operation;
+}
+
+async function purgeAndFinalizeFeedPhotoCleanup(
+  store: Pick<LocalAttachmentStore, 'finalizeFeedPhotoCleanup'>,
+  accountUserId: string,
+  cleanup: {
+    attachmentIds: readonly string[];
+    purgeFileKeys: readonly string[];
+  },
+  options: RetainedAttachmentPurgeOptions,
+): Promise<void> {
+  await purgeRetainedAttachmentFiles(
+    accountUserId,
+    cleanup.purgeFileKeys,
+    options,
+  );
+  await store.finalizeFeedPhotoCleanup(accountUserId, cleanup.attachmentIds);
+}
+
+export function captureCurrentScreenAttachment(
+  accountUserId: string,
+  options: ScreenCaptureOptions = {},
+): Promise<NativeRetainedAttachment> {
+  return runAttachmentMediaOperation(accountUserId, async () => {
+    const nativeModule = options.nativeModule ?? NativeCrewAttachmentMedia;
+    if (!nativeModule) {
+      throw new Error('attachment_media_capture_unavailable');
+    }
+    try {
+      const result = validateNativeResult(
+        await nativeModule.captureCurrentScreen(accountUserId),
+      );
+      if (
+        result.contentType !== 'image/png' ||
+        result.wasNormalized !== true ||
+        result.pixelWidth > 2048 ||
+        result.pixelHeight > 2048 ||
+        result.pixelWidth * result.pixelHeight > 16 * 1024 * 1024
+      ) {
+        throw new Error('invalid capture result');
+      }
+      return result;
+    } catch (error) {
+      const code = captureErrorCode(error);
+      throw new Error(code);
+    }
+  });
 }
 
 export async function previewRetainedAttachment(
@@ -142,7 +323,7 @@ export async function previewRetainedAttachment(
 ): Promise<string> {
   if (
     !/^usr_[a-f0-9]{32}$/.test(accountUserId) ||
-    !/^[a-f0-9]{64}\.png$/.test(retainedFileKey)
+    !retainedFileKeyPattern.test(retainedFileKey)
   ) {
     throw new Error('attachment_media_invalid');
   }
@@ -185,7 +366,7 @@ export async function previewRetainedAttachment(
 }
 
 export async function uploadRetainedAttachment(
-  input: FeedbackAttachmentUploadInput,
+  input: RetainedAttachmentUploadInput,
   options: RetainedAttachmentUploadOptions = {},
 ): Promise<void> {
   const fields = validateUploadInput(input, options.now?.() ?? new Date());
@@ -219,7 +400,7 @@ export async function purgeRetainedAttachmentFiles(
     throw new Error('attachment_media_invalid');
   }
   const keys = [...new Set(retainedFileKeys)];
-  if (keys.some(key => !retainedScreenshotKeyPattern.test(key))) {
+  if (keys.some(key => !retainedFileKeyPattern.test(key))) {
     throw new Error('attachment_media_invalid');
   }
   if (keys.length === 0) return;
@@ -238,6 +419,51 @@ export async function purgeRetainedAttachmentFiles(
       safeErrorCode(error, purgeErrorCodes, 'attachment_media_purge_failed'),
     );
   }
+}
+
+export async function discardFeedPhotoAttachment(
+  store: Pick<
+    LocalAttachmentStore,
+    'finalizeFeedPhotoCleanup' | 'planFeedPhotoDiscard'
+  >,
+  accountUserId: string,
+  attachmentId: string,
+  options: FeedPhotoLifecycleOptions = {},
+): Promise<void> {
+  const cleanup = await store.planFeedPhotoDiscard(
+    accountUserId,
+    attachmentId,
+    (options.now?.() ?? new Date()).toISOString(),
+  );
+  await purgeAndFinalizeFeedPhotoCleanup(
+    store,
+    accountUserId,
+    cleanup,
+    options,
+  );
+}
+
+export async function reconcileFeedPhotoAttachments(
+  store: Pick<
+    LocalAttachmentStore,
+    'finalizeFeedPhotoCleanup' | 'reconcileFeedPhotos'
+  >,
+  accountUserId: string,
+  rootEventId: string,
+  options: FeedPhotoLifecycleOptions = {},
+): Promise<readonly FeedPhotoLifecycle[]> {
+  const result = await store.reconcileFeedPhotos(
+    accountUserId,
+    rootEventId,
+    (options.now?.() ?? new Date()).toISOString(),
+  );
+  await purgeAndFinalizeFeedPhotoCleanup(
+    store,
+    accountUserId,
+    result.cleanup,
+    options,
+  );
+  return result.photos;
 }
 
 export function createFeedbackAttachmentUploadTransport(
@@ -270,47 +496,33 @@ export function createFeedbackAttachmentUploadTransport(
   };
 }
 
-export async function normalizeAndRetainAttachment(
+export function normalizeAndRetainAttachment(
   store: Pick<LocalAttachmentStore, 'listRetainedFileKeys' | 'retain'>,
   draft: AttachmentMediaDraft,
   options: AttachmentMediaOptions = {},
 ): Promise<PreparedAttachmentMedia> {
-  const nativeModule = options.nativeModule ?? NativeCrewAttachmentMedia;
-  if (!nativeModule) {
-    throw new Error('Native attachment media processing is unavailable');
-  }
-  await reconcileRetainedAttachmentFiles(store, draft.accountUserId, {
-    nativeModule,
-  });
+  return runAttachmentMediaOperation(draft.accountUserId, async () => {
+    const nativeModule = options.nativeModule ?? NativeCrewAttachmentMedia;
+    if (!nativeModule) {
+      throw new Error('Native attachment media processing is unavailable');
+    }
+    await reconcileRetainedAttachmentFiles(store, draft.accountUserId, {
+      nativeModule,
+    });
 
-  const native = validateNativeResult(
-    await nativeModule.normalizeAndRetain(draft.accountUserId, draft.sourceUri),
-  );
-  const attachment = await store.retain({
-    accountUserId: draft.accountUserId,
-    attachmentId: draft.attachmentId,
-    rootEventId: draft.rootEventId,
-    targetEntryId: draft.targetEntryId,
-    retainedFileKey: native.retainedFileKey,
-    contentType: native.contentType,
-    byteCount: native.byteCount,
-    sha256: native.sha256,
-    pixelWidth: native.pixelWidth,
-    pixelHeight: native.pixelHeight,
-    wasNormalized: native.wasNormalized,
-    retainedAt: (options.now ?? (() => new Date()))().toISOString(),
+    const native = validateNativeResult(
+      await nativeModule.normalizeAndRetain(
+        draft.accountUserId,
+        draft.sourceUri,
+      ),
+    );
+    return retainPreparedAttachment(
+      store,
+      draft,
+      native,
+      options.now ?? (() => new Date()),
+    );
   });
-
-  return {
-    attachment,
-    uploadPreparation: {
-      attachmentId: attachment.attachmentId,
-      targetEntryId: attachment.targetEntryId,
-      contentType: attachment.contentType,
-      byteCount: attachment.byteCount,
-      sha256: attachment.sha256,
-    },
-  };
 }
 
 export async function reconcileRetainedAttachmentFiles(
@@ -399,7 +611,7 @@ function safeErrorCode(
 }
 
 function validateUploadInput(
-  input: FeedbackAttachmentUploadInput,
+  input: RetainedAttachmentUploadInput,
   now: Date,
 ): ReadonlyArray<{ name: string; value: string }> {
   const fields = Object.entries(input.grant.fields);
@@ -413,8 +625,9 @@ function validateUploadInput(
     !/^usr_[a-f0-9]{32}$/.test(input.accountUserId) ||
     !/^att_[A-Za-z0-9._:-]{1,96}$/.test(input.attachmentId) ||
     !/^[a-f0-9]{64}$/.test(input.sha256) ||
-    input.retainedFileKey !== `${input.sha256}.png` ||
-    input.contentType !== 'image/png' ||
+    input.retainedFileKey !==
+      `${input.sha256}${extensionByContentType[input.contentType] ?? ''}` ||
+    !contentTypes.has(input.contentType) ||
     !Number.isSafeInteger(input.byteCount) ||
     input.byteCount < 1 ||
     input.byteCount > 20 * 1024 * 1024 ||
@@ -450,4 +663,30 @@ function validateUploadInput(
     throw new Error('attachment_media_invalid');
   }
   return fields.map(([name, value]) => ({ name, value }));
+}
+
+async function retainPreparedAttachment(
+  store: Pick<LocalAttachmentStore, 'retain'>,
+  draft: Omit<AttachmentMediaDraft, 'sourceUri'>,
+  native: ReturnType<typeof validateNativeResult>,
+  now: () => Date,
+): Promise<PreparedAttachmentMedia> {
+  const attachment = await store.retain({
+    accountUserId: draft.accountUserId,
+    attachmentId: draft.attachmentId,
+    rootEventId: draft.rootEventId,
+    targetEntryId: draft.targetEntryId,
+    ...native,
+    retainedAt: now().toISOString(),
+  });
+  return {
+    attachment,
+    uploadPreparation: {
+      attachmentId: attachment.attachmentId,
+      targetEntryId: attachment.targetEntryId,
+      contentType: attachment.contentType,
+      byteCount: attachment.byteCount,
+      sha256: attachment.sha256,
+    },
+  };
 }

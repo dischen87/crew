@@ -16,6 +16,7 @@ const mockAttachmentStore = {};
 const mockCapture = jest.fn();
 const mockPreview = jest.fn();
 const mockReconcile = jest.fn();
+const mockRunAttachmentOperation = jest.fn();
 const mockUploadTransport = {};
 const mockControllerConstructor = jest.fn();
 
@@ -50,6 +51,8 @@ jest.mock('../src/media/attachmentMedia', () => ({
   previewRetainedAttachment: (...args: unknown[]) => mockPreview(...args),
   reconcileRetainedAttachmentFiles: (...args: unknown[]) =>
     mockReconcile(...args),
+  runAttachmentMediaOperation: (...args: unknown[]) =>
+    mockRunAttachmentOperation(...args),
 }));
 
 jest.mock('../src/storage/secureRandom', () => ({
@@ -74,6 +77,10 @@ beforeEach(() => {
   mockScreenshotStore.discard.mockResolvedValue(true);
   mockScreenshotStore.get.mockResolvedValue(null);
   mockReconcile.mockResolvedValue(undefined);
+  mockRunAttachmentOperation.mockImplementation(
+    async (_accountUserId: string, operation: () => Promise<unknown>) =>
+      operation(),
+  );
   mockController.sendWithoutScreenshot.mockResolvedValue({
     feedbackId: 'fbk_test',
     state: 'pending',
@@ -91,6 +98,10 @@ test('captures only after the caller invokes the explicit source action and pers
   const result = await runtime.capture(rootEventId);
 
   expect(mockCapture).toHaveBeenCalledWith(accountUserId);
+  expect(mockRunAttachmentOperation).toHaveBeenCalledWith(
+    accountUserId,
+    expect.any(Function),
+  );
   expect(mockPreview).toHaveBeenCalledWith(
     accountUserId,
     captured.retainedFileKey,

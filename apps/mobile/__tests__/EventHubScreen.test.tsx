@@ -574,6 +574,14 @@ test('opens the real private-draft review and publish route', async () => {
   const review = renderer.root.findByProps({
     testID: 'event-hub-primary-action',
   });
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-hub-manage-invites' })
+      .props.onPress(),
+  );
+  expect(navigate).toHaveBeenCalledWith('Invites', {
+    rootEventId: rootA,
+  });
   await ReactTestRenderer.act(() => review.props.onPress());
   expect(navigate).toHaveBeenCalledWith('EventPublish', {
     rootEventId: rootA,

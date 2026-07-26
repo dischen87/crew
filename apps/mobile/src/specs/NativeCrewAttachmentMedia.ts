@@ -16,6 +16,10 @@ export type NativeUploadField = {
 };
 
 export interface Spec extends TurboModule {
+  pickImageAndRetain(
+    accountUserId: string,
+  ): Promise<NativeRetainedAttachment | null>;
+  cancelPending(accountUserId: string): Promise<void>;
   captureCurrentScreen(
     accountUserId: string,
   ): Promise<NativeRetainedAttachment>;

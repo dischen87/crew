@@ -3,6 +3,10 @@ import React from 'react';
 import { Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
+import {
+  quiesceAttachmentMedia,
+  resumeAttachmentMedia,
+} from '../src/media/attachmentMedia';
 import { FeedbackComposeScreen } from '../src/screens/FeedbackComposeScreen';
 
 const mockAccountUserId = `usr_${'1'.repeat(32)}`;
@@ -466,6 +470,54 @@ test('a source change during drain cannot restore an old delivered receipt', asy
   ).toBe('');
   expect(mockController.get).not.toHaveBeenCalled();
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('quiesce drains the compose controller flight and rejects a retry', async () => {
+  mockOnline = true;
+  let resolveDrain: (value: FeedbackSubmissionReceipt[]) => void = () => {};
+  mockController.drain.mockReturnValueOnce(
+    new Promise(resolve => {
+      resolveDrain = resolve;
+    }),
+  );
+  const renderer = await renderScreen();
+  try {
+    await fill(renderer, 'Drain', 'Der terminale DB-Stand bleibt geschützt.');
+    await ReactTestRenderer.act(async () =>
+      renderer.root
+        .findByProps({ testID: 'feedback-compose-submit' })
+        .props.onPress(),
+    );
+    expect(mockController.drain).toHaveBeenCalledTimes(1);
+
+    let drained = false;
+    const quiescence = quiesceAttachmentMedia(mockAccountUserId, {
+      nativeModule: { cancelPending: async () => undefined },
+    }).then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      resolveDrain([
+        { ...receipt('attention'), failure: 'auth_required', attempts: 1 },
+      ]);
+      await Promise.resolve();
+    });
+    await quiescence;
+    expect(drained).toBe(true);
+
+    await ReactTestRenderer.act(async () =>
+      renderer.root
+        .findByProps({ testID: 'feedback-compose-retry' })
+        .props.onPress(),
+    );
+    expect(mockController.resumeAndDrain).not.toHaveBeenCalled();
+  } finally {
+    resumeAttachmentMedia(mockAccountUserId);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  }
 });
 
 test('a direct ready account switch conceals the old receipt and starts blank', async () => {

@@ -24,7 +24,8 @@ Use one of these exact labels on every screen section in `00 Contract`:
 
 The current routed native set is `SCR-001`, `SCR-002`, the new-root and
 existing-draft slices of `SCR-003`, `SCR-004`, `SCR-013`, `SCR-022`, `SCR-023`,
-`SCR-031`, `SCR-032`, `SCR-033`, the root text-feed/composer slices of
+`SCR-020`, `SCR-021`, `SCR-031`, `SCR-032`, `SCR-033`, the root
+text-feed and text/single-photo composer slices of
 `SCR-040/041`, `SCR-060`, `SCR-061`, `SCR-062`, the role-composed
 `SCR-070/071/072` route, and the safe unavailable route represented by
 `SCR-080`. `NATIVE-CURRENT-ROUTED` means registered production navigation plus
@@ -60,10 +61,12 @@ claims.
 | `CommunityFeedbackItem` | `SCR-061` |
 | `RecapInbound` | role-composed `SCR-070`, `SCR-071`, and `SCR-072` |
 | `GolfScorecard` | `SCR-031` |
-| `TeamFeed` | root text-feed/composer slices of `SCR-040` and `SCR-041` |
+| `TeamFeed` | root text-feed and text/single-photo composer slices of `SCR-040` and `SCR-041` |
 | `NativeE2EEvidence` | `EVIDENCE-ONLY` development proof surface |
 | `TeamSetup` | `SCR-032` |
 | `Decision` | `SCR-033` |
+| `Invites` | `SCR-020` |
+| `InviteEditor` | `SCR-021` |
 | `InvitePreview` | `SCR-022`; `SCR-024` redemption contract only |
 | `SignIn` | request slice of `SCR-023` |
 | `EmailIdentity` | redemption slice of `SCR-023` |
@@ -96,8 +99,8 @@ masters and replace them only in a named fixture instance.
 | `SCR-012` | Capability setup            | `COPY-SCR-012-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
 | `SCR-013` | Readiness review            | `COPY-SCR-013-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; basics plus narrow template/capability/place recovery actions are code/test current; native/device and service-backed publish evidence pending |
 | `SCR-014` | Live item detail            | `COPY-SCR-014-*` | inbound gate exists; full screen `DESIGN-REQUIRED`                                                                                                                                     |
-| `SCR-020` | Invite manager              | `COPY-SCR-020-*` | `DATA-CURRENT`; native screen `DESIGN-REQUIRED`                                                                                                                                        |
-| `SCR-021` | Invite editor               | `COPY-SCR-021-*` | `DATA-CURRENT`; native screen `DESIGN-REQUIRED`                                                                                                                                        |
+| `SCR-020` | Invite manager              | `COPY-SCR-020-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; owner/organizer concealment, token-free cache, pagination, revoke retry, and offline states are code/test current; native/device visual evidence pending                                                                                                                                        |
+| `SCR-021` | Invite editor               | `COPY-SCR-021-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; role policy, local token-free draft, stable create replay, and once-only in-memory native sharing are code/test current; native expiry picker and device visual evidence pending                                                                                                                                        |
 | `SCR-022` | Invite preview              | `COPY-SCR-022-*` | `NATIVE-CURRENT-ROUTED`; state expansion `DESIGN-REQUIRED`                                                                                                                             |
 | `SCR-023` | Email identity              | `COPY-SCR-023-*` | `NATIVE-CURRENT-ROUTED`; state expansion `DESIGN-REQUIRED`                                                                                                                             |
 | `SCR-024` | Invitation acceptance       | `COPY-SCR-024-*` | redemption contract current; full screen `DESIGN-REQUIRED`                                                                                                                             |
@@ -106,8 +109,8 @@ masters and replace them only in a named fixture instance.
 | `SCR-031` | Golf scorecard              | `COPY-SCR-031-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; queued, conflict, read-only and Accessibility Large `VISUAL-EVIDENCE-IOS`; remaining state/platform variants `DESIGN-REQUIRED`                |
 | `SCR-032` | Team collaboration setup    | `COPY-SCR-032-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`, organizer `VISUAL-EVIDENCE-IOS`; discoverable Hub entry, remaining states and Android `DESIGN-REQUIRED`                                      |
 | `SCR-033` | Team decision               | `COPY-SCR-033-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`, closed-attention participant `VISUAL-EVIDENCE-IOS`; discoverable Hub entry, remaining states and Android `DESIGN-REQUIRED`                   |
-| `SCR-040` | Event feed                  | `COPY-SCR-040-*` | root text-feed slice `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; target, media, reaction, and remaining state variants `DESIGN-REQUIRED`                                                  |
-| `SCR-041` | Feed composer               | `COPY-SCR-041-*` | root text composer `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; photo, edit, target, and remaining state variants `DESIGN-REQUIRED`                                                        |
+| `SCR-040` | Event feed                  | `COPY-SCR-040-*` | root text-feed slice `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; attachment display, target, reaction, and remaining state variants `DESIGN-REQUIRED`                                                  |
+| `SCR-041` | Feed composer               | `COPY-SCR-041-*` | root text/single-photo composer `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; offline pick/preview, restart, upload/finalize retry, and missing-file reselection are code/test current; caption, edit, item target, native/device evidence, and remaining variants `DESIGN-REQUIRED`                                                        |
 | `SCR-050` | Sync center                 | `COPY-SCR-050-*` | sync/outbox data current; full screen `DESIGN-REQUIRED`                                                                                                                                |
 | `SCR-051` | Conflict resolver           | `COPY-SCR-051-*` | conflict data current; full screen `DESIGN-REQUIRED`                                                                                                                                   |
 | `SCR-060` | Feedback compose            | `COPY-SCR-060-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; consented screenshot and duplicate suggestions current; native/device and service-backed evidence pending                                    |

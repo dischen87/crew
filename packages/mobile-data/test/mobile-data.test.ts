@@ -16,6 +16,7 @@ import type {
 	ItineraryRecord,
 	MembershipRecord,
 	OutboxItem,
+	RetainedLocalAttachment,
 	RootCreateCommand,
 	RootSyncState,
 	SqlDatabase,
@@ -751,6 +752,7 @@ describe("mobile SQLite read models", () => {
 			{ version: 20, name: "feedback_duplicate_suggestion_cache" },
 			{ version: 21, name: "recap_external_command_attempts" },
 			{ version: 22, name: "root_scoped_mutation_stream_identity" },
+			{ version: 23, name: "feed_photo_lifecycle" },
 		]);
 		expect(
 			await database.first<{ foreign_keys: number }>("PRAGMA foreign_keys"),
@@ -1153,12 +1155,13 @@ INSERT INTO events VALUES (
 			{ version: 20 },
 			{ version: 21 },
 			{ version: 22 },
+			{ version: 23 },
 		]);
 		await database.run(
-			"INSERT INTO schema_migrations (version, name) VALUES (23, 'future_schema')",
+			"INSERT INTO schema_migrations (version, name) VALUES (24, 'future_schema')",
 		);
 		await expect(migrate(database)).rejects.toThrow(
-			"Unknown or renamed SQLite migration 23:future_schema",
+			"Unknown or renamed SQLite migration 24:future_schema",
 		);
 		database.close();
 	});
@@ -1903,6 +1906,20 @@ INSERT INTO events VALUES (
 ) VALUES (?, 'evt_trip', ?, 1, ?, '{}', ?)`,
 				[accountUserId, `fbk_${accountUserId}`, now, now],
 			);
+			await database.run(
+				`INSERT INTO local_attachment_media (
+  account_user_id, attachment_id, root_event_id, target_entry_id,
+  retained_file_key, content_type, byte_count, sha256, pixel_width,
+  pixel_height, was_normalized, retained_at
+) VALUES (?, ?, 'evt_trip', 'fed_logout', ?, 'image/jpeg', 2048, ?, 1200, 800, 1, ?)`,
+				[
+					accountUserId,
+					`att_${accountUserId}`,
+					`${"a".repeat(64)}.jpg`,
+					"a".repeat(64),
+					now,
+				],
+			);
 		}
 
 		await alice.clearUserData("usr_alice");
@@ -1918,6 +1935,18 @@ INSERT INTO events VALUES (
 		expect(await alice.listFeedReactions("usr_alice", "evt_trip")).toEqual([]);
 		expect(await alice.listAttachments("usr_alice", "evt_trip")).toEqual([]);
 		expect(await alice.listDrafts("usr_alice", "evt_trip")).toEqual([]);
+		expect(
+			await database.first<{ count: number }>(
+				"SELECT COUNT(*) AS count FROM local_attachment_media WHERE account_user_id = ?",
+				["usr_alice"],
+			),
+		).toEqual({ count: 0 });
+		expect(
+			await database.first<{ count: number }>(
+				"SELECT COUNT(*) AS count FROM local_attachment_media WHERE account_user_id = ?",
+				["usr_bob"],
+			),
+		).toEqual({ count: 1 });
 		expect((await bob.listEventTree("usr_bob", "evt_trip"))[0]?.title).toBe(
 			"Canonical trip",
 		);
@@ -1978,6 +2007,364 @@ INSERT INTO events VALUES (
 			"Zürich HB",
 		);
 		expect(await database.all("PRAGMA foreign_key_check")).toEqual([]);
+		database.close();
+	});
+});
+
+describe("feed photo lifecycle", () => {
+	const accountUserId = `usr_${"a".repeat(32)}`;
+	const otherAccountUserId = `usr_${"b".repeat(32)}`;
+	const deviceId = "dvc_00000000-0000-4000-8000-000000000123";
+
+	test("persists only safe identity and rotates an expired upload generation with CAS", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "crew-feed-photo-"));
+		temporaryDirectories.push(directory);
+		const path = join(directory, "account.sqlite");
+		const attachment = feedPhotoAttachment(
+			accountUserId,
+			"att_feed_restart",
+			"fed_feed_restart",
+			"a",
+		);
+
+		let database = new BunDatabase(path);
+		await migrate(database);
+		await seedAccount(database, accountUserId);
+		await new LocalAttachmentStore(database).retainFeedPhoto(
+			attachment,
+			"evt_day_a",
+		);
+		database.close();
+
+		database = new BunDatabase(path);
+		await migrate(database);
+		const store = new LocalAttachmentStore(database);
+		expect(
+			(
+				await database.all<{ name: string }>(
+					"PRAGMA table_info(local_feed_photo_lifecycle)",
+				)
+			).map(({ name }) => name),
+		).toEqual([
+			"account_user_id",
+			"attachment_id",
+			"event_id",
+			"state",
+			"upload_generation",
+			"upload_id",
+			"created_at",
+			"updated_at",
+		]);
+		expect(
+			await store.getFeedPhoto(accountUserId, attachment.attachmentId),
+		).toMatchObject({
+			attachment,
+			state: "selected",
+			uploadGeneration: 1,
+			uploadId: null,
+		});
+
+		await store.markFeedPhotoQueued(
+			accountUserId,
+			attachment.attachmentId,
+			now,
+		);
+		await store.bindFeedPhotoUpload(
+			accountUserId,
+			attachment.attachmentId,
+			1,
+			"upl_feed_generation_one",
+			now,
+		);
+		await expect(
+			store.resetExpiredFeedPhotoUpload(
+				accountUserId,
+				attachment.attachmentId,
+				2,
+				"upl_feed_generation_one",
+				now,
+			),
+		).rejects.toThrow("generation changed");
+		expect(
+			await store.resetExpiredFeedPhotoUpload(
+				accountUserId,
+				attachment.attachmentId,
+				1,
+				"upl_feed_generation_one",
+				now,
+			),
+		).toMatchObject({
+			state: "feed_queued",
+			uploadGeneration: 2,
+			uploadId: null,
+		});
+		expect(
+			await database.all(
+				`SELECT * FROM local_feed_photo_lifecycle
+WHERE account_user_id = ? AND attachment_id = ?`,
+				[accountUserId, attachment.attachmentId],
+			),
+		).toEqual([
+			{
+				account_user_id: accountUserId,
+				attachment_id: attachment.attachmentId,
+				event_id: "evt_day_a",
+				state: "feed_queued",
+				upload_generation: 2,
+				upload_id: null,
+				created_at: now,
+				updated_at: now,
+			},
+		]);
+		database.close();
+	});
+
+	test("recovers a process gap without duplicating the feed", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, accountUserId);
+		const store = new LocalAttachmentStore(database);
+		const attachment = feedPhotoAttachment(
+			accountUserId,
+			"att_feed_recovery",
+			"fed_feed_recovery",
+			"b",
+		);
+		await store.retainFeedPhoto(attachment, "evt_day_a");
+
+		const engine = testSyncEngine(database, accountUserId, noFetch);
+		await engine.enqueueMutation(
+			accountUserId,
+			"evt_trip",
+			deviceId,
+			{
+				kind: "feed.entry.create",
+				entityId: attachment.targetEntryId,
+				payload: {
+					eventId: "evt_day_a",
+					parentEntryId: null,
+					kind: "message",
+					content: "Foto vom Team",
+				},
+			},
+			{},
+		);
+
+		expect(
+			await store.reconcileFeedPhotos(accountUserId, "evt_trip", now),
+		).toMatchObject({
+			photos: [{ state: "feed_queued", uploadId: null }],
+			cleanup: { attachmentIds: [], purgeFileKeys: [] },
+		});
+		await store.bindFeedPhotoUpload(
+			accountUserId,
+			attachment.attachmentId,
+			1,
+			"upl_feed_recovery",
+			now,
+		);
+
+		for (let pass = 0; pass < 2; pass += 1) {
+			expect(
+				await store.reconcileFeedPhotos(accountUserId, "evt_trip", now),
+			).toMatchObject({
+				photos: [
+					{
+						state: "feed_queued",
+						uploadGeneration: 1,
+						uploadId: "upl_feed_recovery",
+					},
+				],
+				cleanup: { attachmentIds: [], purgeFileKeys: [] },
+			});
+		}
+		expect(
+			await database.all<{ kind: string; count: number }>(
+				`SELECT json_extract(command_json, '$.kind') AS kind, COUNT(*) AS count
+FROM mutation_outbox
+WHERE account_user_id = ? AND root_event_id = ?
+GROUP BY kind ORDER BY kind`,
+				[accountUserId, "evt_trip"],
+			),
+		).toEqual([{ kind: "feed.entry.create", count: 1 }]);
+		database.close();
+	});
+
+	test("keeps cleanup trackable until native purge succeeds and finalizes by CAS", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, accountUserId);
+		const store = new LocalAttachmentStore(database);
+		const first = feedPhotoAttachment(
+			accountUserId,
+			"att_feed_cleanup_a",
+			"fed_notice",
+			"c",
+		);
+		const second = {
+			...feedPhotoAttachment(
+				accountUserId,
+				"att_feed_cleanup_b",
+				"fed_notice",
+				"c",
+			),
+			retainedFileKey: first.retainedFileKey,
+			sha256: first.sha256,
+		};
+		await store.retainFeedPhoto(first, "evt_day_a");
+		await store.retainFeedPhoto(second, "evt_day_a");
+
+		const firstPlan = await store.planFeedPhotoDiscard(
+			accountUserId,
+			first.attachmentId,
+			now,
+		);
+		expect(firstPlan).toEqual({
+			attachmentIds: [first.attachmentId],
+			purgeFileKeys: [],
+		});
+		expect(
+			await database.first<{ state: string }>(
+				`SELECT state FROM local_feed_photo_lifecycle
+WHERE account_user_id = ? AND attachment_id = ?`,
+				[accountUserId, first.attachmentId],
+			),
+		).toEqual({ state: "cleanup_pending" });
+		expect(await store.get(accountUserId, first.attachmentId)).toEqual(first);
+
+		await store.finalizeFeedPhotoCleanup(accountUserId, ["att_not_planned"]);
+		expect(await store.get(accountUserId, first.attachmentId)).toEqual(first);
+		await store.finalizeFeedPhotoCleanup(
+			accountUserId,
+			firstPlan.attachmentIds,
+		);
+		expect(await store.get(accountUserId, first.attachmentId)).toBeNull();
+		expect(await store.get(accountUserId, second.attachmentId)).toEqual(second);
+
+		const secondPlan = await store.planFeedPhotoDiscard(
+			accountUserId,
+			second.attachmentId,
+			now,
+		);
+		expect(secondPlan).toEqual({
+			attachmentIds: [second.attachmentId],
+			purgeFileKeys: [second.retainedFileKey],
+		});
+		expect(
+			await store.getFeedPhoto(otherAccountUserId, second.attachmentId),
+		).toBeNull();
+		await expect(
+			store.finalizeFeedPhotoCleanup(otherAccountUserId, [second.attachmentId]),
+		).resolves.toBeUndefined();
+		expect(await store.get(accountUserId, second.attachmentId)).toEqual(second);
+
+		await store.finalizeFeedPhotoCleanup(
+			accountUserId,
+			secondPlan.attachmentIds,
+		);
+		expect(await store.get(accountUserId, second.attachmentId)).toBeNull();
+		database.close();
+	});
+
+	test("plans canonical confirmation but rejects a mismatched durable upload binding", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, accountUserId);
+		const store = new LocalAttachmentStore(database);
+		const attachment = feedPhotoAttachment(
+			accountUserId,
+			"att_feed_canonical",
+			"fed_notice",
+			"d",
+		);
+		await store.retainFeedPhoto(attachment, "evt_day_a");
+		await store.markFeedPhotoQueued(
+			accountUserId,
+			attachment.attachmentId,
+			now,
+		);
+		await store.bindFeedPhotoUpload(
+			accountUserId,
+			attachment.attachmentId,
+			1,
+			"upl_feed_canonical",
+			now,
+		);
+		await database.run(
+			`INSERT INTO attachments (
+  account_user_id, id, root_event_id, target_entity_type, target_entity_id,
+  content_type, byte_count, sha256, caption, version, created_at
+) VALUES (?, ?, ?, 'feedEntry', ?, ?, ?, ?, NULL, 1, ?)`,
+			[
+				accountUserId,
+				attachment.attachmentId,
+				attachment.rootEventId,
+				attachment.targetEntryId,
+				attachment.contentType,
+				attachment.byteCount,
+				attachment.sha256,
+				now,
+			],
+		);
+
+		const confirmed = await store.reconcileFeedPhotos(
+			accountUserId,
+			"evt_trip",
+			now,
+		);
+		expect(confirmed.photos).toEqual([]);
+		expect(confirmed.cleanup).toEqual({
+			attachmentIds: [attachment.attachmentId],
+			purgeFileKeys: [attachment.retainedFileKey],
+		});
+		expect(await store.get(accountUserId, attachment.attachmentId)).toEqual(
+			attachment,
+		);
+		await store.finalizeFeedPhotoCleanup(
+			accountUserId,
+			confirmed.cleanup.attachmentIds,
+		);
+		expect(await store.get(accountUserId, attachment.attachmentId)).toBeNull();
+
+		const mismatch = feedPhotoAttachment(
+			accountUserId,
+			"att_feed_mismatch",
+			"fed_feed_mismatch",
+			"e",
+		);
+		await store.retainFeedPhoto(mismatch, "evt_day_a");
+		await store.markFeedPhotoQueued(accountUserId, mismatch.attachmentId, now);
+		await store.bindFeedPhotoUpload(
+			accountUserId,
+			mismatch.attachmentId,
+			1,
+			"upl_feed_expected",
+			now,
+		);
+		await expect(
+			store.planConfirmedFeedPhotoCleanup(
+				accountUserId,
+				mismatch.attachmentId,
+				1,
+				"upl_feed_other",
+				now,
+			),
+		).rejects.toThrow("confirmation binding changed");
+		expect(
+			await store.getFeedPhoto(accountUserId, mismatch.attachmentId),
+		).toMatchObject({ state: "feed_queued", uploadId: "upl_feed_expected" });
+		expect(
+			await store.planConfirmedFeedPhotoCleanup(
+				accountUserId,
+				mismatch.attachmentId,
+				1,
+				"upl_feed_expected",
+				now,
+			),
+		).toEqual({
+			attachmentIds: [mismatch.attachmentId],
+			purgeFileKeys: [mismatch.retainedFileKey],
+		});
 		database.close();
 	});
 });
@@ -4916,6 +5303,29 @@ async function retainLocalAttachment(
 		wasNormalized: true,
 		retainedAt: now,
 	});
+}
+
+function feedPhotoAttachment(
+	accountUserId: string,
+	attachmentId: string,
+	targetEntryId: string,
+	digestCharacter: string,
+): RetainedLocalAttachment {
+	const sha256 = digestCharacter.repeat(64);
+	return {
+		accountUserId,
+		attachmentId,
+		rootEventId: "evt_trip",
+		targetEntryId,
+		retainedFileKey: `${sha256}.jpg`,
+		contentType: "image/jpeg",
+		byteCount: 2048,
+		sha256,
+		pixelWidth: 1200,
+		pixelHeight: 800,
+		wasNormalized: true,
+		retainedAt: now,
+	};
 }
 
 async function seedSnapshotStaging(

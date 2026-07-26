@@ -9,6 +9,7 @@ import type { SqlDatabase, SqlExecutor } from "./database.ts";
 import {
 	type FeedbackScreenshotFailure,
 	type FeedbackScreenshotRow,
+	type FeedbackScreenshotState,
 	selectFeedbackScreenshot,
 	validateAttachmentId,
 } from "./feedbackAttachments.ts";
@@ -98,6 +99,26 @@ export interface FeedbackSubmissionReceipt {
 	deliveredAt: string | null;
 }
 
+export interface FeedbackSubmissionEvidenceRow {
+	state: FeedbackSubmissionState;
+	screenshotState: FeedbackScreenshotState | null;
+	submissionFingerprint: string;
+	idempotencyFingerprint: string;
+	screenshotFingerprint: string | null;
+	commandFingerprintMatches: boolean | null;
+	screenshotBindingMatches: boolean;
+	screenshotMetadataMatches: boolean | null;
+}
+
+export interface FeedbackSubmissionEvidence {
+	pendingCount: number;
+	sendingCount: number;
+	attentionCount: number;
+	deliveredCount: number;
+	truncated: boolean;
+	rows: readonly FeedbackSubmissionEvidenceRow[];
+}
+
 export interface FeedbackSubmissionControllerOptions {
 	activeAccountUserId: () => string | null | Promise<string | null>;
 	attachmentUploadTransport?: FeedbackAttachmentUploadTransport | null;
@@ -130,6 +151,21 @@ interface FeedbackSubmissionRow {
 	delivered_at: string | null;
 }
 
+interface FeedbackSubmissionEvidenceSourceRow {
+	state: FeedbackSubmissionState;
+	command_json: string | null;
+	command_fingerprint: string;
+	idempotency_key: string;
+	screenshot_attachment_id: string | null;
+	screenshot_feedback_id: string | null;
+	screenshot_retained_file_key: string | null;
+	screenshot_content_type: string | null;
+	screenshot_byte_count: number | null;
+	screenshot_sha256: string | null;
+	screenshot_was_normalized: number | null;
+	screenshot_state: FeedbackScreenshotState | null;
+}
+
 interface DeliveryFailure {
 	code: FeedbackSubmissionFailure;
 	retryAfterSeconds: number | null;
@@ -148,6 +184,25 @@ const LEASE_MS = 2 * 60 * 1000;
 const MAX_ATTEMPTS = 20;
 const MAX_RETRY_MS = 15 * 60 * 1000;
 const MAX_RETRY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_FEEDBACK_EVIDENCE_ROWS = 100;
+const EVIDENCE_COMMAND_DOMAIN = "crew.feedback.command.evidence.v1";
+const EVIDENCE_IDEMPOTENCY_DOMAIN = "crew.feedback.idempotency.evidence.v1";
+const EVIDENCE_SCREENSHOT_DOMAIN = "crew.feedback.screenshot.evidence.v1";
+const feedbackEvidenceStates = new Set<FeedbackSubmissionState>([
+	"pending",
+	"sending",
+	"attention",
+	"delivered",
+]);
+const feedbackScreenshotEvidenceStates = new Set<FeedbackScreenshotState>([
+	"retained",
+	"consented",
+	"prepared",
+	"uploaded",
+	"committed",
+	"attention",
+	"omitted",
+]);
 
 const flightsByDatabase = new WeakMap<
 	SqlDatabase,
@@ -325,6 +380,120 @@ ORDER BY created_at DESC, feedback_id DESC`,
 		);
 		await this.#assertActive(accountUserId);
 		return rows.map(receipt);
+	}
+
+	async readEvidence(
+		accountUserId: string,
+		rootEventId: string,
+	): Promise<FeedbackSubmissionEvidence> {
+		validateAccount(accountUserId);
+		if (!eventPattern.test(rootEventId)) {
+			throw new TypeError("Invalid feedback root event ID");
+		}
+		await this.#assertActive(accountUserId);
+		const { counts, sourceRows } = await this.database.transaction(
+			async (transaction) => {
+				const counts = await transaction.first<{
+					pending_count: number;
+					sending_count: number;
+					attention_count: number;
+					delivered_count: number;
+				}>(
+					`SELECT
+  COALESCE(SUM(CASE WHEN state = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+  COALESCE(SUM(CASE WHEN state = 'sending' THEN 1 ELSE 0 END), 0) AS sending_count,
+  COALESCE(SUM(CASE WHEN state = 'attention' THEN 1 ELSE 0 END), 0) AS attention_count,
+  COALESCE(SUM(CASE WHEN state = 'delivered' THEN 1 ELSE 0 END), 0) AS delivered_count
+FROM feedback_submissions
+WHERE account_user_id = ? AND root_event_id = ?`,
+					[accountUserId, rootEventId],
+				);
+				const sourceRows =
+					await transaction.all<FeedbackSubmissionEvidenceSourceRow>(
+						`SELECT
+  submission.state,
+  submission.command_json,
+  submission.command_fingerprint,
+  submission.idempotency_key,
+  submission.screenshot_attachment_id,
+  screenshot.feedback_id AS screenshot_feedback_id,
+  screenshot.retained_file_key AS screenshot_retained_file_key,
+  screenshot.content_type AS screenshot_content_type,
+  screenshot.byte_count AS screenshot_byte_count,
+  screenshot.sha256 AS screenshot_sha256,
+  screenshot.was_normalized AS screenshot_was_normalized,
+  screenshot.state AS screenshot_state
+FROM feedback_submissions submission
+LEFT JOIN feedback_screenshot_attachments screenshot
+  ON screenshot.account_user_id = submission.account_user_id
+ AND screenshot.feedback_id = submission.feedback_id
+ AND screenshot.root_event_id = submission.root_event_id
+ AND screenshot.attachment_id = submission.screenshot_attachment_id
+WHERE submission.account_user_id = ? AND submission.root_event_id = ?
+ORDER BY
+  CASE submission.state
+    WHEN 'attention' THEN 0
+    WHEN 'sending' THEN 1
+    WHEN 'pending' THEN 2
+    ELSE 3
+  END,
+  submission.created_at DESC,
+  submission.feedback_id DESC
+LIMIT ?`,
+						[accountUserId, rootEventId, MAX_FEEDBACK_EVIDENCE_ROWS + 1],
+					);
+				return { counts, sourceRows };
+			},
+		);
+		const rows = await Promise.all(
+			sourceRows.slice(0, MAX_FEEDBACK_EVIDENCE_ROWS).map(async (row) => {
+				validateFeedbackEvidenceRow(row);
+				const screenshotFingerprint =
+					row.screenshot_sha256 === null
+						? null
+						: await this.#evidenceFingerprint(
+								EVIDENCE_SCREENSHOT_DOMAIN,
+								`${row.screenshot_content_type}\u0000${row.screenshot_byte_count}\u0000${row.screenshot_sha256}`,
+							);
+				const screenshotPresent = row.screenshot_feedback_id !== null;
+				return {
+					state: row.state,
+					screenshotState: row.screenshot_state,
+					submissionFingerprint: await this.#evidenceFingerprint(
+						EVIDENCE_COMMAND_DOMAIN,
+						row.command_fingerprint,
+					),
+					idempotencyFingerprint: await this.#evidenceFingerprint(
+						EVIDENCE_IDEMPOTENCY_DOMAIN,
+						row.idempotency_key,
+					),
+					screenshotFingerprint,
+					commandFingerprintMatches:
+						row.command_json === null
+							? null
+							: (await this.#sha256(row.command_json)) ===
+								row.command_fingerprint,
+					screenshotBindingMatches:
+						row.screenshot_attachment_id === null || screenshotPresent,
+					screenshotMetadataMatches:
+						row.screenshot_sha256 === null
+							? null
+							: row.screenshot_retained_file_key ===
+									`${row.screenshot_sha256}.png` &&
+								row.screenshot_content_type === "image/png" &&
+								row.screenshot_was_normalized === 1,
+				} satisfies FeedbackSubmissionEvidenceRow;
+			}),
+		);
+		await this.#assertActive(accountUserId);
+		return {
+			pendingCount: feedbackEvidenceCount(counts?.pending_count),
+			sendingCount: feedbackEvidenceCount(counts?.sending_count),
+			attentionCount: feedbackEvidenceCount(counts?.attention_count),
+			deliveredCount: feedbackEvidenceCount(counts?.delivered_count),
+			truncated: sourceRows.length > MAX_FEEDBACK_EVIDENCE_ROWS,
+			rows,
+		};
 	}
 
 	async resumeAndDrain(
@@ -1037,6 +1206,43 @@ WHERE account_user_id = ? AND state NOT IN ('committed', 'omitted')`,
 	#timestamp(): string {
 		return this.#now().toISOString();
 	}
+
+	#evidenceFingerprint(domain: string, value: string): Promise<string> {
+		return this.#sha256(`${domain}\u0000${value}`);
+	}
+}
+
+function validateFeedbackEvidenceRow(
+	row: FeedbackSubmissionEvidenceSourceRow,
+): void {
+	if (!feedbackEvidenceStates.has(row.state)) {
+		throw new Error("Persisted feedback evidence state is invalid");
+	}
+	if (!/^[a-f0-9]{64}$/.test(row.command_fingerprint)) {
+		throw new Error("Persisted feedback command fingerprint is invalid");
+	}
+	if (
+		row.screenshot_state !== null &&
+		!feedbackScreenshotEvidenceStates.has(row.screenshot_state)
+	) {
+		throw new Error("Persisted feedback screenshot state is invalid");
+	}
+	if (
+		(row.screenshot_sha256 === null) !==
+			(row.screenshot_feedback_id === null) ||
+		(row.screenshot_sha256 !== null &&
+			!/^[a-f0-9]{64}$/.test(row.screenshot_sha256))
+	) {
+		throw new Error("Persisted feedback screenshot evidence is invalid");
+	}
+}
+
+function feedbackEvidenceCount(value: number | undefined): number {
+	const count = Number(value ?? 0);
+	if (!Number.isSafeInteger(count) || count < 0) {
+		throw new Error("Persisted feedback evidence count is invalid");
+	}
+	return count;
 }
 
 function assertScreenshotSelection(

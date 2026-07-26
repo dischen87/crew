@@ -34,6 +34,8 @@ export type RootStackParamList = {
   NativeE2EEvidence: { rootEventId: string };
   TeamSetup: { rootEventId: string; eventId: string };
   Decision: { rootEventId: string; decisionId: string };
+  Invites: { rootEventId: string };
+  InviteEditor: { rootEventId: string };
   InvitePreview: { handle: string; autoRedeem?: boolean };
   SignIn: undefined;
   EmailIdentity: { handle: string };

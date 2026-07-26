@@ -81,6 +81,26 @@ jest.mock('../src/screens/InboundGateScreen', () => ({
   InboundGateScreen: () => null,
 }));
 
+jest.mock('../src/screens/InviteEditorScreen', () => {
+  const { Text: NativeText } = require('react-native');
+  return {
+    InviteEditorScreen: () => (
+      <NativeText testID="production-invite-editor">Invite Editor</NativeText>
+    ),
+  };
+});
+
+jest.mock('../src/screens/InviteManagerScreen', () => {
+  const { Text: NativeText } = require('react-native');
+  return {
+    InviteManagerScreen: () => (
+      <NativeText testID="production-invite-manager">
+        Invite Manager
+      </NativeText>
+    ),
+  };
+});
+
 jest.mock('../src/screens/FeedbackRoutes', () => {
   const { Text: NativeText } = require('react-native');
   return {
@@ -166,6 +186,8 @@ jest.mock('@react-navigation/native-stack', () => ({
               }
             : name === 'EventBasicsEdit'
             ? { focusField: 'title', rootEventId: 'evt_root' }
+            : name === 'Invites' || name === 'InviteEditor'
+            ? { rootEventId: 'evt_root' }
             : undefined;
         return (
           <NativeView testID={`screen-${name}`}>
@@ -213,6 +235,12 @@ test('keeps public invite and auth screens available while private screens are s
     textInside(
       renderer!.root.findByProps({ testID: 'screen-EventBasicsEdit' }),
     ),
+  ).toContain('Bitte anmelden');
+  expect(
+    textInside(renderer!.root.findByProps({ testID: 'screen-Invites' })),
+  ).toContain('Bitte anmelden');
+  expect(
+    textInside(renderer!.root.findByProps({ testID: 'screen-InviteEditor' })),
   ).toContain('Bitte anmelden');
   expect(
     renderer!.root
@@ -443,6 +471,28 @@ test('gates the Team Feed privately and routes ready accounts to production', as
   expect(
     renderer!.root.findByProps({ testID: 'screen-TeamFeed' }).findByProps({
       testID: 'production-team-feed',
+    }),
+  ).toBeTruthy();
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
+test('gates invitation management privately and routes ready accounts to production', async () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <RootNavigator privateStatus="ready" />,
+    );
+  });
+
+  expect(
+    renderer!.root.findByProps({ testID: 'screen-Invites' }).findByProps({
+      testID: 'production-invite-manager',
+    }),
+  ).toBeTruthy();
+  expect(
+    renderer!.root.findByProps({ testID: 'screen-InviteEditor' }).findByProps({
+      testID: 'production-invite-editor',
     }),
   ).toBeTruthy();
 
