@@ -558,8 +558,8 @@ function validateWorkflow(source: string) {
 	).toEqual(["bunx biome check .github/ci", "bun test ./.github/ci"]);
 	expect(commands(steps, "Check release tooling")).toEqual([
 		"bash -n infra/staging/host-release.sh",
-		"bunx biome check infra/staging-config.test.ts",
-		"bun test infra/staging-config.test.ts",
+		"bunx biome check infra/staging-config.test.ts infra/provider-sink.ts infra/provider-sink.test.ts",
+		"bun test infra/staging-config.test.ts infra/provider-sink.test.ts",
 	]);
 	expect(commands(steps, "Check User service")).toEqual([
 		"bun run lint",
