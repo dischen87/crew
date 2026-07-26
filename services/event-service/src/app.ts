@@ -5415,7 +5415,6 @@ export function createApp(options: AppOptions = {}) {
 	});
 	app.openapi(createPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
-		requiredService(options).assertPlaceEnrichmentAvailable();
 		const body = c.req.valid("json");
 		const result = await command(
 			c,
@@ -5437,6 +5436,7 @@ export function createApp(options: AppOptions = {}) {
 				return enrichmentCommand(response);
 			},
 			placeEnrichmentReplayGuard(),
+			(service) => service.assertPlaceEnrichmentAvailable(),
 		);
 		applyCommandHeaders(c, result);
 		return c.json(result.body, 202);
@@ -5454,7 +5454,6 @@ export function createApp(options: AppOptions = {}) {
 	});
 	app.openapi(retryPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
-		requiredService(options).assertPlaceEnrichmentAvailable();
 		const params = c.req.valid("param");
 		const result = await command(
 			c,
@@ -5468,6 +5467,7 @@ export function createApp(options: AppOptions = {}) {
 					),
 				),
 			placeEnrichmentReplayGuard(),
+			(service) => service.assertPlaceEnrichmentAvailable(),
 		);
 		applyCommandHeaders(c, result);
 		return c.json(result.body, 202);
@@ -7345,9 +7345,29 @@ async function command<T extends Record<string, unknown>>(
 		service: EventService,
 		replay: { status: number; body: T; headers: Record<string, string> },
 	) => Promise<void>,
+	beforeNewCommand?: (service: EventService) => void | Promise<void>,
 ) {
 	const service = c.get("service");
 	if (!service) throw new Error("Event service dependency is unavailable");
+	const requestHashGuard = (
+		scoped: EventService,
+		replay: {
+			status: number;
+			body: Record<string, unknown>;
+			headers: Record<string, string>;
+		},
+	) => replayGuard(scoped, { ...replay, body: replay.body as T });
+	if (beforeNewCommand) {
+		const replay = await service.replayCommand<Record<string, unknown>>(
+			actor,
+			operationId,
+			c.req.valid("header")["idempotency-key"],
+			request,
+			requestHashGuard,
+		);
+		if (replay) return commandResult<T>(c, replay);
+		await beforeNewCommand(service);
+	}
 	const result = await service.command<Record<string, unknown>>(
 		actor,
 		operationId,
@@ -7370,9 +7390,20 @@ async function command<T extends Record<string, unknown>>(
 				};
 			}
 		},
-		(scoped, replay) =>
-			replayGuard(scoped, { ...replay, body: replay.body as T }),
+		requestHashGuard,
 	);
+	return commandResult<T>(c, result);
+}
+
+function commandResult<T extends Record<string, unknown>>(
+	c: { get(name: "requestId"): string },
+	result: {
+		status: number;
+		body: Record<string, unknown>;
+		headers: Record<string, string>;
+		replayed: boolean;
+	},
+) {
 	if (result.status >= 400) {
 		throw new StoredCommandResponse(
 			result.status as 400 | 401 | 403 | 404 | 409,

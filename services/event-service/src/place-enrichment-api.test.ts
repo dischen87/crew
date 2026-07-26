@@ -87,10 +87,69 @@ describe("place enrichment API projection", () => {
 		expect(JSON.stringify(response)).not.toContain("private organizer wording");
 	});
 
-	test("returns 503 before enqueue or retry when the worker feature is disabled", async () => {
+	test("replays a completed command after the worker feature is disabled", async () => {
+		const projection = placeEnrichmentResponse({
+			job: candidateJob(),
+			fields: [],
+			globalPlaceId:
+				"gpl_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		});
+		const repository = {
+			findIdempotent: async () => ({
+				status: 202,
+				body: projection,
+				headers: {
+					Location: `/v1/places/enrichment-jobs/${projection.enrichment.id}`,
+					"Retry-After": "2",
+				},
+				replayed: true,
+			}),
+			getPlaceEnrichment: async () => ({
+				job: candidateJob(),
+				fields: [],
+				globalPlaceId:
+					"gpl_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+			}),
+			runIdempotent: async () => {
+				throw new Error("A completed replay must not start new work");
+			},
+		} as unknown as EventRepository;
 		const app = createApp({
 			service: new EventService(
-				{} as EventRepository,
+				repository,
+				"place-enrichment-disabled-test-key-with-at-least-32-characters",
+			),
+			verifyUserToken: async (token) => ({ id: token }),
+		});
+		const response = await app.request("/v1/places/enrichment-jobs", {
+			method: "POST",
+			headers: {
+				Authorization: "Bearer usr_00000000000000000000000000000901",
+				"Idempotency-Key": "completed-enrichment-01",
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				target: "candidate",
+				candidateId:
+					"pcd_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			}),
+		});
+
+		expect(response.status).toBe(202);
+		expect(response.headers.get("idempotency-replayed")).toBe("true");
+		expect(await response.json()).toEqual(projection);
+	});
+
+	test("returns 503 before enqueue or retry when the worker feature is disabled", async () => {
+		const repository = {
+			findIdempotent: async () => null,
+			runIdempotent: async () => {
+				throw new Error("Disabled enrichment must not claim idempotency");
+			},
+		} as unknown as EventRepository;
+		const app = createApp({
+			service: new EventService(
+				repository,
 				"place-enrichment-disabled-test-key-with-at-least-32-characters",
 			),
 			verifyUserToken: async (token) => ({ id: token }),
