@@ -10346,7 +10346,7 @@
           "places"
         ],
         "summary": "Select a candidate or request bounded no-match enrichment",
-        "description": "Persists an idempotent background job and returns immediately without provider work in the request path.",
+        "description": "Persists an idempotent background job and returns immediately without provider work in the request path. Returns 503 unless an operator has enabled the provider-backed worker.",
         "security": [
           {
             "userBearer": []
@@ -10564,6 +10564,30 @@
             "headers": {
               "X-Request-ID": {
                 "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
                 "schema": {
                   "type": "string"
                 }
@@ -10844,6 +10868,30 @@
             "headers": {
               "X-Request-ID": {
                 "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
                 "schema": {
                   "type": "string"
                 }

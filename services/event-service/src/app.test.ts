@@ -15,6 +15,11 @@ describe("event-service scaffold", () => {
 		expect(api.invitationKeyId).toBe("legacy-invitation-v1");
 		expect(api.recapShareTokenCurrentKeyId).toBe("development-v1");
 		expect(api.recapExternalCaptionsEnabled).toBe(false);
+		expect(api.placeEnrichmentEnabled).toBe(false);
+		expect(
+			loadConfig({ EVENT_ENRICHMENT_ENABLED: "true" }).placeEnrichmentEnabled,
+		).toBe(true);
+		expect(() => loadConfig({ EVENT_ENRICHMENT_ENABLED: "1" })).toThrow();
 		expect(() =>
 			loadConfig({ RECAP_EXTERNAL_CAPTIONS_ENABLED: "1" }),
 		).toThrow();

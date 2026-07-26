@@ -1906,6 +1906,10 @@ export class EventService {
 		);
 	}
 
+	assertPlaceEnrichmentAvailable() {
+		this.requiredPlaceEnrichmentPolicy();
+	}
+
 	requestPlaceEnrichmentSearchMiss(input: {
 		query: string;
 		kind: PlaceCandidateKind;
@@ -1925,6 +1929,7 @@ export class EventService {
 	}
 
 	async requestPlaceEnrichmentRetry(id: string) {
+		this.requiredPlaceEnrichmentPolicy();
 		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw placeEnrichmentNotFound();
 		await this.repository.requestPlaceEnrichmentRetry(id);
 		return this.getPlaceEnrichment(id);
@@ -2067,7 +2072,12 @@ export class EventService {
 
 	private requiredPlaceEnrichmentPolicy() {
 		if (!this.placeEnrichmentPolicy)
-			throw new Error("Place-enrichment policy is unavailable");
+			throw new DomainError(
+				503,
+				"SERVICE_UNAVAILABLE",
+				"Place enrichment is not available in this environment.",
+				{ "Retry-After": "60" },
+			);
 		return this.placeEnrichmentPolicy;
 	}
 }

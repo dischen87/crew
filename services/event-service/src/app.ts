@@ -5053,7 +5053,7 @@ const createPlaceEnrichmentRoute = createRoute({
 	tags: ["places"],
 	summary: "Select a candidate or request bounded no-match enrichment",
 	description:
-		"Persists an idempotent background job and returns immediately without provider work in the request path.",
+		"Persists an idempotent background job and returns immediately without provider work in the request path. Returns 503 unless an operator has enabled the provider-backed worker.",
 	security: [{ userBearer: [] }],
 	request: {
 		headers: IdempotencyHeadersSchema,
@@ -5073,6 +5073,7 @@ const createPlaceEnrichmentRoute = createRoute({
 		401: errors[401],
 		404: errors[404],
 		409: errors[409],
+		503: errors[503],
 		500: errors[500],
 	},
 	"x-idempotency": "required",
@@ -5116,6 +5117,7 @@ const retryPlaceEnrichmentRoute = createRoute({
 		401: errors[401],
 		404: errors[404],
 		409: errors[409],
+		503: errors[503],
 		500: errors[500],
 	},
 	"x-idempotency": "required",
@@ -5413,6 +5415,7 @@ export function createApp(options: AppOptions = {}) {
 	});
 	app.openapi(createPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
+		requiredService(options).assertPlaceEnrichmentAvailable();
 		const body = c.req.valid("json");
 		const result = await command(
 			c,
@@ -5451,6 +5454,7 @@ export function createApp(options: AppOptions = {}) {
 	});
 	app.openapi(retryPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
+		requiredService(options).assertPlaceEnrichmentAvailable();
 		const params = c.req.valid("param");
 		const result = await command(
 			c,

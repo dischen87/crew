@@ -78,6 +78,9 @@ const ConfigSchema = z
 		typesenseSearchApiKey: z.string().min(16).max(512),
 		typesensePlaceAlias: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
 		typesenseTimeoutMs: z.coerce.number().int().min(100).max(10_000),
+		placeEnrichmentEnabled: z
+			.enum(["true", "false"])
+			.transform((value) => value === "true"),
 	})
 	.superRefine((value, context) => {
 		if (
@@ -541,6 +544,7 @@ export function loadConfig(
 			DEVELOPMENT_TYPESENSE_SEARCH_API_KEY,
 		typesensePlaceAlias: env.PLACE_SEARCH_TYPESENSE_ALIAS ?? "crew_places",
 		typesenseTimeoutMs: env.PLACE_SEARCH_TYPESENSE_TIMEOUT_MS ?? "2000",
+		placeEnrichmentEnabled: env.EVENT_ENRICHMENT_ENABLED ?? "false",
 	});
 }
 

@@ -77,7 +77,7 @@ const service = new EventService(
 				}
 			: undefined,
 	),
-	loadPlaceEnrichmentPolicy(),
+	config.placeEnrichmentEnabled ? loadPlaceEnrichmentPolicy() : undefined,
 );
 const app = createApp({
 	service,

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { createApp } from "./app";
 import type {
 	PlaceEnrichmentField,
 	PlaceEnrichmentJob,
 } from "./place-enrichment";
 import { placeEnrichmentResponse } from "./place-enrichment-api";
+import type { EventRepository } from "./repository";
+import { EventService } from "./service";
 
 describe("place enrichment API projection", () => {
 	test("returns immediate candidate facts without provider policy or budgets", () => {
@@ -82,6 +85,44 @@ describe("place enrichment API projection", () => {
 
 		expect(response.place).toBeNull();
 		expect(JSON.stringify(response)).not.toContain("private organizer wording");
+	});
+
+	test("returns 503 before enqueue or retry when the worker feature is disabled", async () => {
+		const app = createApp({
+			service: new EventService(
+				{} as EventRepository,
+				"place-enrichment-disabled-test-key-with-at-least-32-characters",
+			),
+			verifyUserToken: async (token) => ({ id: token }),
+		});
+		const headers = {
+			Authorization: "Bearer usr_00000000000000000000000000000901",
+			"Idempotency-Key": "disabled-enrichment-01",
+			"Content-Type": "application/json",
+		};
+		for (const [path, body] of [
+			[
+				"/v1/places/enrichment-jobs",
+				{
+					target: "search_miss",
+					query: "Belek golf course",
+					kind: "golf_course",
+					countryCode: "TR",
+				},
+			],
+			[`/v1/places/enrichment-jobs/pej_${"a".repeat(64)}/retry`, undefined],
+		] as const) {
+			const response = await app.request(path, {
+				method: "POST",
+				headers,
+				...(body ? { body: JSON.stringify(body) } : {}),
+			});
+			expect(response.status).toBe(503);
+			expect(response.headers.get("retry-after")).toBe("60");
+			expect(await response.json()).toMatchObject({
+				error: { code: "SERVICE_UNAVAILABLE", retryable: true },
+			});
+		}
 	});
 });
 
