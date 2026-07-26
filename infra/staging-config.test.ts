@@ -127,6 +127,7 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	);
 	expect(hostDeploy).toContain("checkout --quiet --detach");
 	expect(hostDeploy).toContain("status --short");
+	expect(hostDeploy).toContain(`chmod -R a=rX -- "\${release_dir}"`);
 	expect(hostDeploy).toContain("--file apps/web/Dockerfile");
 	expect(hostDeploy.indexOf("place-golf-import")).toBeLessThan(
 		hostDeploy.indexOf('\n\tsmoke "'),

@@ -597,6 +597,7 @@ activate_release_state() {
 
 ensure_environment
 release_dir=$(checkout_release)
+chmod -R a=rX -- "${release_dir}"
 source_sha=$(cat "${current_file}" 2>/dev/null || true)
 active_database_sha=
 active_grant_sha=
