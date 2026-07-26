@@ -635,6 +635,8 @@ function validateWorkflow(source: string) {
 		"docker compose up --wait --wait-timeout 180",
 		"docker compose down --volumes --remove-orphans",
 		"docker volume ls --quiet --filter label=com.docker.compose.project=crew-new",
+		"docker compose --profile tools run --no-deps --rm place-golf-import",
+		"docker compose --profile tools run --no-deps --rm place-search-reindex",
 		"for auth_run_id in 000000000000000000000001 000000000000000000000002; do",
 		"for scenario in golf-tour team-event; do",
 		"docker compose --profile tools run --no-deps --rm \\",
@@ -666,6 +668,20 @@ function validateWorkflow(source: string) {
 	]) {
 		expect(composeSmoke).toContain(required);
 	}
+	expect(
+		composeSmoke.indexOf(
+			"docker compose --profile tools run --no-deps --rm place-golf-import",
+		),
+	).toBeLessThan(
+		composeSmoke.indexOf(
+			"docker compose --profile tools run --no-deps --rm place-search-reindex",
+		),
+	);
+	expect(
+		composeSmoke.indexOf(
+			"docker compose --profile tools run --no-deps --rm place-search-reindex",
+		),
+	).toBeLessThan(composeSmoke.indexOf("for auth_run_id in"));
 	expect(occurrences(composeSmoke, "docker compose up --wait")).toBe(2);
 	expect(composeSmoke).not.toContain(
 		"docker compose --profile tools run --rm -e CREW_FIXTURE_SCENARIO",

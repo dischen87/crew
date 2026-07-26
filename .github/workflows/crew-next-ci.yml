@@ -350,6 +350,8 @@ jobs:
               "
             )"
             test "$runtime_default_acl_count" -eq 0
+            docker compose --profile tools run --no-deps --rm place-golf-import
+            docker compose --profile tools run --no-deps --rm place-search-reindex
             for auth_run_id in 000000000000000000000001 000000000000000000000002; do
               for scenario in golf-tour team-event; do
                 docker compose --profile tools run --no-deps --rm \
