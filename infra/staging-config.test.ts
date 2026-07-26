@@ -79,11 +79,25 @@ test("private production dependencies terminate TLS at the isolated proxy", () =
 	expect(overlaySource).toContain(
 		"PLACE_SEARCH_TYPESENSE_URL: https://staging.crew-haus.com:8445",
 	);
-	expect(hostDeploy).toMatch(
-		/printf 'TYPESENSE_API_KEY=%s\\n' "\$\{typesense_key\}"/,
+	expect(hostDeploy).toMatch(/typesense_admin_key=\$\(hex_secret\)/);
+	expect(hostDeploy).toMatch(/typesense_search_key=\$\(hex_secret\)/);
+	expect(hostDeploy).toContain(
+		"Typesense admin and search-only keys must be different",
 	);
-	expect(hostDeploy).toMatch(
-		/printf 'TYPESENSE_SEARCH_API_KEY=%s\\n' "\$\{typesense_key\}"/,
+	expect(hostDeploy).toContain('"actions": ["documents:search"]');
+	expect(hostDeploy).toContain('"collections": ["crew_places.*"]');
+	expect(hostDeploy).toContain("ensure_typesense_search_key");
+	expect(hostDeploy).toContain("verify_typesense_search_key");
+	expect(
+		(services["event-api"]?.environment as Record<string, unknown>)
+			?.PLACE_SEARCH_TYPESENSE_SEARCH_API_KEY,
+	).toBe(`\${TYPESENSE_SEARCH_API_KEY:?TYPESENSE_SEARCH_API_KEY is required}`);
+	expect(
+		(services["place-search-reindex"]?.environment as Record<string, unknown>)
+			?.PLACE_SEARCH_REINDEX_TYPESENSE_ADMIN_API_KEY,
+	).toBe(`\${TYPESENSE_API_KEY:?TYPESENSE_API_KEY is required}`);
+	expect(hostDeploy).not.toMatch(
+		/printf 'TYPESENSE_(?:API_KEY|SEARCH_API_KEY)=%s\\n' "\$\{typesense_key\}"/,
 	);
 });
 
@@ -110,16 +124,23 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(hostDeploy).toContain("databaseReleaseId");
 	expect(hostDeploy).toContain("database_release_dir=");
 	expect(hostDeploy).toContain("database_contract_sha()");
-	expect(hostDeploy).toContain('"kind": "identical-database-contract"');
+	expect(hostDeploy).toContain("runtime_infrastructure_contract_sha()");
+	expect(hostDeploy).toContain(
+		'"kind": "identical-database-and-runtime-contract"',
+	);
 	expect(hostDeploy).toContain("validate_current_state");
 	expect(hostDeploy).toContain("validate_compatibility_proof");
 	expect(hostDeploy).toContain(
-		"Forward deploy changes the database contract; richer rollback evidence is required",
+		"Forward deploy changes the database or runtime infrastructure contract; richer rollback evidence is required",
 	);
 	expect(hostDeploy).toContain(
-		"Rollback target is not compatible with the active database contract",
+		"Rollback target is not compatible with the active database or runtime infrastructure contract",
 	);
 	expect(hostDeploy).toContain("databaseCompatibilitySha256");
+	expect(hostDeploy).toContain("runtimeInfrastructureCompatibilitySha256");
+	expect(hostDeploy).toContain(
+		`runtime_contract_file="\${shared_dir}/runtime-infrastructure-contract-sha256"`,
+	);
 	expect(hostDeploy.lastIndexOf("\tvalidate_compatibility_proof")).toBeLessThan(
 		hostDeploy.lastIndexOf(`\ninstall_caddy "\${release_dir}"`),
 	);
@@ -128,8 +149,22 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	);
 	expect(hostDeploy).toContain("infra/postgres/grant-runtime.sql");
 	expect(hostDeploy).toContain(`"crew-next-web:\${target_sha}"`);
+	expect(hostDeploy).toContain('\\"provider-sink\\":');
+	expect(hostDeploy).toContain('\\"rate-limit-redis\\":');
+	expect(hostDeploy).toContain('\\"internal-tls\\":');
+	const rollbackInfrastructureRestart =
+		"--force-recreate redis-rate-limit provider-sink internal-tls";
+	expect(hostDeploy).toContain(rollbackInfrastructureRestart);
+	expect(hostDeploy.indexOf(rollbackInfrastructureRestart)).toBeLessThan(
+		hostDeploy.lastIndexOf("--no-build --no-deps api-gateway"),
+	);
 	expect(hostDeploy).toContain('"public-web"');
 	expect(hostDeploy).toContain('"smoke"');
+	expect(hostDeploy).toContain('"feedback-attachment-e2e"');
+	expect(hostDeploy).toContain("auth_run_id=$(openssl rand -hex 12)");
+	expect(hostDeploy).toContain(`-e CREW_FIXTURE_AUTH_RUN_ID="\${auth_run_id}"`);
+	expect(hostDeploy).toContain("-e CREW_FIXTURE_ATTACHMENT_E2E=1");
+	expect(hostDeploy).toContain("-e CREW_FIXTURE_SCENARIO=team-event");
 });
 
 test("public Caddy routes only the web and canonical Gateway surfaces", () => {

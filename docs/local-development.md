@@ -255,16 +255,22 @@ The same client can create the non-travel team-event fixture without another
 service or seed path:
 
 ```sh
-docker compose run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+docker compose run --no-deps --rm \
+  -e CREW_FIXTURE_AUTH_RUN_ID="$(openssl rand -hex 12)" \
+  -e CREW_FIXTURE_ATTACHMENT_E2E=1 \
+  -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
 ```
 
 That scenario creates a one-day event tree for arrival, two workshops, lunch,
 a team challenge, decisions and wrap-up. It persists the venue through the
 place API, the ordered day through itinerary APIs, an owner membership and a
 participant invitation through the root/membership/invitation APIs, and the
-decision log through the feed API. The runner reads the owner membership back
-before succeeding. Its only capability is validated `team` metadata; it never
-adds travel or golf fields.
+decision log through the feed API. After publication, the owner sends one
+capacity-safe assignment set and one open decision through public `sync/push`;
+the participant bootstrap must receive the public teams, its own assignment and
+the decision, but never the manager roster. The runner reads the owner
+membership back before succeeding. Its only capability is validated `team`
+metadata; it never adds travel or golf fields.
 
 The tool sends every product request through the public gateway, uses stable
 idempotency keys and client event IDs, verifies exact replay responses, reads
@@ -277,11 +283,24 @@ and no fixture code performs SQL or direct service-database mutation.
 
 Each scenario uses its own deterministic user, resource IDs and idempotency
 keys, so the golf and team fixtures can coexist. Exact replay is verified for
-every write. Run each scenario once per fixture state; reset the documented
-local volumes before rerunning that same scenario from its first magic-link
-step. The fixture container has the Compose `tools` profile and is not started
-by the normal `docker compose up` path. Its local-only guard rejects HTTPS,
-non-local hosts or execution without `CREW_LOCAL_FIXTURE=1`.
+every write. A fresh 24-character lowercase-hex
+`CREW_FIXTURE_AUTH_RUN_ID` creates new one-time login deliveries while stable
+domain keys prove exact replay during initial creation. On later runs, an
+already published root is verified through memberships and a complete sync
+snapshot without domain writes, including after idempotency records expire.
+The fresh-Compose CI gate models that expiry by deleting only
+`fixture.%` idempotency records from both service databases between its two
+API-fixture runs, requiring that records were actually removed, and then
+requiring the second run to pass. This mutation belongs to the isolated CI
+harness; the fixture client remains API-only and has no database credentials.
+With `CREW_FIXTURE_ATTACHMENT_E2E=1`, each run ID also proves one real
+feedback PNG prepare, signed multipart upload, asynchronous finalize,
+feedback binding and private download/hash round trip through the configured
+object store.
+Reset the documented local volumes only when a fresh fixture state is required.
+The fixture container has the Compose `tools` profile and is not started by the
+normal `docker compose up` path. Its local-only guard rejects HTTPS, non-local
+hosts or execution without `CREW_LOCAL_FIXTURE=1`.
 
 ## Pins and upstream references
 

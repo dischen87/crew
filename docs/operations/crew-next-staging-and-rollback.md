@@ -30,7 +30,12 @@ Before any service is changed, the executor:
 5. pins all third-party runtime images by digest.
 
 Secrets are generated once in `/opt/crew-new/shared/environment` with mode
-`0600`. Secret values are never written to Git or release records.
+`0600`. The Typesense bootstrap admin key and the separately generated
+search-only key are different. The executor provisions the latter through the
+Typesense key API with only `documents:search` on `crew_places.*`; only that
+key reaches Event API, while the admin key remains confined to Typesense
+bootstrap, key provisioning, and the bounded reindex job. Secret values are
+never written to Git or release records.
 
 ## First greenfield deployment
 
@@ -50,7 +55,9 @@ The smoke contract requires:
 - Gateway readiness and OpenAPI 3.1 over public TLS;
 - the customer-visible Crew web marker;
 - MinIO and Typesense readiness over TLS;
-- API-only golf-tour and team-event fixture bootstraps.
+- API-only golf-tour and team-event fixture bootstraps;
+- a real feedback attachment upload, finalize, bind, and private download/hash
+  round trip.
 
 The executor never runs `docker compose down`, removes a volume, drops a
 database, or restores legacy data.
@@ -65,7 +72,11 @@ After all smoke checks pass, the executor writes a mode-`0600` JSON record under
 - the runtime grant SHA-256;
 - a deterministic database-compatibility SHA-256 covering both migration
   directories and `infra/postgres/grant-runtime.sql`;
-- exact local image IDs for Gateway, User, Event, and web;
+- a runtime-infrastructure compatibility SHA-256 covering the Compose
+  definitions, provider sink, custom Redis image/startup, and internal TLS
+  configuration;
+- exact local image IDs for Gateway, User, Event, web, provider sink, custom
+  Redis, and internal TLS;
 - public and mobile Gateway origins;
 - the executed smoke checks;
 - the availability state of provider-backed enrichment.
@@ -75,21 +86,22 @@ A mismatch fails closed before a later deploy or rollback.
 
 ## Rollback compatibility
 
-Rollback changes code images only. It does not reverse migrations, grants, or
-data.
+Rollback changes only the code/runtime images and configuration selected by
+the compatible target release. It does not reverse migrations, grants, or data.
 
 The current executor deliberately supports only the smallest provably safe
 case: the previous code, current database release, and target release must have
-an identical database-compatibility digest and runtime-grant digest. A forward
-deploy with an existing release writes an immutable
-`identical-database-contract` proof for the exact
+identical database-compatibility, runtime-grant, and runtime-infrastructure
+digests. A forward deploy with an existing release writes an immutable
+`identical-database-and-runtime-contract` proof for the exact
 `fromReleaseId`/`toReleaseId`/`databaseReleaseId` tuple before any public route
 or runtime is changed.
 
-If migrations or grants differ, the forward deploy stops with:
+If migrations, grants, or runtime infrastructure differ, the forward deploy
+stops with:
 
 ```text
-Forward deploy changes the database contract; richer rollback evidence is required
+Forward deploy changes the database or runtime infrastructure contract; richer rollback evidence is required
 ```
 
 That path must not be bypassed. A future schema-changing release needs a richer
@@ -102,11 +114,14 @@ Before rollback mutates Caddy, images, or services, it validates:
 2. the active database release checkout;
 3. the stored and recomputed grant digest;
 4. the stored and recomputed database-compatibility digest;
-5. the immutable proof written by the forward deploy.
+5. the stored and recomputed runtime-infrastructure digest;
+6. the immutable proof written by the forward deploy.
 
-Only then does it restore Gateway first, followed by Event API/workers and User
-API/workers, run the same smoke contract, and record the resulting code release
-with the still-current database release.
+Only then does it recreate the target release's custom Redis, provider sink,
+and internal TLS containers without removing their volumes. It verifies the
+Typesense search-only key, then restores Gateway, followed by Event API/workers
+and User API/workers, runs the same smoke contract, and records the resulting
+code release with the still-current database release.
 
 ## Public association files and optional providers
 

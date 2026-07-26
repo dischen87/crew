@@ -350,7 +350,38 @@ jobs:
               "
             )"
             test "$runtime_default_acl_count" -eq 0
-            docker compose --profile tools run --no-deps --rm -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+            for auth_run_id in 000000000000000000000001 000000000000000000000002; do
+              for scenario in golf-tour team-event; do
+                docker compose --profile tools run --no-deps --rm \
+                  -e CREW_FIXTURE_AUTH_RUN_ID="${auth_run_id}" \
+                  -e CREW_FIXTURE_ATTACHMENT_E2E=1 \
+                  -e CREW_FIXTURE_SCENARIO="${scenario}" fixture-bootstrap
+              done
+              if [ "$auth_run_id" = 000000000000000000000001 ]; then
+                expired_user_fixture_keys="$(
+                  docker compose exec -T postgres psql --username crew_local_admin --dbname crew_user --tuples-only --no-align --command "
+                    WITH deleted AS (
+                      DELETE FROM user_idempotency_records
+                      WHERE idempotency_key LIKE 'fixture.%'
+                      RETURNING 1
+                    )
+                    SELECT count(*) FROM deleted
+                  "
+                )"
+                test "$expired_user_fixture_keys" -gt 0
+                expired_event_fixture_keys="$(
+                  docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command "
+                    WITH deleted AS (
+                      DELETE FROM event_idempotency_records
+                      WHERE idempotency_key LIKE 'fixture.%'
+                      RETURNING 1
+                    )
+                    SELECT count(*) FROM deleted
+                  "
+                )"
+                test "$expired_event_fixture_keys" -gt 0
+              fi
+            done
             worker_logs="$(docker compose logs --no-color magic-worker push-worker attachment-worker notification-worker recap-retention-worker)"
             ! grep -Eq 'worker tick failed|permission denied' <<<"$worker_logs"
           }

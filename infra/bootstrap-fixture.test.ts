@@ -190,6 +190,10 @@ describe("local API fixture bootstrap", () => {
 		let golfRoundSetup: Record<string, unknown> | undefined;
 		let golfScoreApplied = false;
 		let golfLiveFeed: Record<string, unknown> | undefined;
+		let currentProfile: typeof user.profile | typeof updatedProfile =
+			user.profile;
+		let rootCreated = false;
+		let rootPublished = false;
 		const fetcher = async (
 			input: string | URL | Request,
 			init?: RequestInit,
@@ -215,6 +219,17 @@ describe("local API fixture bootstrap", () => {
 			}
 			if (key === "POST /core/v1/auth/magic-links") {
 				expect(headers.get("Authorization")).toBeNull();
+				const identity =
+					body?.email === user.email
+						? ""
+						: body?.email === organizerUser.email
+							? "organizer."
+							: "participant.";
+				expect(headers.get("Idempotency-Key")).toMatch(
+					new RegExp(
+						`^fixture\\.${identity}auth\\.start\\.run-[a-f0-9]{24}\\.v1$`,
+					),
+				);
 				return json({ accepted: true }, replay, 202);
 			}
 			if (key === "POST /core/v1/auth/magic-links/redeem") {
@@ -240,12 +255,15 @@ describe("local API fixture bootstrap", () => {
 					replay,
 				);
 			}
-			if (key === "GET /core/v1/me") return json(user);
+			if (key === "GET /core/v1/me")
+				return json({ ...user, profile: currentProfile });
 			if (key === "PATCH /core/v1/me") {
 				expect(body?.baseVersion).toBe(1);
+				if (!replay) currentProfile = updatedProfile;
 				return json(updatedProfile, replay);
 			}
 			if (key === "POST /core/v1/event-roots") {
+				expect(headers.get("Idempotency-Key")).toBe("fixture.event.create.v1");
 				expect(body?.status).toBe("draft");
 				expect(body?.template).toEqual({
 					id: "golf-tour",
@@ -257,6 +275,7 @@ describe("local API fixture bootstrap", () => {
 						round: eventIds[3],
 					},
 				});
+				if (!replay) rootCreated = true;
 				return json(createdRoot, replay, 201);
 			}
 			if (key === "GET /core/v1/places/search") {
@@ -388,10 +407,16 @@ describe("local API fixture bootstrap", () => {
 				if (!replay) memberships.push(membership);
 				return json({ membership }, replay);
 			}
+			if (
+				key === `GET /core/v1/event-roots/${eventIds[0]}/events/${eventIds[0]}`
+			) {
+				return json({ event: { status: "draft" } });
+			}
 			if (key.endsWith("/publish-readiness")) {
 				return json({ ready: true, rootVersion: 1, rootRevision: "47" });
 			}
 			if (key.endsWith("/publish")) {
+				if (!replay) rootPublished = true;
 				return json({ event: { status: "published" } }, replay);
 			}
 			if (key === `POST /core/v1/event-roots/${eventIds[0]}/feed`) {
@@ -690,15 +715,26 @@ describe("local API fixture bootstrap", () => {
 				});
 			}
 			if (key === `GET /core/v1/event-roots/${eventIds[0]}`) {
-				return json({ ...root, rootRevision: "48" });
+				if (!rootCreated) return json({ error: "not_found" }, false, 404);
+				return json({
+					...root,
+					rootRevision: "48",
+					events: root.events.map((event) => ({
+						...event,
+						status: rootPublished ? "published" : "draft",
+					})),
+				});
 			}
 			throw new Error(`Unexpected fixture request ${key}`);
 		};
 
-		const result = await bootstrapFixture(config, {
-			fetch: echoRequestIds(fetcher),
-			sleep: async () => {},
-		});
+		const result = await bootstrapFixture(
+			{ ...config, authRunId: "0123456789abcdef01234567" },
+			{
+				fetch: echoRequestIds(fetcher),
+				sleep: async () => {},
+			},
+		);
 		expect(result).toEqual({
 			userId: user.id,
 			rootEventId: "evt_local_turkey_golf_2026",
@@ -706,6 +742,12 @@ describe("local API fixture bootstrap", () => {
 			organizerUserId: organizerUser.id,
 			participantUserId: participantUser.id,
 		});
+		expect(
+			await bootstrapFixture(
+				{ ...config, authRunId: "1123456789abcdef01234567" },
+				{ fetch: echoRequestIds(fetcher), sleep: async () => {} },
+			),
+		).toEqual(result);
 		expect(createdEvents).toHaveLength(4);
 		expect(places).toHaveLength(9);
 		expect(itinerary).toHaveLength(11);
@@ -737,6 +779,10 @@ describe("local API fixture bootstrap", () => {
 		let venue: Record<string, unknown> | undefined;
 		let decision: Record<string, unknown> | undefined;
 		let participantFeed: Record<string, unknown> | undefined;
+		let currentProfile: typeof teamUser.profile | typeof updatedProfile =
+			teamUser.profile;
+		let rootCreated = false;
+		let rootPublished = false;
 		const memberships: Record<string, unknown>[] = [
 			{ userId: teamUser.id, role: "owner", status: "active" },
 		];
@@ -778,10 +824,10 @@ describe("local API fixture bootstrap", () => {
 			if (key === "POST /core/v1/auth/magic-links") {
 				const email = String(body?.email);
 				expect([teamUser.email, teamParticipantUser.email]).toContain(email);
-				expect(headers.get("Idempotency-Key")).toBe(
+				expect(headers.get("Idempotency-Key")).toMatch(
 					email === teamUser.email
-						? "fixture.team.auth.start.v1"
-						: "fixture.team.participant.auth.start.v1",
+						? /^fixture\.team\.auth\.start\.run-[a-f0-9]{24}\.v1$/
+						: /^fixture\.team\.participant\.auth\.start\.run-[a-f0-9]{24}\.v1$/,
 				);
 				return json({ accepted: true }, replay, 202);
 			}
@@ -798,8 +844,10 @@ describe("local API fixture bootstrap", () => {
 					replay,
 				);
 			}
-			if (key === "GET /core/v1/me") return json(teamUser);
+			if (key === "GET /core/v1/me")
+				return json({ ...teamUser, profile: currentProfile });
 			if (key === "PATCH /core/v1/me") {
+				if (!replay) currentProfile = updatedProfile;
 				return json({ ...updatedProfile, email: teamUser.email }, replay);
 			}
 			if (key === "POST /core/v1/event-roots") {
@@ -813,6 +861,7 @@ describe("local API fixture bootstrap", () => {
 						activity: teamEventIds[2],
 					},
 				});
+				if (!replay) rootCreated = true;
 				return json(
 					{ event: { id: teamRootEventId, rootEventId: teamRootEventId } },
 					replay,
@@ -886,18 +935,25 @@ describe("local API fixture bootstrap", () => {
 				return json({ entry: body }, replay, 201);
 			}
 			if (
+				key ===
+				`GET /core/v1/event-roots/${teamRootEventId}/events/${teamRootEventId}`
+			) {
+				return json({ event: { status: "draft" } });
+			}
+			if (
 				key === `GET /core/v1/event-roots/${teamRootEventId}/publish-readiness`
 			) {
 				return json({ ready: true, rootVersion: 1, rootRevision: "37" });
 			}
 			if (key === `POST /core/v1/event-roots/${teamRootEventId}/publish`) {
 				expect(body).toEqual({ baseVersion: 1, baseRevision: "37" });
+				if (!replay) rootPublished = true;
 				return json({ event: { status: "published" } }, replay);
 			}
 			if (key === "GET /core/v1/sync/bootstrap") {
-				expect(headers.get("Authorization")).toBe(
-					`Bearer ${teamParticipantAccessToken}`,
-				);
+				const participantRead =
+					headers.get("Authorization") ===
+					`Bearer ${teamParticipantAccessToken}`;
 				return json({
 					protocolVersion: 1,
 					rootEventId: teamRootEventId,
@@ -910,12 +966,118 @@ describe("local API fixture bootstrap", () => {
 							entityType: "membership",
 							data,
 						})),
+						{
+							entityType: "invitation",
+							data: { id: "inv_local_team_day_participant" },
+						},
+						...(venue ? [{ entityType: "place", data: venue }] : []),
+						{
+							entityType: "capability",
+							data: {
+								rootEventId: teamRootEventId,
+								eventId: teamRootEventId,
+								type: "team",
+								schemaVersion: 1,
+							},
+						},
+						...agendaItems.map((data) => ({
+							entityType: "itineraryItem",
+							data,
+						})),
+						{
+							entityType: "teamAssignmentSet",
+							data: {
+								eventId: teamRootEventId,
+								teams: [{ id: "ttm_lavender" }, { id: "ttm_mint" }],
+							},
+						},
+						...(participantRead
+							? []
+							: [
+									{
+										entityType: "teamAssignmentRoster",
+										data: {
+											eventId: teamRootEventId,
+											teams: [
+												{
+													id: "ttm_lavender",
+													memberUserIds: [teamUser.id],
+												},
+												{
+													id: "ttm_mint",
+													memberUserIds: [teamParticipantUser.id],
+												},
+											],
+										},
+									},
+								]),
+						{
+							entityType: "teamAssignment",
+							data: {
+								eventId: teamRootEventId,
+								team: {
+									id: participantRead ? "ttm_mint" : "ttm_lavender",
+								},
+							},
+						},
+						{
+							entityType: "teamDecision",
+							data: {
+								id: "tdc_local_team_day_lunch",
+								eventId: teamRootEventId,
+								state: "open",
+								options: [{ id: "tdo_fish" }, { id: "tdo_vegetarian" }],
+							},
+						},
 					],
 					syncCursor: "fixture-team-sync-cursor",
 					pageInfo: { hasMore: false, nextCursor: null },
 				});
 			}
 			if (key === "POST /core/v1/sync/push") {
+				if (headers.get("Authorization") === `Bearer ${accessToken}`) {
+					const mutations =
+						(body?.mutations as Record<string, unknown>[] | undefined) ?? [];
+					expect(mutations.map(({ kind }) => kind)).toEqual([
+						"team.assignments.publish",
+						"team.decision.replace",
+					]);
+					return json(
+						{
+							protocolVersion: 1,
+							rootEventId: teamRootEventId,
+							deviceId: body?.deviceId,
+							results: [
+								{
+									clientMutationId: mutations[0]?.clientMutationId,
+									clientSequence: 1,
+									outcome: "applied",
+									replayed: false,
+									rootRevision: "39",
+									entity: {
+										entityType: "teamAssignmentSet",
+										entityId: teamRootEventId,
+										version: 1,
+									},
+								},
+								{
+									clientMutationId: mutations[1]?.clientMutationId,
+									clientSequence: 2,
+									outcome: "applied",
+									replayed: false,
+									rootRevision: "40",
+									entity: {
+										entityType: "teamDecision",
+										entityId: "tdc_local_team_day_lunch",
+										version: 1,
+									},
+								},
+							],
+							nextExpectedClientSequence: 3,
+						},
+						replay,
+					);
+				}
 				expect(headers.get("Authorization")).toBe(
 					`Bearer ${teamParticipantAccessToken}`,
 				);
@@ -1013,10 +1175,14 @@ describe("local API fixture bootstrap", () => {
 				});
 			}
 			if (key === `GET /core/v1/event-roots/${teamRootEventId}`) {
+				if (!rootCreated) return json({ error: "not_found" }, false, 404);
 				return json({
 					rootEventId: teamRootEventId,
 					rootRevision: "37",
-					events: teamEventIds.map((id) => ({ id })),
+					events: teamEventIds.map((id) => ({
+						id,
+						status: rootPublished ? "published" : "draft",
+					})),
 					capabilities: [
 						{
 							rootEventId: teamRootEventId,
@@ -1037,7 +1203,11 @@ describe("local API fixture bootstrap", () => {
 		};
 
 		const result = await bootstrapFixture(
-			{ ...config, scenario: "team-event" },
+			{
+				...config,
+				authRunId: "000000000000000000000001",
+				scenario: "team-event",
+			},
 			{ fetch: echoRequestIds(fetcher), sleep: async () => {} },
 		);
 		expect(result).toEqual({
@@ -1046,6 +1216,16 @@ describe("local API fixture bootstrap", () => {
 			eventIds: teamEventIds,
 			participantUserId: teamParticipantUser.id,
 		});
+		expect(
+			await bootstrapFixture(
+				{
+					...config,
+					authRunId: "000000000000000000000002",
+					scenario: "team-event",
+				},
+				{ fetch: echoRequestIds(fetcher), sleep: async () => {} },
+			),
+		).toEqual(result);
 		expect(agendaItems.map((item) => item.title)).toEqual([
 			"Arrival window",
 			"Workshop 1",
@@ -1139,6 +1319,15 @@ describe("local API fixture bootstrap", () => {
 				{ fetch: fetcher },
 			),
 		).rejects.toThrow("not an allowed local");
+		await expect(
+			bootstrapFixture(
+				{ ...config, authRunId: "not-a-24-character-hex-id" },
+				{ fetch: fetcher },
+			),
+		).rejects.toThrow("24 lowercase hex characters");
+		await expect(
+			bootstrapFixture({ ...config, attachmentE2e: true }, { fetch: fetcher }),
+		).rejects.toThrow("attachment E2E requires an auth run ID");
 		expect(called).toBe(false);
 
 		let canceled = false;

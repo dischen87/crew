@@ -429,6 +429,7 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 
 			const result = await bootstrapFixture(
 				{
+					authRunId: "000000000000000000000001",
 					gatewayUrl: "http://api-gateway:3000/core/v1/",
 					providerSinkUrl: "http://provider-sink:3010/",
 					providerSinkFixtureBearer: fixtureBearer,
@@ -462,6 +463,9 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 					decisionEntries: number;
 					participantEntries: number;
 					teamCapabilities: number;
+					teamAssignments: number;
+					teamDecisions: number;
+					teamSystemEntries: number;
 					travelCapabilities: number;
 					publishCommands: number;
 					publishEntries: number;
@@ -481,6 +485,18 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 					(SELECT count(*)::int FROM event_feed_entries WHERE root_event_id = ${result.rootEventId} AND id = 'fed_local_team_day_decisions' AND kind = 'message') AS "decisionEntries",
 					(SELECT count(*)::int FROM event_feed_entries WHERE root_event_id = ${result.rootEventId} AND id = 'fed_local_team_day_participant_android_offline' AND author_user_id = ${result.participantUserId}) AS "participantEntries",
 					(SELECT count(*)::int FROM event_capabilities WHERE root_event_id = ${result.rootEventId} AND capability_type = 'team' AND deleted_at IS NULL) AS "teamCapabilities",
+					(SELECT count(*)::int FROM event_team_assignment_sets WHERE root_event_id = ${result.rootEventId}) AS "teamAssignments",
+					(SELECT count(*)::int FROM event_team_decisions WHERE root_event_id = ${result.rootEventId}) AS "teamDecisions",
+					(SELECT count(*)::int FROM event_feed_entries entry
+						JOIN event_feed_entry_current current
+							ON current.root_event_id = entry.root_event_id
+							AND current.entry_id = entry.id
+						WHERE entry.root_event_id = ${result.rootEventId}
+							AND entry.kind = 'system'
+							AND (
+								position('"type":"team.assignments.published"' in current.body) > 0
+								OR position('"type":"team.decision.opened"' in current.body) > 0
+							)) AS "teamSystemEntries",
 					(SELECT count(*)::int FROM event_capabilities WHERE root_event_id = ${result.rootEventId} AND capability_type IN ('travel', 'golf') AND deleted_at IS NULL) AS "travelCapabilities",
 					(SELECT count(*)::int FROM event_idempotency_records WHERE actor_id = ${result.userId} AND operation_id = 'eventsPublish') AS "publishCommands",
 					(SELECT count(*)::int FROM event_feed_entries entry
@@ -505,6 +521,9 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 				decisionEntries: 1,
 				participantEntries: 1,
 				teamCapabilities: 1,
+				teamAssignments: 1,
+				teamDecisions: 1,
+				teamSystemEntries: 2,
 				travelCapabilities: 0,
 				publishCommands: 1,
 				publishEntries: 1,
@@ -578,6 +597,50 @@ if (!userDatabaseUrl || !eventDatabaseUrl) {
 					requestId,
 				})),
 			);
+
+			const [beforeRepeat] = await eventSql<{ systemPublications: number }[]>`
+				SELECT count(*)::int AS "systemPublications"
+				FROM event_feed_entries
+				WHERE root_event_id = ${result.rootEventId} AND kind = 'system'
+			`;
+			const repeated = await bootstrapFixture(
+				{
+					authRunId: "000000000000000000000002",
+					gatewayUrl: "http://api-gateway:3000/core/v1/",
+					providerSinkUrl: "http://provider-sink:3010/",
+					providerSinkFixtureBearer: fixtureBearer,
+					localFixtureEnabled: true,
+					scenario: "team-event",
+				},
+				{ fetch: fixtureFetch, sleep: async () => {} },
+			);
+			expect(repeated).toEqual(result);
+			const [repeatProof] = await eventSql<
+				{
+					events: number;
+					memberships: number;
+					rootStatus: string;
+					systemPublications: number;
+				}[]
+			>`
+				SELECT
+					(SELECT count(*)::int FROM events WHERE root_event_id = ${result.rootEventId}) AS events,
+					(SELECT count(*)::int FROM event_memberships WHERE root_event_id = ${result.rootEventId} AND status = 'active') AS memberships,
+					(SELECT status FROM events WHERE root_event_id = ${result.rootEventId} AND id = ${result.rootEventId}) AS "rootStatus",
+					(SELECT count(*)::int FROM event_feed_entries WHERE root_event_id = ${result.rootEventId} AND kind = 'system') AS "systemPublications"
+			`;
+			expect(repeatProof).toEqual({
+				events: 8,
+				memberships: 2,
+				rootStatus: "published",
+				systemPublications: beforeRepeat?.systemPublications,
+			});
+			const [authProof] = await userSql<{ runs: number }[]>`
+				SELECT count(*)::int AS runs
+				FROM user_idempotency_records
+				WHERE idempotency_key LIKE ${"fixture.team.%.run-00000000000000000000000%.v1"}
+			`;
+			expect(authProof?.runs).toBe(6);
 		});
 
 		test("persists the deterministic Turkey golf tour with real roles and a playable scorecard", async () => {

@@ -15,6 +15,7 @@ previous_file="${shared_dir}/previous-release"
 database_file="${shared_dir}/database-release"
 grant_file="${shared_dir}/runtime-grant-sha256"
 database_contract_file="${shared_dir}/database-contract-sha256"
+runtime_contract_file="${shared_dir}/runtime-infrastructure-contract-sha256"
 current_record_file="${shared_dir}/current-record"
 lock_file="${shared_dir}/deploy.lock"
 
@@ -52,18 +53,41 @@ hex_secret() {
 	openssl rand -hex 32
 }
 
+environment_value() {
+	local name=$1 count value
+	count=$(grep -c "^${name}=" "${environment_file}" || true)
+	if [[ "${count}" -ne 1 ]]; then
+		echo "Crew staging environment must contain exactly one ${name}" >&2
+		exit 1
+	fi
+	value=$(sed -n "s/^${name}=//p" "${environment_file}")
+	if [[ -z "${value}" ]]; then
+		echo "Crew staging environment ${name} must not be empty" >&2
+		exit 1
+	fi
+	printf '%s\n' "${value}"
+}
+
 ensure_environment() {
+	local typesense_admin_key typesense_search_key
 	if [[ -f "${environment_file}" ]]; then
 		if [[ $(stat -c '%a' "${environment_file}") != 600 ]]; then
 			echo "Crew staging environment file must have mode 0600" >&2
 			exit 1
 		fi
+		typesense_admin_key=$(environment_value TYPESENSE_API_KEY)
+		typesense_search_key=$(environment_value TYPESENSE_SEARCH_API_KEY)
+		if [[ "${typesense_admin_key}" == "${typesense_search_key}" ]]; then
+			echo "Typesense admin and search-only keys must be different" >&2
+			exit 1
+		fi
 		return
 	fi
 
-	local temporary typesense_key
+	local temporary
 	temporary=$(mktemp "${shared_dir}/.environment.XXXXXX")
-	typesense_key=$(hex_secret)
+	typesense_admin_key=$(hex_secret)
+	typesense_search_key=$(hex_secret)
 	{
 		printf 'POSTGRES_ADMIN_PASSWORD=%s\n' "$(hex_secret)"
 		printf 'USER_DB_OWNER_PASSWORD=%s\n' "$(hex_secret)"
@@ -83,8 +107,8 @@ ensure_environment() {
 		printf 'MINIO_API_SECRET_KEY=%s\n' "$(hex_secret)"
 		printf 'MINIO_WORKER_ACCESS_KEY=crewstagingworker\n'
 		printf 'MINIO_WORKER_SECRET_KEY=%s\n' "$(hex_secret)"
-		printf 'TYPESENSE_API_KEY=%s\n' "${typesense_key}"
-		printf 'TYPESENSE_SEARCH_API_KEY=%s\n' "${typesense_key}"
+		printf 'TYPESENSE_API_KEY=%s\n' "${typesense_admin_key}"
+		printf 'TYPESENSE_SEARCH_API_KEY=%s\n' "${typesense_search_key}"
 		printf 'PROVIDER_SINK_BEARER=%s\n' "$(hex_secret)"
 		printf 'PROVIDER_SINK_FIXTURE_BEARER=%s\n' "$(hex_secret)"
 		printf 'REFRESH_TOKEN_KEY=%s\n' "$(base64url)"
@@ -152,12 +176,28 @@ database_contract_sha() {
 	) | sha256sum | cut -d ' ' -f 1
 }
 
+runtime_infrastructure_contract_sha() {
+	local release_dir=$1
+	(
+		cd "${release_dir}"
+		sha256sum \
+			compose.yaml \
+			infra/Dockerfile \
+			infra/provider-sink.ts \
+			infra/redis/Dockerfile \
+			infra/redis/start.sh \
+			infra/staging/compose.staging.yaml \
+			infra/staging/haproxy.cfg
+	) | sha256sum | cut -d ' ' -f 1
+}
+
 runtime_grant_sha() {
 	sha256sum "$1/infra/postgres/grant-runtime.sql" | cut -d ' ' -f 1
 }
 
 validate_record() {
-	local record=$1 release_sha=$2 database_sha=$3 grant_sha=$4 contract_sha=$5
+	local record=$1 release_sha=$2 database_sha=$3 grant_sha=$4
+	local database_contract_sha=$5 runtime_contract_sha=$6
 	[[ "${record}" == "${records_dir}/"* && -f "${record}" ]] ||
 		{
 			echo "Current release record is unavailable" >&2
@@ -166,7 +206,14 @@ validate_record() {
 	grep -Fq "\"releaseId\": \"${release_sha}\"" "${record}"
 	grep -Fq "\"databaseReleaseId\": \"${database_sha}\"" "${record}"
 	grep -Fq "\"runtimeGrantSha256\": \"${grant_sha}\"" "${record}"
-	grep -Fq "\"databaseCompatibilitySha256\": \"${contract_sha}\"" "${record}"
+	grep -Fq \
+		"\"databaseCompatibilitySha256\": \"${database_contract_sha}\"" "${record}"
+	grep -Fq \
+		"\"runtimeInfrastructureCompatibilitySha256\": \"${runtime_contract_sha}\"" \
+		"${record}"
+	for image in provider-sink rate-limit-redis internal-tls; do
+		grep -Eq "\"${image}\": \"sha256:[a-f0-9]{64}\"" "${record}"
+	done
 }
 
 validate_current_state() {
@@ -174,25 +221,35 @@ validate_current_state() {
 	active_database_sha=$(cat "${database_file}" 2>/dev/null || true)
 	active_grant_sha=$(cat "${grant_file}" 2>/dev/null || true)
 	active_contract_sha=$(cat "${database_contract_file}" 2>/dev/null || true)
-	local record database_release_dir
+	active_runtime_contract_sha=$(cat "${runtime_contract_file}" 2>/dev/null || true)
+	local record database_release_dir source_release_dir
 	record=$(cat "${current_record_file}" 2>/dev/null || true)
 	if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]] ||
 		[[ ! "${active_database_sha}" =~ ^[0-9a-f]{40}$ ]] ||
 		[[ ! "${active_grant_sha}" =~ ^[0-9a-f]{64}$ ]] ||
-		[[ ! "${active_contract_sha}" =~ ^[0-9a-f]{64}$ ]]; then
+		[[ ! "${active_contract_sha}" =~ ^[0-9a-f]{64}$ ]] ||
+		[[ ! "${active_runtime_contract_sha}" =~ ^[0-9a-f]{64}$ ]]; then
 		echo "Current release state is incomplete" >&2
 		exit 1
 	fi
 	database_release_dir="${releases_dir}/${active_database_sha}"
+	source_release_dir="${releases_dir}/${source_sha}"
 	if [[ ! -d "${database_release_dir}/.git" ]] ||
 		[[ $(runtime_grant_sha "${database_release_dir}") != "${active_grant_sha}" ]] ||
 		[[ $(database_contract_sha "${database_release_dir}") != "${active_contract_sha}" ]]; then
 		echo "Current database release evidence does not match its immutable checkout" >&2
 		exit 1
 	fi
+	if [[ ! -d "${source_release_dir}/.git" ]] ||
+		[[ $(runtime_infrastructure_contract_sha "${source_release_dir}") != \
+			"${active_runtime_contract_sha}" ]]; then
+		echo "Current runtime infrastructure evidence does not match its immutable checkout" >&2
+		exit 1
+	fi
 	validate_record \
 		"${record}" "${source_sha}" "${active_database_sha}" \
-		"${active_grant_sha}" "${active_contract_sha}"
+		"${active_grant_sha}" "${active_contract_sha}" \
+		"${active_runtime_contract_sha}"
 }
 
 compatibility_proof_path() {
@@ -201,7 +258,8 @@ compatibility_proof_path() {
 }
 
 validate_compatibility_proof() {
-	local proof=$1 from_sha=$2 to_sha=$3 database_sha=$4 grant_sha=$5 contract_sha=$6
+	local proof=$1 from_sha=$2 to_sha=$3 database_sha=$4 grant_sha=$5
+	local database_contract_sha=$6 runtime_contract_sha=$7
 	[[ -f "${proof}" ]] || {
 		echo "Rollback compatibility proof is unavailable" >&2
 		exit 1
@@ -210,18 +268,23 @@ validate_compatibility_proof() {
 	grep -Fq "\"toReleaseId\": \"${to_sha}\"" "${proof}"
 	grep -Fq "\"databaseReleaseId\": \"${database_sha}\"" "${proof}"
 	grep -Fq "\"runtimeGrantSha256\": \"${grant_sha}\"" "${proof}"
-	grep -Fq "\"databaseCompatibilitySha256\": \"${contract_sha}\"" "${proof}"
-	grep -Fq '"kind": "identical-database-contract"' "${proof}"
+	grep -Fq \
+		"\"databaseCompatibilitySha256\": \"${database_contract_sha}\"" "${proof}"
+	grep -Fq \
+		"\"runtimeInfrastructureCompatibilitySha256\": \"${runtime_contract_sha}\"" \
+		"${proof}"
+	grep -Fq '"kind": "identical-database-and-runtime-contract"' "${proof}"
 }
 
 write_compatibility_proof() {
-	local from_sha=$1 to_sha=$2 database_sha=$3 grant_sha=$4 contract_sha=$5
+	local from_sha=$1 to_sha=$2 database_sha=$3 grant_sha=$4
+	local database_contract_sha=$5 runtime_contract_sha=$6
 	local proof temporary
 	proof=$(compatibility_proof_path "${from_sha}" "${to_sha}" "${database_sha}")
 	if [[ -f "${proof}" ]]; then
 		validate_compatibility_proof \
 			"${proof}" "${from_sha}" "${to_sha}" "${database_sha}" \
-			"${grant_sha}" "${contract_sha}"
+			"${grant_sha}" "${database_contract_sha}" "${runtime_contract_sha}"
 		printf '%s\n' "${proof}"
 		return
 	fi
@@ -230,12 +293,13 @@ write_compatibility_proof() {
 		'{' \
 		'  "schemaVersion": 1,' \
 		'  "environment": "staging",' \
-		'  "kind": "identical-database-contract",' \
+		'  "kind": "identical-database-and-runtime-contract",' \
 		"  \"fromReleaseId\": \"${from_sha}\"," \
 		"  \"toReleaseId\": \"${to_sha}\"," \
 		"  \"databaseReleaseId\": \"${database_sha}\"," \
 		"  \"runtimeGrantSha256\": \"${grant_sha}\"," \
-		"  \"databaseCompatibilitySha256\": \"${contract_sha}\"," \
+		"  \"databaseCompatibilitySha256\": \"${database_contract_sha}\"," \
+		"  \"runtimeInfrastructureCompatibilitySha256\": \"${runtime_contract_sha}\"," \
 		"  \"verifiedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" \
 		'}' >"${temporary}"
 	chmod 0600 "${temporary}"
@@ -353,9 +417,76 @@ wait_for_service() {
 	exit 1
 }
 
+ensure_typesense_search_key() {
+	local admin_key search_key search_status create_status key_list_status
+	admin_key=$(environment_value TYPESENSE_API_KEY)
+	search_key=$(environment_value TYPESENSE_SEARCH_API_KEY)
+	if [[ "${admin_key}" == "${search_key}" ]]; then
+		echo "Typesense admin and search-only keys must be different" >&2
+		exit 1
+	fi
+
+	search_status=$(curl --silent --show-error --output /dev/null \
+		--max-time 10 \
+		--write-out '%{http_code}' \
+		--header "X-TYPESENSE-API-KEY: ${search_key}" \
+		"http://127.0.0.1:8108/collections/crew_places/documents/search?q=%2A&query_by=name&per_page=1")
+	if [[ "${search_status}" == 401 || "${search_status}" == 403 ]]; then
+		create_status=$(
+			printf '%s\n' \
+				'{' \
+				'  "description": "Crew place search only",' \
+				'  "actions": ["documents:search"],' \
+				'  "collections": ["crew_places.*"],' \
+				"  \"value\": \"${search_key}\"" \
+				'}' |
+				curl --silent --show-error --output /dev/null \
+					--max-time 10 \
+					--write-out '%{http_code}' \
+					--request POST \
+					--header "X-TYPESENSE-API-KEY: ${admin_key}" \
+					--header "Content-Type: application/json" \
+					--data-binary @- \
+					http://127.0.0.1:8108/keys
+		)
+		if [[ "${create_status}" != 201 ]]; then
+			echo "Typesense search-only key provisioning failed" >&2
+			exit 1
+		fi
+	elif [[ "${search_status}" != 200 && "${search_status}" != 404 ]]; then
+		echo "Typesense search-only key cannot search the Crew collection" >&2
+		exit 1
+	fi
+
+	key_list_status=$(curl --silent --show-error --output /dev/null \
+		--max-time 10 \
+		--write-out '%{http_code}' \
+		--header "X-TYPESENSE-API-KEY: ${search_key}" \
+		http://127.0.0.1:8108/keys)
+	if [[ "${key_list_status}" != 401 && "${key_list_status}" != 403 ]]; then
+		echo "Typesense search-only key unexpectedly has key-management access" >&2
+		exit 1
+	fi
+}
+
+verify_typesense_search_key() {
+	local search_key search_status
+	search_key=$(environment_value TYPESENSE_SEARCH_API_KEY)
+	search_status=$(curl --silent --show-error --output /dev/null \
+		--max-time 10 \
+		--write-out '%{http_code}' \
+		--header "X-TYPESENSE-API-KEY: ${search_key}" \
+		"http://127.0.0.1:8108/collections/crew_places/documents/search?q=%2A&query_by=name&per_page=1")
+	if [[ "${search_status}" != 200 ]]; then
+		echo "Typesense search-only key failed the indexed Crew search probe" >&2
+		exit 1
+	fi
+}
+
 smoke() {
 	local release_dir=$1
-	local readiness openapi
+	local readiness openapi auth_run_id
+	auth_run_id=$(openssl rand -hex 12)
 	readiness=$(curl --fail --silent --show-error --retry 12 \
 		--retry-delay 2 https://staging.crew-haus.com/internal/ready)
 	grep -q '"status":"ready"' <<<"${readiness}"
@@ -371,10 +502,13 @@ smoke() {
 	compose_command "${release_dir}" exec -T event-api bun -e \
 		"const r=await fetch('https://staging.crew-haus.com:8445/health');if(!r.ok)process.exit(1)"
 
-	CREW_FIXTURE_SCENARIO=golf-tour \
-		compose_command "${release_dir}" run --rm --no-deps fixture-bootstrap
-	CREW_FIXTURE_SCENARIO=team-event \
-		compose_command "${release_dir}" run --rm --no-deps fixture-bootstrap
+	compose_command "${release_dir}" run --rm --no-deps \
+		-e CREW_FIXTURE_AUTH_RUN_ID="${auth_run_id}" \
+		-e CREW_FIXTURE_SCENARIO=golf-tour fixture-bootstrap
+	compose_command "${release_dir}" run --rm --no-deps \
+		-e CREW_FIXTURE_AUTH_RUN_ID="${auth_run_id}" \
+		-e CREW_FIXTURE_ATTACHMENT_E2E=1 \
+		-e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
 }
 
 record_release() {
@@ -382,8 +516,9 @@ record_release() {
 	local from_sha=$2
 	local database_sha=$3
 	local compatibility_proof=${4:-}
-	local recorded_at database_release_dir grant_sha contract_sha gateway_image
-	local user_image event_image web_image proof_json record
+	local recorded_at database_release_dir grant_sha contract_sha runtime_contract_sha
+	local gateway_image user_image event_image web_image provider_sink_image
+	local rate_limit_redis_image internal_tls_image proof_json record
 	recorded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 	database_release_dir="${releases_dir}/${database_sha}"
 	if [[ ! "${database_sha}" =~ ^[0-9a-f]{40}$ ]] ||
@@ -393,6 +528,7 @@ record_release() {
 	fi
 	grant_sha=$(runtime_grant_sha "${database_release_dir}")
 	contract_sha=$(database_contract_sha "${database_release_dir}")
+	runtime_contract_sha=$(runtime_infrastructure_contract_sha "${release_dir}")
 	proof_json=null
 	if [[ -n "${compatibility_proof}" ]]; then
 		proof_json="\"$(basename "${compatibility_proof}")\""
@@ -404,6 +540,13 @@ record_release() {
 	event_image=$(docker image inspect "crew-next-event-service:${target_sha}" \
 		--format '{{.Id}}')
 	web_image=$(docker image inspect "crew-next-web:${target_sha}" \
+		--format '{{.Id}}')
+	provider_sink_image=$(docker image inspect "crew-next-infra:${target_sha}" \
+		--format '{{.Id}}')
+	rate_limit_redis_image=$(docker image inspect \
+		"crew-next-rate-limit-redis:${target_sha}" --format '{{.Id}}')
+	internal_tls_image=$(docker image inspect \
+		"haproxy:3.4.2-alpine@sha256:0878b11eb64c433be1b0f578a584b8aca12f6caaa64c8f239b8b556c0dd5eeeb" \
 		--format '{{.Id}}')
 	local temporary="${records_dir}/.${target_sha}.${release_action}.tmp"
 	record="${records_dir}/${recorded_at//:/-}-${release_action}-${target_sha}.json"
@@ -421,14 +564,18 @@ record_release() {
 		'  "features": {"placeEnrichment": "disabled-no-provider-worker"},' \
 		"  \"runtimeGrantSha256\": \"${grant_sha}\"," \
 		"  \"databaseCompatibilitySha256\": \"${contract_sha}\"," \
+		"  \"runtimeInfrastructureCompatibilitySha256\": \"${runtime_contract_sha}\"," \
 		"  \"rollbackCompatibilityProof\": ${proof_json}," \
 		'  "images": {' \
 		"    \"api-gateway\": \"${gateway_image}\"," \
 		"    \"user-service\": \"${user_image}\"," \
 		"    \"event-service\": \"${event_image}\"," \
-		"    \"web\": \"${web_image}\"" \
+		"    \"web\": \"${web_image}\"," \
+		"    \"provider-sink\": \"${provider_sink_image}\"," \
+		"    \"rate-limit-redis\": \"${rate_limit_redis_image}\"," \
+		"    \"internal-tls\": \"${internal_tls_image}\"" \
 		'  },' \
-		'  "smoke": ["ready", "openapi-3.1", "public-web", "https-object-store", "tls-search", "golf-fixture", "team-fixture"]' \
+		'  "smoke": ["ready", "openapi-3.1", "public-web", "https-object-store", "tls-search", "golf-fixture", "team-fixture", "feedback-attachment-e2e"]' \
 		'}' >"${temporary}"
 	chmod 0600 "${temporary}"
 	mv "${temporary}" "${record}"
@@ -438,10 +585,12 @@ record_release() {
 activate_release_state() {
 	local release_sha=$1 database_sha=$2 record=$3
 	local database_release_dir="${releases_dir}/${database_sha}"
+	local release_dir="${releases_dir}/${release_sha}"
 	printf '%s\n' "${release_sha}" >"${current_file}"
 	printf '%s\n' "${database_sha}" >"${database_file}"
 	runtime_grant_sha "${database_release_dir}" >"${grant_file}"
 	database_contract_sha "${database_release_dir}" >"${database_contract_file}"
+	runtime_infrastructure_contract_sha "${release_dir}" >"${runtime_contract_file}"
 	printf '%s\n' "${record}" >"${current_record_file}"
 	ln -sfn "${releases_dir}/${release_sha}" "${deploy_root}/current"
 }
@@ -452,9 +601,11 @@ source_sha=$(cat "${current_file}" 2>/dev/null || true)
 active_database_sha=
 active_grant_sha=
 active_contract_sha=
+active_runtime_contract_sha=
 compatibility_proof=
 target_contract_sha=$(database_contract_sha "${release_dir}")
 target_grant_sha=$(runtime_grant_sha "${release_dir}")
+target_runtime_contract_sha=$(runtime_infrastructure_contract_sha "${release_dir}")
 
 if [[ "${action}" == deploy ]]; then
 	if [[ -n "${source_sha}" ]]; then
@@ -463,14 +614,19 @@ if [[ "${action}" == deploy ]]; then
 		if [[ ! -d "${source_release_dir}/.git" ]] ||
 			[[ $(database_contract_sha "${source_release_dir}") != "${active_contract_sha}" ]] ||
 			[[ "${target_contract_sha}" != "${active_contract_sha}" ]] ||
-			[[ "${target_grant_sha}" != "${active_grant_sha}" ]]; then
-			echo "Forward deploy changes the database contract; richer rollback evidence is required" >&2
+			[[ "${target_grant_sha}" != "${active_grant_sha}" ]] ||
+			[[ "${target_runtime_contract_sha}" != \
+				"${active_runtime_contract_sha}" ]]; then
+			echo "Forward deploy changes the database or runtime infrastructure contract; richer rollback evidence is required" >&2
 			exit 1
 		fi
 		compatibility_proof=$(write_compatibility_proof \
 			"${target_sha}" "${source_sha}" "${target_sha}" \
-			"${target_grant_sha}" "${target_contract_sha}")
-	elif [[ -e "${database_file}" || -e "${current_record_file}" ]]; then
+			"${target_grant_sha}" "${target_contract_sha}" \
+			"${target_runtime_contract_sha}")
+	elif [[ -e "${database_file}" || -e "${grant_file}" ||
+		-e "${database_contract_file}" || -e "${runtime_contract_file}" ||
+		-e "${current_record_file}" ]]; then
 		echo "Greenfield bootstrap state is inconsistent" >&2
 		exit 1
 	fi
@@ -481,15 +637,18 @@ else
 	fi
 	validate_current_state "${source_sha}"
 	if [[ "${target_contract_sha}" != "${active_contract_sha}" ]] ||
-		[[ "${target_grant_sha}" != "${active_grant_sha}" ]]; then
-		echo "Rollback target is not compatible with the active database contract" >&2
+		[[ "${target_grant_sha}" != "${active_grant_sha}" ]] ||
+		[[ "${target_runtime_contract_sha}" != \
+			"${active_runtime_contract_sha}" ]]; then
+		echo "Rollback target is not compatible with the active database or runtime infrastructure contract" >&2
 		exit 1
 	fi
 	compatibility_proof=$(compatibility_proof_path \
 		"${source_sha}" "${target_sha}" "${active_database_sha}")
 	validate_compatibility_proof \
 		"${compatibility_proof}" "${source_sha}" "${target_sha}" \
-		"${active_database_sha}" "${active_grant_sha}" "${active_contract_sha}"
+		"${active_database_sha}" "${active_grant_sha}" "${active_contract_sha}" \
+		"${active_runtime_contract_sha}"
 fi
 
 install_caddy "${release_dir}"
@@ -502,6 +661,7 @@ if [[ "${action}" == deploy ]]; then
 	for service in postgres redis-rate-limit minio typesense provider-sink internal-tls; do
 		wait_for_service "${release_dir}" "${service}"
 	done
+	ensure_typesense_search_key
 
 	for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
 		run_job "${release_dir}" "${job}"
@@ -516,6 +676,7 @@ if [[ "${action}" == deploy ]]; then
 	done
 	run_job "${release_dir}" place-golf-import
 	run_job "${release_dir}" place-search-reindex
+	verify_typesense_search_key
 	smoke "${release_dir}"
 	if [[ -n "${source_sha}" && "${source_sha}" != "${target_sha}" ]]; then
 		printf '%s\n' "${source_sha}" >"${previous_file}"
@@ -524,6 +685,13 @@ if [[ "${action}" == deploy ]]; then
 		deploy "${source_sha}" "${target_sha}" "${compatibility_proof}")
 	activate_release_state "${target_sha}" "${target_sha}" "${release_record}"
 else
+	compose_command "${release_dir}" up -d --no-build --no-deps \
+		--force-recreate redis-rate-limit provider-sink internal-tls
+	for service in redis-rate-limit provider-sink internal-tls; do
+		wait_for_service "${release_dir}" "${service}"
+	done
+	ensure_typesense_search_key
+	verify_typesense_search_key
 	compose_command "${release_dir}" up -d --no-build --no-deps api-gateway
 	wait_for_service "${release_dir}" api-gateway
 	compose_command "${release_dir}" up -d --no-build --no-deps \

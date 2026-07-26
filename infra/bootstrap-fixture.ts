@@ -1,9 +1,13 @@
+import { createHash } from "node:crypto";
+
 type Fetch = (
 	input: string | URL | Request,
 	init?: RequestInit,
 ) => Promise<Response>;
 
 export type FixtureConfig = {
+	attachmentE2e?: boolean;
+	authRunId?: string;
 	gatewayUrl: string;
 	providerSinkUrl: string;
 	providerSinkFixtureBearer: string;
@@ -177,6 +181,10 @@ const teamTemplateEventIds = {
 const teamVenueId = "plc_local_team_day_venue";
 const teamInvitationId = "inv_local_team_day_participant";
 const teamDecisionFeedId = "fed_local_team_day_decisions";
+const teamDecisionId = "tdc_local_team_day_lunch";
+const teamCollaborationDeviceId = "dvc_00000000-0000-4000-8000-000000007401";
+const teamAssignmentsMutationId = "00000000-0000-4000-8000-000000007401";
+const teamDecisionMutationId = "00000000-0000-4000-8000-000000007402";
 const teamParticipantFeedBody =
 	"Participant reconnect check: option B is ready.";
 const LOCAL_HOSTS = new Set([
@@ -326,6 +334,18 @@ export async function bootstrapFixture(
 	const fetcher = options.fetch ?? fetch;
 	const sleep = options.sleep ?? ((milliseconds) => Bun.sleep(milliseconds));
 	const scenario = config.scenario ?? "golf-tour";
+	if (
+		config.authRunId !== undefined &&
+		!/^[a-f0-9]{24}$/.test(config.authRunId)
+	) {
+		throw new Error(
+			"Fixture auth run ID must contain 24 lowercase hex characters",
+		);
+	}
+	if (config.attachmentE2e && !config.authRunId) {
+		throw new Error("Fixture attachment E2E requires an auth run ID");
+	}
+	const attachmentRunId = config.attachmentE2e ? config.authRunId : undefined;
 	const offlineFlowPlatform =
 		config.offlineFlowPlatform === undefined
 			? scenario === "golf-tour"
@@ -335,6 +355,10 @@ export async function bootstrapFixture(
 	const operationPrefix = scenario === "golf-tour" ? "fixture" : "fixture.team";
 	const operationId = (name: string, replay = false) =>
 		`${operationPrefix}.${name}${replay ? ".replay" : ""}.v1`;
+	const authOperationId = (name: string, replay = false) =>
+		`${operationPrefix}.${name}${
+			config.authRunId ? `.run-${config.authRunId}` : ""
+		}${replay ? ".replay" : ""}.v1`;
 	const email = scenario === "golf-tour" ? golfEmail : teamEmail;
 	const rootEventId =
 		scenario === "golf-tour" ? golfRootEventId : teamRootEventId;
@@ -349,7 +373,7 @@ export async function bootstrapFixture(
 		provider,
 		config.providerSinkFixtureBearer,
 		email,
-		operationId,
+		authOperationId,
 		sleep,
 	);
 	const { accessToken, userId } = session;
@@ -365,47 +389,77 @@ export async function bootstrapFixture(
 		profile.version,
 		"user.profile.version",
 	);
-	const profileUpdate = await requestJson(fetcher, gateway, "me", {
-		method: "PATCH",
-		requestId: operationId("me.update"),
-		idempotencyKey: operationId("me.update"),
-		accessToken,
-		body: {
-			baseVersion: profileVersion,
-			changes: {
-				displayName: "Local Crew Organizer",
-				locale: "de-CH",
-				timeZone: "Europe/Zurich",
-			},
-		},
-		expectedStatus: 200,
-	});
-	const profileReplay = await requestJson(fetcher, gateway, "me", {
-		method: "PATCH",
-		requestId: operationId("me.update", true),
-		idempotencyKey: operationId("me.update"),
-		accessToken,
-		body: {
-			baseVersion: profileVersion,
-			changes: {
-				displayName: "Local Crew Organizer",
-				locale: "de-CH",
-				timeZone: "Europe/Zurich",
-			},
-		},
-		expectedStatus: 200,
-	});
-	assertReplay(profileUpdate, profileReplay, "profile update");
-	const updatedProfile = record(profileUpdate.value, "updated profile");
 	if (
-		updatedProfile.displayName !== "Local Crew Organizer" ||
-		requiredPositiveInteger(
-			updatedProfile.version,
-			"updated profile.version",
-		) !==
-			profileVersion + 1
+		profile.displayName !== "Local Crew Organizer" ||
+		profile.locale !== "de-CH" ||
+		profile.timeZone !== "Europe/Zurich"
 	) {
-		throw new Error("Fixture profile update returned an unexpected profile");
+		const changes = {
+			displayName: "Local Crew Organizer",
+			locale: "de-CH",
+			timeZone: "Europe/Zurich",
+		};
+		const profileUpdate = await requestJson(fetcher, gateway, "me", {
+			method: "PATCH",
+			requestId: operationId("me.update"),
+			idempotencyKey: operationId("me.update"),
+			accessToken,
+			body: { baseVersion: profileVersion, changes },
+			expectedStatus: 200,
+		});
+		const profileReplay = await requestJson(fetcher, gateway, "me", {
+			method: "PATCH",
+			requestId: operationId("me.update", true),
+			idempotencyKey: operationId("me.update"),
+			accessToken,
+			body: { baseVersion: profileVersion, changes },
+			expectedStatus: 200,
+		});
+		assertReplay(profileUpdate, profileReplay, "profile update");
+		const updatedProfile = record(profileUpdate.value, "updated profile");
+		if (
+			updatedProfile.displayName !== changes.displayName ||
+			requiredPositiveInteger(
+				updatedProfile.version,
+				"updated profile.version",
+			) !==
+				profileVersion + 1
+		) {
+			throw new Error("Fixture profile update returned an unexpected profile");
+		}
+	}
+
+	const request = fixtureRequest(fetcher, gateway, accessToken);
+	const existing = await request(`event-roots/${rootEventId}`, {
+		method: "GET",
+		requestId: operationId("event.existing.read"),
+		expectedStatus: [200, 404],
+	});
+	if (existing.status === 200) {
+		assertRoot(existing.value, rootEventId, expectedEventIds, scenario);
+		const scenarioMembers = await verifyExistingFixture(
+			request,
+			existing.value,
+			scenario,
+			userId,
+			operationId,
+		);
+		if (scenario === "team-event" && attachmentRunId) {
+			await verifyFeedbackAttachment(
+				fetcher,
+				request,
+				authOperationId,
+				attachmentRunId,
+				rootEventId,
+				sleep,
+			);
+		}
+		return {
+			userId,
+			rootEventId,
+			eventIds: expectedEventIds,
+			...scenarioMembers,
+		};
 	}
 
 	const rootBody =
@@ -465,33 +519,29 @@ export async function bootstrapFixture(
 		| { participantUserId: string }
 		| undefined;
 	if (scenario === "golf-tour") {
-		scenarioMembers = await bootstrapGolfTour(
-			fixtureRequest(fetcher, gateway, accessToken),
-			{
-				fetcher,
-				gateway,
-				provider,
-				providerSinkFixtureBearer: config.providerSinkFixtureBearer,
-				operationId,
-				offlineFlowPlatform,
-				ownerUserId: userId,
-				sleep,
-			},
-		);
+		scenarioMembers = await bootstrapGolfTour(request, {
+			fetcher,
+			gateway,
+			provider,
+			providerSinkFixtureBearer: config.providerSinkFixtureBearer,
+			authOperationId,
+			operationId,
+			offlineFlowPlatform,
+			ownerUserId: userId,
+			sleep,
+		});
 	} else {
-		scenarioMembers = await bootstrapTeamEvent(
-			fixtureRequest(fetcher, gateway, accessToken),
-			{
-				fetcher,
-				gateway,
-				provider,
-				providerSinkFixtureBearer: config.providerSinkFixtureBearer,
-				operationId,
-				offlineFlowPlatform,
-				userId,
-				sleep,
-			},
-		);
+		scenarioMembers = await bootstrapTeamEvent(request, {
+			fetcher,
+			gateway,
+			provider,
+			providerSinkFixtureBearer: config.providerSinkFixtureBearer,
+			authOperationId,
+			operationId,
+			offlineFlowPlatform,
+			userId,
+			sleep,
+		});
 	}
 
 	const readRoot = await requestJson(
@@ -506,6 +556,16 @@ export async function bootstrapFixture(
 		},
 	);
 	assertRoot(readRoot.value, rootEventId, expectedEventIds, scenario);
+	if (scenario === "team-event" && attachmentRunId) {
+		await verifyFeedbackAttachment(
+			fetcher,
+			request,
+			authOperationId,
+			attachmentRunId,
+			rootEventId,
+			sleep,
+		);
+	}
 
 	return {
 		userId,
@@ -519,6 +579,7 @@ type JsonResult = {
 	value: unknown;
 	raw: string;
 	headers: Headers;
+	status: number;
 };
 
 type AuthenticatedFixtureRequest = (
@@ -526,7 +587,7 @@ type AuthenticatedFixtureRequest = (
 	options: {
 		method: string;
 		requestId: string;
-		expectedStatus: number;
+		expectedStatus: number | readonly number[];
 		idempotencyKey?: string;
 		body?: unknown;
 	},
@@ -650,6 +711,21 @@ async function publishFixtureRoot(
 	operationId: OperationId,
 	rootEventId: string,
 ) {
+	const current = record(
+		(
+			await request(`event-roots/${rootEventId}/events/${rootEventId}`, {
+				method: "GET",
+				requestId: operationId("event.publish-state"),
+				expectedStatus: 200,
+			})
+		).value,
+		"current root event",
+	);
+	if (
+		record(current.event, "current root event.event").status === "published"
+	) {
+		return;
+	}
 	const readinessResponse = await request(
 		`event-roots/${rootEventId}/publish-readiness`,
 		{
@@ -691,6 +767,7 @@ async function publishFixtureRoot(
 async function bootstrapGolfTour(
 	request: AuthenticatedFixtureRequest,
 	context: {
+		authOperationId: OperationId;
 		fetcher: Fetch;
 		gateway: URL;
 		provider: URL;
@@ -1116,7 +1193,7 @@ async function bootstrapGolfTour(
 			context.provider,
 			context.providerSinkFixtureBearer,
 			email,
-			(name, replay) => context.operationId(`${role}.${name}`, replay),
+			(name, replay) => context.authOperationId(`${role}.${name}`, replay),
 			context.sleep,
 		);
 	const organizer = await memberSession("organizer", golfOrganizerEmail);
@@ -1523,6 +1600,7 @@ async function bootstrapGolfTour(
 async function bootstrapTeamEvent(
 	request: AuthenticatedFixtureRequest,
 	context: {
+		authOperationId: OperationId;
 		fetcher: Fetch;
 		gateway: URL;
 		provider: URL;
@@ -1683,7 +1761,7 @@ async function bootstrapTeamEvent(
 		context.provider,
 		context.providerSinkFixtureBearer,
 		teamParticipantEmail,
-		(name, replay) => context.operationId(`participant.${name}`, replay),
+		(name, replay) => context.authOperationId(`participant.${name}`, replay),
 		context.sleep,
 	);
 	const participantRequest = fixtureRequest(
@@ -1757,6 +1835,96 @@ async function bootstrapTeamEvent(
 		},
 	});
 	await publishFixtureRoot(request, context.operationId, teamRootEventId);
+	const collaboration = record(
+		await write("sync/push", {
+			name: "team.collaboration.publish",
+			method: "POST",
+			expectedStatus: 200,
+			body: {
+				protocolVersion: 1,
+				rootEventId: teamRootEventId,
+				deviceId: teamCollaborationDeviceId,
+				mutations: [
+					{
+						clientMutationId: teamAssignmentsMutationId,
+						clientSequence: 1,
+						kind: "team.assignments.publish",
+						entityId: teamRootEventId,
+						baseVersion: 0,
+						payload: {
+							eventId: teamRootEventId,
+							teams: [
+								{
+									id: "ttm_lavender",
+									name: "Lavendel",
+									color: "#D5C2E8",
+									memberUserIds: [context.userId],
+								},
+								{
+									id: "ttm_mint",
+									name: "Mint",
+									color: "#C2E8D5",
+									memberUserIds: [participant.userId],
+								},
+							],
+						},
+					},
+					{
+						clientMutationId: teamDecisionMutationId,
+						clientSequence: 2,
+						kind: "team.decision.replace",
+						entityId: teamDecisionId,
+						baseVersion: 0,
+						payload: {
+							eventId: teamRootEventId,
+							title: "Was essen wir zum Abschluss?",
+							state: "open",
+							options: [
+								{ id: "tdo_fish", label: "Fisch" },
+								{ id: "tdo_vegetarian", label: "Vegetarisch" },
+							],
+						},
+					},
+				],
+			},
+		}),
+		"team collaboration",
+	);
+	const collaborationResults = records(
+		collaboration.results,
+		"team collaboration.results",
+	);
+	const assignmentsResult = collaborationResults[0];
+	const decisionResult = collaborationResults[1];
+	const assignmentsEntity = record(
+		assignmentsResult?.entity,
+		"team collaboration assignments",
+	);
+	const decisionEntity = record(
+		decisionResult?.entity,
+		"team collaboration decision",
+	);
+	if (
+		collaboration.protocolVersion !== 1 ||
+		collaboration.rootEventId !== teamRootEventId ||
+		collaboration.deviceId !== teamCollaborationDeviceId ||
+		collaboration.nextExpectedClientSequence !== 3 ||
+		collaborationResults.length !== 2 ||
+		assignmentsResult?.clientMutationId !== teamAssignmentsMutationId ||
+		assignmentsResult.outcome !== "applied" ||
+		assignmentsResult.replayed !== false ||
+		assignmentsEntity.entityType !== "teamAssignmentSet" ||
+		assignmentsEntity.entityId !== teamRootEventId ||
+		assignmentsEntity.version !== 1 ||
+		decisionResult?.clientMutationId !== teamDecisionMutationId ||
+		decisionResult.outcome !== "applied" ||
+		decisionResult.replayed !== false ||
+		decisionEntity.entityType !== "teamDecision" ||
+		decisionEntity.entityId !== teamDecisionId ||
+		decisionEntity.version !== 1
+	) {
+		throw new Error("Fixture team collaboration did not apply");
+	}
 
 	const participantFlow = context.offlineFlowPlatform
 		? requiredOfflineFlow("team-event", context.offlineFlowPlatform)
@@ -1862,6 +2030,218 @@ async function bootstrapTeamEvent(
 	return { participantUserId: participant.userId };
 }
 
+async function verifyFeedbackAttachment(
+	fetcher: Fetch,
+	request: AuthenticatedFixtureRequest,
+	runOperationId: OperationId,
+	runId: string,
+	rootEventId: string,
+	sleep: (milliseconds: number) => Promise<void>,
+) {
+	const feedbackId = `fbk_fixture_team_${runId}`;
+	const attachmentId = `att_fixture_team_${runId}`;
+	const png = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+		"base64",
+	);
+	const digest = createHash("sha256").update(png).digest("hex");
+	const prepared = record(
+		await replayWriter(request, runOperationId)(
+			`event-roots/${rootEventId}/attachments/uploads`,
+			{
+				name: "attachment.prepare",
+				method: "POST",
+				expectedStatus: 201,
+				body: {
+					attachmentId,
+					target: { kind: "feedback", feedbackId },
+					contentType: "image/png",
+					byteCount: png.byteLength,
+					sha256: digest,
+				},
+			},
+		),
+		"feedback attachment prepare",
+	);
+	const upload = record(prepared.upload, "feedback attachment upload");
+	const uploadId = requiredString(upload.id, "feedback attachment upload ID");
+	if (
+		upload.attachmentId !== attachmentId ||
+		upload.rootEventId !== rootEventId ||
+		upload.contentType !== "image/png" ||
+		upload.byteCount !== png.byteLength ||
+		upload.sha256 !== digest ||
+		upload.state !== "prepared" ||
+		record(upload.target, "feedback attachment target").feedbackId !==
+			feedbackId
+	) {
+		throw new Error("Fixture feedback attachment prepare is invalid");
+	}
+	const grant = record(prepared.grant, "feedback attachment upload grant");
+	const uploadUrl = fixtureObjectUrl(grant.url, "upload");
+	const grantFields = boundedStringRecord(
+		grant.fields,
+		"feedback attachment upload fields",
+		32,
+	);
+	if (
+		grant.method !== "POST" ||
+		!grantFields["Content-Type"] ||
+		!isFutureDate(grant.expiresAt, "upload grant expiry")
+	) {
+		throw new Error("Fixture feedback attachment upload grant is invalid");
+	}
+	const form = new FormData();
+	for (const [name, value] of Object.entries(grantFields)) {
+		form.append(name, value);
+	}
+	form.append("file", new Blob([png], { type: "image/png" }), "attachment.png");
+	const uploaded = await fetcher(uploadUrl, {
+		method: "POST",
+		body: form,
+		redirect: "error",
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (uploaded.status !== 204) {
+		await uploaded.body?.cancel();
+		throw new Error(
+			`Fixture feedback attachment upload returned HTTP ${uploaded.status}`,
+		);
+	}
+	await uploaded.body?.cancel();
+
+	const finalizePath = `event-roots/${rootEventId}/attachments/uploads/${uploadId}/finalize`;
+	const finalizeKey = runOperationId("attachment.finalize");
+	let finalized: JsonResult | undefined;
+	for (let attempt = 0; attempt < 60; attempt += 1) {
+		const result = await request(finalizePath, {
+			method: "POST",
+			requestId: runOperationId(`attachment.finalize.attempt-${attempt}`),
+			idempotencyKey: finalizeKey,
+			body: { caption: "Crew staging attachment proof" },
+			expectedStatus: [200, 202],
+		});
+		if (result.status === 200) {
+			finalized = result;
+			break;
+		}
+		await sleep(250);
+	}
+	if (!finalized) {
+		throw new Error("Fixture feedback attachment verification did not finish");
+	}
+	const finalizedReplay = await request(finalizePath, {
+		method: "POST",
+		requestId: runOperationId("attachment.finalize.replay"),
+		idempotencyKey: finalizeKey,
+		body: { caption: "Crew staging attachment proof" },
+		expectedStatus: 200,
+	});
+	assertReplay(finalized, finalizedReplay, "feedback attachment finalize");
+	const attachment = record(
+		record(finalized.value, "feedback attachment finalize").attachment,
+		"feedback attachment",
+	);
+	if (
+		attachment.id !== attachmentId ||
+		attachment.rootEventId !== rootEventId ||
+		attachment.contentType !== "image/png" ||
+		attachment.byteCount !== png.byteLength ||
+		attachment.sha256 !== digest ||
+		attachment.integrityStatus !== "integrity_verified"
+	) {
+		throw new Error("Fixture feedback attachment finalize is invalid");
+	}
+
+	const feedback = record(
+		await replayWriter(request, runOperationId)("feedback", {
+			name: "feedback.create",
+			method: "POST",
+			expectedStatus: 201,
+			body: {
+				id: feedbackId,
+				title: "Attachment pipeline proof",
+				body: "Prepare, upload, verify, bind and download completed.",
+				visibility: "private",
+				rootEventId,
+				eventId: rootEventId,
+				screenKey: "feedback.compose",
+				diagnostics: null,
+				attachmentIds: [attachmentId],
+			},
+		}),
+		"feedback attachment feedback",
+	);
+	const feedbackAttachments = records(
+		record(feedback.feedback, "feedback attachment feedback item").attachments,
+		"feedback attachments",
+	);
+	if (
+		feedbackAttachments.length !== 1 ||
+		feedbackAttachments[0]?.id !== attachmentId ||
+		feedbackAttachments[0].sha256 !== digest
+	) {
+		throw new Error("Fixture feedback attachment binding is invalid");
+	}
+
+	const download = record(
+		(
+			await request(
+				`event-roots/${rootEventId}/attachments/${attachmentId}/download`,
+				{
+					method: "GET",
+					requestId: runOperationId("attachment.download"),
+					expectedStatus: 200,
+				},
+			)
+		).value,
+		"feedback attachment download",
+	);
+	const downloadGrant = record(
+		download.download,
+		"feedback attachment download grant",
+	);
+	const downloadUrl = fixtureObjectUrl(downloadGrant.url, "download");
+	const downloadHeaders = boundedStringRecord(
+		downloadGrant.headers,
+		"feedback attachment download headers",
+		16,
+	);
+	if (
+		downloadGrant.method !== "GET" ||
+		!isFutureDate(downloadGrant.expiresAt, "download grant expiry")
+	) {
+		throw new Error("Fixture feedback attachment download grant is invalid");
+	}
+	const downloaded = await fetcher(downloadUrl, {
+		method: "GET",
+		headers: downloadHeaders,
+		redirect: "error",
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (downloaded.status !== 200) {
+		await downloaded.body?.cancel();
+		throw new Error(
+			`Fixture feedback attachment download returned HTTP ${downloaded.status}`,
+		);
+	}
+	const declaredLength = downloaded.headers.get("content-length");
+	if (
+		declaredLength !== null &&
+		(!/^\d+$/.test(declaredLength) || Number(declaredLength) !== png.byteLength)
+	) {
+		await downloaded.body?.cancel();
+		throw new Error("Fixture feedback attachment download size is invalid");
+	}
+	const downloadedBytes = new Uint8Array(await downloaded.arrayBuffer());
+	if (
+		downloadedBytes.byteLength !== png.byteLength ||
+		createHash("sha256").update(downloadedBytes).digest("hex") !== digest
+	) {
+		throw new Error("Fixture feedback attachment download hash is invalid");
+	}
+}
+
 async function requestJson(
 	fetcher: Fetch,
 	baseUrl: URL,
@@ -1869,7 +2249,7 @@ async function requestJson(
 	options: {
 		method: string;
 		requestId: string;
-		expectedStatus: number;
+		expectedStatus: number | readonly number[];
 		idempotencyKey?: string;
 		accessToken?: string;
 		body?: unknown;
@@ -1902,7 +2282,11 @@ async function requestJson(
 			`Fixture ${options.method} ${path} did not echo the request ID`,
 		);
 	}
-	if (response.status !== options.expectedStatus) {
+	const expectedStatuses =
+		typeof options.expectedStatus === "number"
+			? [options.expectedStatus]
+			: options.expectedStatus;
+	if (!expectedStatuses.includes(response.status)) {
 		await response.body?.cancel();
 		throw new Error(
 			`Fixture ${options.method} ${path} returned HTTP ${response.status}`,
@@ -1914,7 +2298,12 @@ async function requestJson(
 		`Fixture ${options.method} ${path}`,
 	);
 	try {
-		return { value: JSON.parse(raw), raw, headers: response.headers };
+		return {
+			value: JSON.parse(raw),
+			raw,
+			headers: response.headers,
+			status: response.status,
+		};
 	} catch {
 		throw new Error(`Fixture ${options.method} ${path} returned invalid JSON`);
 	}
@@ -2064,6 +2453,129 @@ function assertRoot(
 	) {
 		throw new Error("Fixture team capability metadata is invalid");
 	}
+}
+
+async function verifyExistingFixture(
+	request: AuthenticatedFixtureRequest,
+	rootValue: unknown,
+	scenario: FixtureScenario,
+	ownerUserId: string,
+	operationId: OperationId,
+) {
+	const rootEventId =
+		scenario === "golf-tour" ? golfRootEventId : teamRootEventId;
+	const rootEvents = records(
+		record(rootValue, "existing root").events,
+		"events",
+	);
+	if (rootEvents.some((event) => event.status !== "published")) {
+		throw new Error("Existing fixture root is not published");
+	}
+	const [membershipResult, snapshotResult] = await Promise.all([
+		request(`event-roots/${rootEventId}/memberships?limit=50`, {
+			method: "GET",
+			requestId: operationId("existing.memberships.read"),
+			expectedStatus: 200,
+		}),
+		request(`sync/bootstrap?rootEventId=${rootEventId}&limit=200`, {
+			method: "GET",
+			requestId: operationId("existing.sync.bootstrap"),
+			expectedStatus: 200,
+		}),
+	]);
+	const membershipPage = record(membershipResult.value, "existing memberships");
+	const memberships = records(
+		membershipPage.items,
+		"existing memberships.items",
+	);
+	const expectedRoles =
+		scenario === "golf-tour"
+			? (["owner", "organizer", "participant"] as const)
+			: (["owner", "participant"] as const);
+	if (
+		record(membershipPage.pageInfo, "existing memberships.pageInfo").hasMore !==
+			false ||
+		memberships.length !== expectedRoles.length
+	) {
+		throw new Error("Existing fixture memberships are incomplete");
+	}
+	const userForRole = (role: (typeof expectedRoles)[number]) => {
+		const matches = memberships.filter(
+			(membership) =>
+				membership.role === role && membership.status === "active",
+		);
+		const userId = requiredString(
+			matches[0]?.userId,
+			`existing ${role} user ID`,
+		);
+		if (matches.length !== 1 || !/^usr_[a-f0-9]{32}$/.test(userId)) {
+			throw new Error(`Existing fixture ${role} membership is invalid`);
+		}
+		return userId;
+	};
+	const owner = userForRole("owner");
+	const participantUserId = userForRole("participant");
+	const organizerUserId =
+		scenario === "golf-tour" ? userForRole("organizer") : undefined;
+	if (
+		owner !== ownerUserId ||
+		new Set([owner, participantUserId, organizerUserId].filter(Boolean))
+			.size !== expectedRoles.length
+	) {
+		throw new Error("Existing fixture membership identities are invalid");
+	}
+
+	const snapshot = record(snapshotResult.value, "existing sync bootstrap");
+	const snapshotRecords = records(
+		snapshot.records,
+		"existing sync bootstrap.records",
+	);
+	if (
+		snapshot.protocolVersion !== 1 ||
+		snapshot.rootEventId !== rootEventId ||
+		record(snapshot.pageInfo, "existing sync bootstrap.pageInfo").hasMore !==
+			false
+	) {
+		throw new Error("Existing fixture sync bootstrap is incomplete");
+	}
+	const count = (entityType: string) =>
+		snapshotRecords.filter((item) => item.entityType === entityType).length;
+	const expectedCounts =
+		scenario === "golf-tour"
+			? {
+					event: 8,
+					membership: 3,
+					invitation: 2,
+					place: 9,
+					capability: 8,
+					itineraryItem: 11,
+					golfRound: 1,
+					golfRoster: 1,
+					golfPlayer: 1,
+					golfLeaderboard: 1,
+				}
+			: {
+					event: 8,
+					membership: 2,
+					invitation: 1,
+					place: 1,
+					capability: 1,
+					itineraryItem: 7,
+					teamAssignmentSet: 1,
+					teamAssignmentRoster: 1,
+					teamAssignment: 1,
+					teamDecision: 1,
+				};
+	if (
+		Object.entries(expectedCounts).some(
+			([entityType, expected]) => count(entityType) !== expected,
+		)
+	) {
+		throw new Error("Existing fixture sync records are incomplete");
+	}
+	return organizerUserId
+		? { organizerUserId, participantUserId }
+		: { participantUserId };
 }
 
 function assertCreatedRoot(value: unknown, rootEventId: string) {
@@ -2250,6 +2762,19 @@ function assertTeamParticipantBootstrap(
 			record(item.data, "team participant membership").userId ===
 				participantUserId,
 	);
+	const assignments = record(
+		snapshotRecords.find((item) => item.entityType === "teamAssignmentSet")
+			?.data,
+		"team participant assignments",
+	);
+	const ownAssignment = record(
+		snapshotRecords.find((item) => item.entityType === "teamAssignment")?.data,
+		"team participant own assignment",
+	);
+	const decision = record(
+		snapshotRecords.find((item) => item.entityType === "teamDecision")?.data,
+		"team participant decision",
+	);
 	if (
 		snapshot.protocolVersion !== 1 ||
 		snapshot.rootEventId !== teamRootEventId ||
@@ -2259,7 +2784,19 @@ function assertTeamParticipantBootstrap(
 			(item) =>
 				item.entityType === "event" &&
 				record(item.data, "team participant root").id === teamRootEventId,
-		)
+		) ||
+		assignments.eventId !== teamRootEventId ||
+		records(assignments.teams, "team participant assignments.teams").length !==
+			2 ||
+		ownAssignment.eventId !== teamRootEventId ||
+		record(ownAssignment.team, "team participant own assignment.team").id !==
+			"ttm_mint" ||
+		decision.id !== teamDecisionId ||
+		decision.eventId !== teamRootEventId ||
+		decision.state !== "open" ||
+		records(decision.options, "team participant decision.options").length !==
+			2 ||
+		snapshotRecords.some((item) => item.entityType === "teamAssignmentRoster")
 	) {
 		throw new Error("Fixture team participant bootstrap is incomplete");
 	}
@@ -2590,6 +3127,58 @@ function localUrl(value: string, requiredPath: string) {
 	return url;
 }
 
+function fixtureObjectUrl(value: unknown, purpose: "upload" | "download") {
+	const url = new URL(requiredString(value, `${purpose} grant URL`));
+	const local =
+		url.protocol === "http:" &&
+		url.hostname === "crew-minio.localhost" &&
+		url.port === "9000";
+	const staging =
+		url.protocol === "https:" &&
+		url.hostname === "staging.crew-haus.com" &&
+		url.port === "8444";
+	if (
+		(!local && !staging) ||
+		url.username !== "" ||
+		url.password !== "" ||
+		url.hash !== ""
+	) {
+		throw new Error(`Fixture ${purpose} grant URL is invalid`);
+	}
+	return url;
+}
+
+function boundedStringRecord(
+	value: unknown,
+	name: string,
+	maximumItems: number,
+) {
+	const values = record(value, name);
+	const entries = Object.entries(values);
+	if (
+		entries.length > maximumItems ||
+		entries.some(
+			([key, item]) =>
+				key.length < 1 ||
+				key.length > 256 ||
+				typeof item !== "string" ||
+				item.length > 8_192 ||
+				/[\r\n]/.test(item),
+		)
+	) {
+		throw new Error(`Fixture ${name} is invalid`);
+	}
+	return values as Record<string, string>;
+}
+
+function isFutureDate(value: unknown, name: string) {
+	const date = new Date(requiredString(value, name));
+	if (!Number.isFinite(date.getTime())) {
+		throw new Error(`Fixture ${name} is invalid`);
+	}
+	return date > new Date();
+}
+
 function record(value: unknown, name: string): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error(`Fixture ${name} is invalid`);
@@ -2684,7 +3273,17 @@ if (import.meta.main) {
 			"CREW_FIXTURE_OFFLINE_PLATFORM must be ios, android, or none",
 		);
 	}
+	const attachmentE2e = Bun.env.CREW_FIXTURE_ATTACHMENT_E2E;
+	if (
+		attachmentE2e !== undefined &&
+		attachmentE2e !== "0" &&
+		attachmentE2e !== "1"
+	) {
+		throw new Error("CREW_FIXTURE_ATTACHMENT_E2E must be 0 or 1");
+	}
 	const result = await bootstrapFixture({
+		attachmentE2e: attachmentE2e === "1",
+		authRunId: Bun.env.CREW_FIXTURE_AUTH_RUN_ID,
 		gatewayUrl:
 			Bun.env.FIXTURE_GATEWAY_URL ?? "http://api-gateway:3000/core/v1/",
 		providerSinkUrl:
