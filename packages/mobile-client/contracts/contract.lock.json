@@ -4,10 +4,10 @@
     "name": "api-gateway",
     "source": "../../services/api-gateway/openapi/openapi.json",
     "repositoryPath": "services/api-gateway/openapi/openapi.json",
-    "digest": "sha256:a6fe5a8689c3c46f7a8801a0347752d04148b595824153eb10e3388ac3ddc086",
-    "byteCount": 1283845,
+    "digest": "sha256:51567526d32722544b13246e2a04806021e0cae96839b975941bddb078790156",
+    "byteCount": 1286125,
     "version": "0.2.0",
-    "sourceCommit": "d654b2271f45863d96c644d6d23258379df4087c",
+    "sourceCommit": "060d13ec8abb8ed270bc535362f5da11c32f2acf",
     "sourceState": "committed"
   }
 }

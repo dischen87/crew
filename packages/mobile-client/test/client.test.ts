@@ -637,7 +637,9 @@ describe("GatewayClient request mapping", () => {
 	test("maps candidate selection and validates the bounded enrichment projection", async () => {
 		const seen: Array<{ url: string; init: RequestInit }> = [];
 		const candidateId = `pcd_${"a".repeat(64)}`;
+		const eventId = "evt_setup_round";
 		const placeId = `gpl_${"c".repeat(64)}`;
+		const rootEventId = "evt_setup_root";
 		const jobId = `pej_${"b".repeat(64)}`;
 		const response = {
 			enrichment: {
@@ -668,12 +670,18 @@ describe("GatewayClient request mapping", () => {
 			new MemorySessionStore(oldSession),
 			async (input, init) => {
 				seen.push({ url: String(input), init: init ?? {} });
-				return jsonResponse(202, response);
+				return jsonResponse(init?.method === "GET" ? 200 : 202, response);
 			},
 		);
 
 		const result = await client.request("placeEnrichmentJobsCreate", {
-			body: { target: "candidate", candidateId },
+			body: {
+				rootEventId,
+				eventId,
+				capabilityType: "golf",
+				target: "candidate",
+				candidateId,
+			},
 		});
 
 		expect(result.data).toEqual(response);
@@ -684,7 +692,28 @@ describe("GatewayClient request mapping", () => {
 		expect(headers.get("authorization")).toBe("Bearer access-old-secret");
 		expect(headers.get("idempotency-key")).toBe("idempotency-0001");
 		expect(seen[0]?.init.body).toBe(
-			JSON.stringify({ target: "candidate", candidateId }),
+			JSON.stringify({
+				rootEventId,
+				eventId,
+				capabilityType: "golf",
+				target: "candidate",
+				candidateId,
+			}),
+		);
+
+		await client.request("placeEnrichmentJobsGet", {
+			path: { jobId },
+			query: { rootEventId },
+		});
+		await client.request("placeEnrichmentJobsRetry", {
+			path: { jobId },
+			query: { rootEventId },
+		});
+		expect(seen[1]?.url).toBe(
+			`https://gateway.test/core/v1/places/enrichment-jobs/${jobId}?rootEventId=${rootEventId}`,
+		);
+		expect(seen[2]?.url).toBe(
+			`https://gateway.test/core/v1/places/enrichment-jobs/${jobId}/retry?rootEventId=${rootEventId}`,
 		);
 	});
 
@@ -2126,19 +2155,19 @@ describe("GatewayClient cancellation and diagnostics", () => {
 	test("validated gateway error context includes code, request ID and bounded Retry-After", async () => {
 		const diagnostics: GatewayDiagnostic[] = [];
 		const client = clientWith(
-			new MemorySessionStore(null),
+			new MemorySessionStore(oldSession),
 			async () =>
 				new Response(
 					JSON.stringify({
 						error: {
-							code: "IDEMPOTENCY_KEY_REUSED",
+							code: "PLACE_ENRICHMENT_CAPACITY",
 							message: "ignored raw message",
 							requestId: "ignored-body-request",
 							retryable: true,
 						},
 					}),
 					{
-						status: 429,
+						status: 503,
 						headers: {
 							"Content-Type": "application/json",
 							"Retry-After": "17",
@@ -2150,19 +2179,25 @@ describe("GatewayClient cancellation and diagnostics", () => {
 		);
 
 		const error = (await captured(
-			client.request("identityMagicLinksCreate", {
-				body: { email: "crew@example.com" },
+			client.request("placeEnrichmentJobsCreate", {
+				body: {
+					rootEventId: "evt_setup_root",
+					eventId: "evt_setup_round",
+					capabilityType: "golf",
+					target: "candidate",
+					candidateId: `pcd_${"a".repeat(64)}`,
+				},
 			}),
 		)) as GatewayClientError;
 
 		expect(error).toMatchObject({
-			code: "IDEMPOTENCY_KEY_REUSED",
+			code: "PLACE_ENRICHMENT_CAPACITY",
 			requestId: "request-00000001",
 			retryable: true,
 			retryAfterSeconds: 17,
 		});
 		expect(diagnostics[0]).toMatchObject({
-			code: "IDEMPOTENCY_KEY_REUSED",
+			code: "PLACE_ENRICHMENT_CAPACITY",
 			requestId: "request-00000001",
 			retryAfterSeconds: 17,
 		});

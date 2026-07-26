@@ -297,12 +297,14 @@ test('replays the same place identity after capability conflict and finishes saf
 
 test('uses one stable enrichment command and accepts pending facts before confirmed details', async () => {
   const createRequests: Array<GatewayRequest<'placeEnrichmentJobsCreate'>> = [];
+  const getRequests: Array<GatewayRequest<'placeEnrichmentJobsGet'>> = [];
   const requestAsUser = jest.fn(async (_subject, operationId, options) => {
     if (operationId === 'placeEnrichmentJobsCreate') {
       createRequests.push(options);
       return response(enrichmentProjection('pending', null));
     }
     if (operationId === 'placeEnrichmentJobsGet') {
+      getRequests.push(options);
       return response(enrichmentProjection('succeeded', enrichedPlace()));
     }
     return onlineResponse(operationId, {
@@ -325,14 +327,33 @@ test('uses one stable enrichment command and accepts pending facts before confir
     place: null,
   });
   expect(createRequests).toHaveLength(3);
+  expect(createRequests[0]?.body).toEqual({
+    rootEventId,
+    eventId: roundEventId,
+    capabilityType: 'golf',
+    candidateId: candidate().id,
+    target: 'candidate',
+  });
   expect(createRequests[1]?.headers).toEqual(createRequests[0]?.headers);
   expect(createRequests[2]?.headers).not.toEqual(createRequests[0]?.headers);
+  expect(mockSha256).toHaveBeenCalledWith(
+    JSON.stringify([
+      accountA,
+      rootEventId,
+      roundEventId,
+      'golf',
+      candidate().id,
+      candidate().version,
+      candidate().retrievedAt,
+    ]),
+  );
   await expect(
     runtime.getPlaceEnrichment(placeIntent, candidate(), first.enrichment.id),
   ).resolves.toMatchObject({
     enrichment: { pollAfterSeconds: null, status: 'succeeded' },
     place: { name: 'Alpine Golf Club' },
   });
+  expect(getRequests[0]?.query).toEqual({ rootEventId });
 });
 
 test('retries only an explicitly retryable enrichment with one stable command identity', async () => {
@@ -353,8 +374,17 @@ test('retries only an explicitly retryable enrichment with one stable command id
 
   await runtime.retryPlaceEnrichment(placeIntent, candidate(), retryable);
   await runtime.retryPlaceEnrichment(placeIntent, candidate(), retryable);
-  expect(retryRequests).toHaveLength(2);
+  await runtime.retryPlaceEnrichment(placeIntent, candidate(), {
+    ...retryable,
+    enrichment: {
+      ...retryable.enrichment,
+      updatedAt: '2026-07-20T20:01:00.000Z',
+    },
+  });
+  expect(retryRequests).toHaveLength(3);
   expect(retryRequests[1]?.headers).toEqual(retryRequests[0]?.headers);
+  expect(retryRequests[2]?.headers).not.toEqual(retryRequests[0]?.headers);
+  expect(retryRequests[0]?.query).toEqual({ rootEventId });
   await expect(
     runtime.retryPlaceEnrichment(
       placeIntent,
@@ -364,12 +394,12 @@ test('retries only an explicitly retryable enrichment with one stable command id
   ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
 });
 
-test('keeps candidate binding available when enrichment is disabled', async () => {
+test('keeps candidate binding available when enrichment capacity is exhausted', async () => {
   let placeCreated = false;
   let capabilityBound = false;
   const requestAsUser = jest.fn(async (_subject, operationId, options) => {
     if (operationId === 'placeEnrichmentJobsCreate') {
-      throw serviceUnavailable(operationId);
+      throw enrichmentCapacity(operationId);
     }
     if (operationId === 'eventPlacesCreate') {
       placeCreated = true;
@@ -983,14 +1013,14 @@ function conflict(operationId: string) {
   });
 }
 
-function serviceUnavailable(operationId: string) {
+function enrichmentCapacity(operationId: string) {
   return new GatewayClientError({
-    code: 'SERVICE_UNAVAILABLE',
+    code: 'PLACE_ENRICHMENT_CAPACITY',
     operationId: operationId as 'placeEnrichmentJobsCreate',
     requestId: 'req_enrichment_unavailable',
     retryAfterSeconds: 60,
     retryable: true,
-    status: 503,
+    status: 409,
   });
 }
 

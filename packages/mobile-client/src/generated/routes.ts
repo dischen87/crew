@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:a6fe5a8689c3c46f7a8801a0347752d04148b595824153eb10e3388ac3ddc086. Do not edit.
+ * Pin: sha256:51567526d32722544b13246e2a04806021e0cae96839b975941bddb078790156. Do not edit.
  */
 export type GatewayOperationId = "eventAttachmentsDownload" | "eventAttachmentUploadsFinalize" | "eventAttachmentUploadsPrepare" | "eventCapabilitiesRemove" | "eventCapabilitiesReplace" | "eventChildrenCreate" | "eventChildrenReorder" | "eventFeedbackCommentsCreate" | "eventFeedbackDuplicateSuggestionsList" | "eventFeedbackFollowsSet" | "eventFeedbackGet" | "eventFeedbackList" | "eventFeedbackUpdatesList" | "eventFeedbackVotesSet" | "eventFeedEntriesCreate" | "eventFeedEntriesGet" | "eventFeedEntriesList" | "eventFeedEntriesRemove" | "eventFeedEntriesRevise" | "eventFeedReactionsSet" | "eventInvitationsCreate" | "eventInvitationsList" | "eventInvitationsPreview" | "eventInvitationsRedeem" | "eventInvitationsRevoke" | "eventItineraryItemsCreate" | "eventItineraryItemsList" | "eventItineraryItemsReorder" | "eventItineraryItemsUpdate" | "eventMemberDirectoryGet" | "eventMembershipsList" | "eventMembershipsUpdate" | "eventOwnershipTransfer" | "eventPlacesCreate" | "eventPlacesList" | "eventPlacesUpdate" | "eventPublishReadinessGet" | "eventRecapExternalGrantsDecide" | "eventRecapExternalShareLinksCreate" | "eventRecapExternalShareLinksResolve" | "eventRecapsGenerate" | "eventRecapsGet" | "eventRecapShareLinksCreate" | "eventRecapShareLinksResolve" | "eventRecapShareLinksRevoke" | "eventRecapsPublish" | "eventRecapsRemove" | "eventRootsList" | "eventsArchive" | "eventsCreate" | "eventsDelete" | "eventsGet" | "eventsPublish" | "eventsReparent" | "eventsTreeGet" | "eventsUpdate" | "eventTemplateAdopt" | "eventTemplatesList" | "feedbackCommentsCreate" | "feedbackCreate" | "feedbackDuplicateMark" | "feedbackGet" | "feedbackStatusSet" | "feedbackVotesSet" | "identityMagicLinksCreate" | "identityMagicLinksRedeem" | "identitySessionsRefresh" | "identitySessionsRevoke" | "placeEnrichmentJobsCreate" | "placeEnrichmentJobsGet" | "placeEnrichmentJobsRetry" | "placesSearch" | "syncBootstrapRead" | "syncChangesList" | "syncMutationsApply" | "usersDevicesDelete" | "usersDevicesList" | "usersDevicesUpsert" | "usersMeGet" | "usersMeUpdate" | "usersSessionGet";
 
@@ -13340,7 +13340,9 @@ export const gatewayRoutes: readonly GatewayRoute[] = [
     "pathParameters": [
       "jobId"
     ],
-    "queryParameters": [],
+    "queryParameters": [
+      "rootEventId"
+    ],
     "headerParameters": [],
     "hasJsonBody": false,
     "successResponses": [
@@ -13375,7 +13377,9 @@ export const gatewayRoutes: readonly GatewayRoute[] = [
     "pathParameters": [
       "jobId"
     ],
-    "queryParameters": [],
+    "queryParameters": [
+      "rootEventId"
+    ],
     "headerParameters": [
       "idempotency-key"
     ],

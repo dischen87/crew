@@ -311,6 +311,8 @@ WHERE account_user_id = ? AND root_event_id = ?`,
         JSON.stringify([
           this.#accountUserId,
           intent.rootEventId,
+          intent.eventId,
+          intent.capabilityType,
           candidate.id,
           candidate.version,
           candidate.retrievedAt,
@@ -320,7 +322,13 @@ WHERE account_user_id = ? AND root_event_id = ?`,
         subject,
         'placeEnrichmentJobsCreate',
         {
-          body: { candidateId: candidate.id, target: 'candidate' },
+          body: {
+            rootEventId: intent.rootEventId,
+            eventId: intent.eventId,
+            capabilityType: intent.capabilityType,
+            candidateId: candidate.id,
+            target: 'candidate',
+          },
           headers: {
             'idempotency-key': `place-enrichment-${digest.slice(0, 40)}`,
           },
@@ -335,13 +343,14 @@ WHERE account_user_id = ? AND root_event_id = ?`,
     candidate: EventSetupPlaceCandidate,
     jobId: string,
   ): Promise<EventSetupPlaceEnrichment> {
-    validatePlaceIntent(rawIntent, candidate);
+    const intent = validatePlaceIntent(rawIntent, candidate);
     if (!enrichmentJobPattern.test(jobId)) {
       throw new EventSetupRecoveryUnavailableError();
     }
     return this.#online(async subject => {
       const response = await this.#request(subject, 'placeEnrichmentJobsGet', {
         path: { jobId },
+        query: { rootEventId: intent.rootEventId },
       });
       return placeEnrichmentProjection(response.data, candidate, jobId);
     });
@@ -374,6 +383,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
             'idempotency-key': `place-enrichment-${digest.slice(0, 40)}`,
           },
           path: { jobId: projection.enrichment.id },
+          query: { rootEventId: intent.rootEventId },
         },
       );
       return placeEnrichmentProjection(
@@ -855,7 +865,8 @@ function validateIntent(
 function validatePlaceIntent(
   rawIntent: EventSetupRecoveryIntent,
   candidate: EventSetupPlaceCandidate,
-): EventSetupRecoveryIntent {
+): EventSetupRecoveryIntent &
+  Required<Pick<EventSetupRecoveryIntent, 'capabilityType' | 'eventId'>> {
   const intent = validateIntent(rawIntent);
   if (
     intent.code !== 'EVENT_CAPABILITY_PLACE_REQUIRED' ||
@@ -863,7 +874,8 @@ function validatePlaceIntent(
   ) {
     throw new EventSetupRecoveryUnavailableError();
   }
-  return intent;
+  return intent as EventSetupRecoveryIntent &
+    Required<Pick<EventSetupRecoveryIntent, 'capabilityType' | 'eventId'>>;
 }
 
 function cachedRoot(
@@ -1665,6 +1677,9 @@ function mapGatewayError(error: unknown): Error {
   if (error instanceof GatewayClientError) {
     if (error.code === 'session_changed' || error.code === 'unauthenticated') {
       return new EventSetupRecoveryAccountChangedError();
+    }
+    if (error.code === 'PLACE_ENRICHMENT_CAPACITY') {
+      return new EventSetupRecoveryEnrichmentUnavailableError();
     }
     if (error.status === 403) return new EventSetupRecoveryManagerRequiredError();
     if (error.status === 404) return new EventSetupRecoveryUnavailableError();

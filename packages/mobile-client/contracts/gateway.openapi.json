@@ -12668,6 +12668,24 @@
                   {
                     "type": "object",
                     "properties": {
+                      "rootEventId": {
+                        "type": "string",
+                        "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                      },
+                      "eventId": {
+                        "type": "string",
+                        "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                      },
+                      "capabilityType": {
+                        "type": "string",
+                        "enum": [
+                          "travel",
+                          "lodging",
+                          "transport",
+                          "golf",
+                          "team"
+                        ]
+                      },
                       "target": {
                         "type": "string",
                         "enum": [
@@ -12680,6 +12698,9 @@
                       }
                     },
                     "required": [
+                      "rootEventId",
+                      "eventId",
+                      "capabilityType",
                       "target",
                       "candidateId"
                     ],
@@ -12688,6 +12709,24 @@
                   {
                     "type": "object",
                     "properties": {
+                      "rootEventId": {
+                        "type": "string",
+                        "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                      },
+                      "eventId": {
+                        "type": "string",
+                        "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                      },
+                      "capabilityType": {
+                        "type": "string",
+                        "enum": [
+                          "travel",
+                          "lodging",
+                          "transport",
+                          "golf",
+                          "team"
+                        ]
+                      },
                       "target": {
                         "type": "string",
                         "enum": [
@@ -12712,6 +12751,9 @@
                       }
                     },
                     "required": [
+                      "rootEventId",
+                      "eventId",
+                      "capabilityType",
                       "target",
                       "query",
                       "kind",
@@ -13015,6 +13057,15 @@
             "required": true,
             "name": "jobId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+            },
+            "required": true,
+            "name": "rootEventId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -13023,6 +13074,12 @@
             "headers": {
               "X-Request-ID": {
                 "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
                 "schema": {
                   "type": "string"
                 }
@@ -13243,6 +13300,15 @@
             "required": true,
             "name": "jobId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+            },
+            "required": true,
+            "name": "rootEventId",
+            "in": "query"
           },
           {
             "schema": {
@@ -40624,10 +40690,10 @@
       "sourceState": "committed"
     },
     "event-service": {
-      "digest": "sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad",
+      "digest": "sha256:e3bfde8a5dce4713b15a5ff5c12dce8d061201ef3b6f871254f8a993d2052e77",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": "62400e93ba28da60fbba249535025ed14a43369b",
+      "sourceCommit": "b43b189f4ac2dc32506532af67f38f76681c1f3d",
       "sourceState": "committed"
     }
   }
