@@ -1117,7 +1117,7 @@ verify_reset_source_volumes() {
 
 load_reset_resume_intent() {
 	local requested_id=${CREW_RESET_RESUME_ID:-} identity
-	[[ -n "${requested_id}" ]] || return
+	[[ -n "${requested_id}" ]] || return 0
 	[[ "${reset_staging_data}" == false &&
 		"${requested_id}" =~ ^github-actions-[0-9]+$ ]] || {
 		echo "Crew staging reset resume request is invalid" >&2
@@ -1163,7 +1163,7 @@ PY
 
 reset_guard_normal_release() {
 	local identity reset_id_from_audit completion
-	[[ "${reset_staging_data}" != true ]] || return
+	[[ "${reset_staging_data}" != true ]] || return 0
 	if [[ ! -e "${reset_consumed_file}" && ! -L "${reset_consumed_file}" ]]; then
 		[[ ! -e "${reset_in_progress_file}" ]] || {
 			echo "Crew staging reset marker has no audit record" >&2
@@ -1439,7 +1439,7 @@ PY
 
 enforce_reset_rollback_boundary() {
 	local boundary audit_reset_id
-	[[ -f "${reset_consumed_file}" ]] || return
+	[[ -f "${reset_consumed_file}" ]] || return 0
 	boundary=$(python3 - "${reset_consumed_file}" <<'PY'
 import json
 import re

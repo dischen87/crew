@@ -988,6 +988,13 @@ test("GitHub deploy key is constrained to the current main controller", () => {
 	expect(githubDeploy).toContain("env -i");
 	expect(githubDeploy).toContain("CREW_IMAGE_MANIFEST_SOURCE");
 	expect(githubDeploy).toContain(`CREW_RESET_RESUME_ID="\${reset_resume_id}"`);
+	expect(hostDeploy).toContain(`[[ -n "\${requested_id}" ]] || return 0`);
+	expect(hostDeploy).toContain(
+		`[[ "\${reset_staging_data}" != true ]] || return 0`,
+	);
+	expect(hostDeploy).toContain(
+		`[[ -f "\${reset_consumed_file}" ]] || return 0`,
+	);
 	expect(githubDeploy).toContain(`manifest_dir="\${shared_dir}/manifests"`);
 	expect(githubDeploy).not.toContain("/shared/environment");
 	expect(githubDeploy).not.toContain("eval ");
