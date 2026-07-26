@@ -52,7 +52,10 @@ Current result: **iOS and Android Design-2 behavior accepted; Bead closed.**
   remain reachable. The native confirmation retains readable body copy and
   reachable actions.
 - The unavailable surface uses one vertical scroll path. Text wraps naturally
-  and the action components retain their production minimum target size.
+  and the action components retain their production minimum target size. The
+  2026-07-26 refresh retains the shared base `title` and `body` tokens without
+  a multiplier cap, using iOS push-out line breaking and a four-point extreme
+  Large-Text gutter instead of downshifting typography.
 - Read-only native hierarchy inspection exposed the reading order as title,
   description, status, alert message, Retry, safe exit. Both controls expose
   their labels. No host or simulator VoiceOver setting was changed.

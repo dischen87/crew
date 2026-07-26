@@ -239,7 +239,7 @@ test('maps every non-secret inbound family through declarative navigation', () =
     ['events/evt_root/edit-basics/title', 'EventBasicsEdit'],
     ['events/evt_root/review', 'EventPublish'],
     ['events/evt_root/recover/EVENT_TEMPLATE_REQUIRED', 'EventSetupRecovery'],
-    ['events/evt_root/items/evt_item', 'ItemInbound'],
+    ['events/evt_root/items/iti_item', 'ItemInbound'],
     ['events/evt_root/feed/feed_entry', 'FeedInbound'],
     ['feedback/fdb_item', 'FeedbackInbound'],
     ['events/evt_root/feedback', 'CommunityFeedbackList'],

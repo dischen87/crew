@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +42,8 @@ export function ScreenFrame({
   tone = 'surface',
 }: ScreenFrameProps) {
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const usesLargeTextLayout = fontScale >= 2;
   const hasPanel = Boolean(statusLabel || children);
 
   return (
@@ -60,6 +63,7 @@ export function ScreenFrame({
           automaticallyAdjustKeyboardInsets
           contentContainerStyle={[
             styles.content,
+            usesLargeTextLayout && styles.contentLargeText,
             {
               paddingBottom: Math.max(insets.bottom, spacing.xl),
               paddingTop: Math.max(spacing.md - insets.top, 0),
@@ -86,10 +90,20 @@ export function ScreenFrame({
           </View>
 
           <Text style={styles.eyebrow}>{eyebrow}</Text>
-          <Text accessibilityRole="header" style={styles.title}>
+          <Text
+            accessibilityRole="header"
+            lineBreakStrategyIOS="push-out"
+            style={styles.title}
+          >
             {title}
           </Text>
-          <Text style={styles.description}>{description}</Text>
+          <Text
+            lineBreakStrategyIOS="push-out"
+            style={styles.description}
+            testID="screen-frame-description"
+          >
+            {description}
+          </Text>
 
           {hasPanel ? (
             <Card
@@ -149,6 +163,9 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
+  },
+  contentLargeText: {
+    paddingHorizontal: spacing.xs,
   },
   description: {
     ...typography.body,

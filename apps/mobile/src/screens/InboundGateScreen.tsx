@@ -1,15 +1,28 @@
 import { GatewayClientError } from '@crew/mobile-client';
+import {
+  LocalAttachmentStore,
+  MobileDataStore,
+  MobileSyncAccountChangedError,
+  MobileSyncEngine,
+  MobileSyncRootAccessDeniedError,
+} from '@crew/mobile-data';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { isSessionFailure } from '../app/flowErrors';
 import { useGatewayClient } from '../app/GatewayProvider';
-import { usePrivateSessionLifecycle } from '../app/PrivateBootstrapGate';
+import {
+  usePrivateDatabase,
+  usePrivateSessionLifecycle,
+} from '../app/PrivateBootstrapGate';
 import { Button } from '../design/primitives';
 import { colors, spacing, typography } from '../design/theme';
+import { reconcileRetainedAttachmentFiles } from '../media/attachmentMedia';
 import type { RootStackParamList } from '../navigation/types';
+import { deniedRootRegistry } from '../storage/deniedRoots';
+import { secureUuidV4 } from '../storage/secureRandom';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
 const arrowRight = require('../assets/icons/arrow-right.png');
@@ -40,24 +53,74 @@ export type InboundGateViewState =
 
 export function InboundGateScreen({ navigation, route }: Props) {
   const client = useGatewayClient();
+  const privateDatabase = usePrivateDatabase();
   const { accountId, reloadSession } = usePrivateSessionLifecycle();
+  const activeAccountRef = useRef(accountId);
+  activeAccountRef.current = accountId;
   const target = eventTarget(route);
+  const syncEngine = useMemo(
+    () =>
+      client && route.name === 'ItemInbound'
+        ? new MobileSyncEngine(privateDatabase.database, client, {
+            activeAccountUserId: () => activeAccountRef.current,
+            randomUUID: secureUuidV4,
+            onRootReadStarted: (activeAccountId, rootEventId) =>
+              deniedRootRegistry.arm(activeAccountId, rootEventId),
+            onRootReadFinished: (
+              activeAccountId,
+              rootEventId,
+              verificationId,
+            ) =>
+              deniedRootRegistry.finish(
+                activeAccountId,
+                rootEventId,
+                verificationId,
+              ),
+            onRootPurged: activeAccountId =>
+              reconcileRetainedAttachmentFiles(
+                new LocalAttachmentStore(privateDatabase.database),
+                activeAccountId,
+              ),
+          })
+        : null,
+    [client, privateDatabase.database, route.name],
+  );
   const event = useQuery({
-    enabled: Boolean(client && accountId && target),
+    enabled: Boolean(
+      client &&
+        accountId &&
+        accountId === privateDatabase.accountId &&
+        target,
+    ),
     queryKey: [
       'private',
       accountId,
-      'event',
+      'inbound',
+      route.name,
       target?.rootEventId,
-      target?.eventId,
+      route.name === 'ItemInbound' ? route.params.itemId : target?.eventId,
     ],
     queryFn: async () => {
-      if (!client || !target) throw new Error('Event unavailable');
-      return (
+      if (!client || !target || !accountId) {
+        throw new Error('Event unavailable');
+      }
+      const authorizedEvent = (
         await client.request('eventsGet', {
           path: target,
         })
       ).data.event;
+      if (route.name !== 'ItemInbound') return authorizedEvent;
+      if (!syncEngine) throw new Error('Event unavailable');
+      await syncEngine.syncRoot(accountId, route.params.rootEventId);
+      if (activeAccountRef.current !== accountId) {
+        throw new MobileSyncAccountChangedError();
+      }
+      return (
+        await new MobileDataStore(privateDatabase.database).listTimeline(
+          accountId,
+          route.params.rootEventId,
+        )
+      ).find(item => item.id === route.params.itemId);
     },
   });
 
@@ -68,7 +131,12 @@ export function InboundGateScreen({ navigation, route }: Props) {
   }, [event.error, reloadSession]);
 
   let state: InboundGateViewState;
-  if (!target || !client) {
+  if (
+    !target ||
+    !client ||
+    !accountId ||
+    accountId !== privateDatabase.accountId
+  ) {
     state = { kind: 'unavailable' };
   } else if (event.isPending) {
     state = { kind: 'loading' };
@@ -76,6 +144,8 @@ export function InboundGateScreen({ navigation, route }: Props) {
     state = isRetryable(event.error)
       ? { kind: 'retryable', retrying: event.isFetching }
       : { kind: 'unavailable' };
+  } else if (!event.data) {
+    state = { kind: 'unavailable' };
   } else {
     state = { kind: 'ready', title: event.data.title };
   }
@@ -198,6 +268,12 @@ export function InboundGateView({
 }
 
 function isRetryable(error: unknown) {
+  if (
+    error instanceof MobileSyncAccountChangedError ||
+    error instanceof MobileSyncRootAccessDeniedError
+  ) {
+    return false;
+  }
   return !(error instanceof GatewayClientError) || error.retryable;
 }
 
@@ -213,7 +289,7 @@ function eventTarget(route: PrivateInboundRouteProp) {
     case 'ItemInbound':
       return {
         rootEventId: route.params.rootEventId,
-        eventId: route.params.itemId,
+        eventId: route.params.rootEventId,
       };
     case 'FeedbackInbound':
       return null;

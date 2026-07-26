@@ -67,8 +67,8 @@ make planned `M-*` variants callable. It is not a screen-owned network cache.
 
 `Current` rows are executable in the pinned Gateway OpenAPI. `Planned` rows are
 screen requirements, not callable contracts; the named Bead blocks their UI.
-Paths and operation IDs for current rows are checked by
-`bun run check:product-contracts`.
+Paths and operation IDs for current rows, plus the handoff's runtime
+route-to-SCR crosswalk, are checked by `bun run check:product-contracts`.
 
 | ID        | Status                   | Method and path                                                              | Operation ID                            | Notes                                                                                                                                                                                                                                                                                                                     |
 | --------- | ------------------------ | ---------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -235,20 +235,21 @@ change. `ST-*` points to the exact state-frame row in the next section.
 
 | Field                 | Specification                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------- |
-| Route / purpose       | `Events`; signed-in root list and entry to local-first creation                                         |
+| Route / purpose       | `Events`; signed-in root list, entry to local-first creation, and secondary safe sign-out                |
 | Roles / journeys      | All signed-in roles; `O-01`, `P-04`, `S-01`                                                             |
-| Entry -> exit         | App start or back from a root -> `SCR-002` or gated `SCR-004`                                           |
+| Entry -> exit         | App start or back from a root -> `SCR-002`, gated `SCR-004`, or native sign-out confirmation            |
 | One primary action    | `Create event`                                                                                          |
+| Secondary action      | `Sign out`; native confirmation can cancel or end the session after retained feedback data is removed   |
 | Gateway + SQLite      | `API-E1`, background `API-S2`; `SQL-ROOTS`, `SQL-SYNC`, `SQL-OUTBOX`                                    |
 | State frames          | `ST-SCR-001`                                                                                            |
-| Accessibility / focus | Focus `Events`; each card announces title, dates, role, offline and queued truth before its open action |
+| Accessibility / focus | Focus `Events`; cards announce title, dates, role, offline and queued truth; sign-out names confirmation |
 | Deep link             | Root links bypass this screen after Gate; denied links return here through `SCR-080`                    |
 
 ### `SCR-002` - Starting shape
 
 | Field                 | Specification                                                                                  |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
-| Route / purpose       | `CreateShape`; choose bundled Turkey golf, team-event, or blank starting schema                |
+| Route / purpose       | Starting-shape step in `CreateEvent`; choose bundled Turkey golf, team-event, or blank schema   |
 | Roles / journeys      | Prospective owner; `O-01`, `O-02`                                                              |
 | Entry -> exit         | `SCR-001` -> `SCR-003`; back retains the local draft                                           |
 | One primary action    | `Use this setup`                                                                               |
@@ -261,9 +262,9 @@ change. `ST-*` points to the exact state-frame row in the next section.
 
 | Field                 | Specification                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------------ |
-| Route / purpose       | `EventDetails({rootEventId,new})`; title, time zone, dates, and description                      |
+| Route / purpose       | New-root details in `CreateEvent` and existing-root `EventBasicsEdit`; title, zone, dates, description |
 | Roles / journeys      | Prospective owner, owner, organizer; `O-03`, `S-02`, `S-04`                                      |
-| Entry -> exit         | `SCR-002`, hub settings, or conflict return -> `SCR-004` for new root or prior route             |
+| Entry -> exit         | `SCR-002` in `CreateEvent`, hub settings, or conflict return -> `SCR-004` or prior route          |
 | One primary action    | `Save details`                                                                                   |
 | Gateway + SQLite      | New root `API-E2`; edits `API-S3` + `M-root.update`; `SQL-ROOTS`, `SQL-DRAFTS`, `SQL-OUTBOX`     |
 | State frames          | `ST-SCR-003`                                                                                     |
@@ -496,7 +497,7 @@ visual and service-backed publish evidence remain pending.
 
 | Field                 | Specification                                                                                                                        |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Route / purpose       | `Feed({rootEventId,targetEntryId?})`; private root-scoped Crew communication with authored and system updates in root revision order |
+| Route / purpose       | Current `TeamFeed({rootEventId,eventId?})` root text feed; full `Feed({rootEventId,targetEntryId?})` contract also covers authored/system updates |
 | Roles / journeys      | All roles; writers are owner/organizer/participant; `C-01`, `C-02`, `C-03`, `G-O-03`, `T-O-03`                                       |
 | Entry -> exit         | Hub, item, push, or feed link -> composer, targeted context, or live item                                                            |
 | One primary action    | Writer `Post update`; viewer/targeted read `View update`; empty viewer `Back to event`                                               |
@@ -509,10 +510,10 @@ visual and service-backed publish evidence remain pending.
 
 | Field                 | Specification                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Route / purpose       | Full-screen modal `FeedComposer({rootEventId,eventId?,entryId?})`; create text/photo or revise own permitted entry           |
+| Route / purpose       | Current inline text composer in `TeamFeed`; full-screen `FeedComposer({rootEventId,eventId?,entryId?})` remains the photo/edit contract |
 | Roles / journeys      | Owner, organizer, participant; `C-02`, `C-03`, `S-02`, `S-03`                                                                |
 | Entry -> exit         | Feed/live item or `OVR-008` edit -> feed at optimistic/stored entry                                                          |
-| One primary action    | Create `Post update`; edit `Save change`                                                                                     |
+| One primary action    | Current create `Post update`, rendered only with usable text; future edit `Save change`                                      |
 | Gateway + SQLite      | `API-S4/S5`, object upload, eventual `API-S3`; `M-feed.create`, `M-feed.revise`, `M-attachment.commit`; `SQL-DRAFTS`, `SQL-FEED`, `SQL-ATTACH`, `SQL-OUTBOX` |
 | State frames          | `ST-SCR-041`; empty validation, offline queue, uploading, missing local media, edit conflict, moderated/removed permission   |
 | Accessibility / focus | Focus text field; photo caption/consent and upload truth are labeled; fields clear only after the SQLite transaction commits |
@@ -657,7 +658,7 @@ make the remaining variants or Android visual parity current.
 
 | State row    | Loading / refresh                      | Empty                                                                                    | Error                                                                         | Offline                                                                                 | Queued / delivery                                        | Conflict                                                 | Permission / removal                                                                       |
 | ------------ | -------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `ST-SCR-001` | Cached list; first-install skeleton    | No roots - `Create event`                                                                | Refresh failed - `Try again`                                                  | Cached roots - `Create offline draft`                                                   | Draft card says Queued - `Open draft`                    | Rejected create - `Review draft`                         | Removed root concealed - `Back to events`                                                  |
+| `ST-SCR-001` | Cached list; first-install skeleton    | No roots - `Create event`                                                                | Refresh failed - `Try again`; sign-out failed - `Try signing out again`       | Cached roots - `Create offline draft`                                                   | Draft card says Queued - `Open draft`                    | Rejected create - `Review draft`                         | Removed root concealed - `Back to events`; sign-out confirmation - cancel or `Sign out`   |
 | `ST-SCR-002` | Bundled options remain selectable      | Templates unavailable - `Start blank`                                                    | Refresh failed - `Use bundled setup`                                          | Bundled schema - `Use this setup`                                                       | Local setup draft - `Continue`                           | Obsolete template - `Review setup`                       | -                                                                                          |
 | `ST-SCR-003` | Saved local fields remain visible      | Optional fields empty - `Save details`                                                   | Inline/save error - `Try again`                                               | Local save - `Save details`                                                             | Saved locally says Queued - `Back to event`              | Local/server values - `Review changes`                   | Editor removed - `Keep local copy`                                                         |
 | `ST-SCR-004` | Cached hub remains visible             | No action due - `View plan`                                                              | Refresh failed - current CTA remains                                          | Last sync visible - contextual CTA                                                      | Pending count and Queued labels - contextual CTA         | Affected card - `Review conflict`                        | Viewer gets read CTA; removed cache lock - `Back to events`                                |
@@ -710,6 +711,7 @@ same screen artboards. Native surfaces are referenced, not recreated.
 | `OVR-013` app full-screen preview - Feedback capture consent | Feedback composer capture control -> composer                                                                 | `Attach selected data`                      | screenshot yes/no, diagnostics yes/no, capture failure, redacted preview                                                                                                              | `SQL-FEEDBACK/ATTACH`; enumerates included fields; unchecked by default                                                                                                                                                                                                                                                                                                                                              |
 | `OVR-014` app full-screen sheet - Highlight editor           | Recap empty/editor -> recap editor                                                                            | `Add highlight`                             | manual text, source-linked, no source, offline queued, invalid/removed source                                                                                                         | `SQL-RECAP` + source model; focus title; source/privacy relationship announced                                                                                                                                                                                                                                                                                                                                       |
 | `OVR-015` app blocking sheet - Access changed                | Confirmed removal/downgrade during private route -> unavailable/read-only/local export                        | `Back to events` or owned `Keep local copy` | membership removed, role downgraded, account changed, token expired pending auth                                                                                                      | `SQL-ROOTS/OUTBOX/DRAFTS`; clears private server read model per policy, never another account's outbox                                                                                                                                                                                                                                                                                                               |
+| Native alert - Sign out                                      | Secondary action on `SCR-001` -> cancel or signed-out session                                                  | Destructive `Sign out`                      | confirmation; safe failure returns to `SCR-001` with `Try signing out again`                                                                                                           | Native surface, not recreated; focus title and consequence; one attempt at a time; retained feedback data is removed from the device before the private session ends                                                                                                                                                                                                                                                  |
 
 ## Critical reusable component-state matrix
 

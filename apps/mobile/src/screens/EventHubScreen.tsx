@@ -34,11 +34,11 @@ import { reconcileRetainedAttachmentFiles } from '../media/attachmentMedia';
 import {
   EventHubView,
   participantCountLabel,
+  type EventHubCrewTarget,
   type EventHubDate,
   type EventHubModel,
   type EventHubPrimaryAction,
   type EventHubTimelineItem,
-  type EventHubTab,
 } from './EventHubView';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
@@ -223,6 +223,7 @@ export function eventHubModelFromReadModels(input: {
     : null;
 
   return {
+    crewTarget: eventHubCrewTarget(snapshot.feed, role),
     dateRange: eventDateRange(snapshot.root, activeTimeline),
     dates,
     feedUpdate,
@@ -544,10 +545,18 @@ export function EventHubScreen({ navigation, route }: Props) {
       onTabSelect={tab => {
         if (tab === 'feed') {
           navigation.navigate('TeamFeed', { eventId: null, rootEventId });
+        } else if (tab === 'crew' && model.crewTarget?.route === 'TeamSetup') {
+          navigation.navigate('TeamSetup', {
+            eventId: model.crewTarget.eventId,
+            rootEventId,
+          });
+        } else if (tab === 'crew' && model.crewTarget?.route === 'Decision') {
+          navigation.navigate('Decision', {
+            decisionId: model.crewTarget.decisionId,
+            rootEventId,
+          });
         } else if (tab === 'more') {
           navigation.navigate('CommunityFeedbackList', { rootEventId });
-        } else {
-          unavailableTab(tab);
         }
       }}
       onTimelineSelect={itemId => {
@@ -557,28 +566,10 @@ export function EventHubScreen({ navigation, route }: Props) {
             eventId: item.eventId,
             rootEventId,
           });
-        } else if (item) {
-          Alert.alert(
-            item.title,
-            'Die vollständige Programmpunkt-Ansicht ist noch nicht verfügbar.',
-          );
         }
       }}
       selectedTab="plan"
     />
-  );
-}
-
-function unavailableTab(tab: EventHubTab) {
-  if (tab === 'plan') return;
-  const labels: Record<Exclude<EventHubTab, 'plan'>, string> = {
-    crew: 'Crew',
-    feed: 'Feed',
-    more: 'Mehr',
-  };
-  Alert.alert(
-    `${labels[tab]} folgt`,
-    'Diese Ansicht ist noch nicht vollständig verfügbar.',
   );
 }
 
@@ -804,6 +795,45 @@ function latestFeedUpdate(
     }
   }
   return null;
+}
+
+function eventHubCrewTarget(
+  feed: readonly FeedRecord[],
+  role: EventHubModel['role'],
+): EventHubCrewTarget | null {
+  let assignment: EventHubCrewTarget | null = null;
+  let decision: EventHubCrewTarget | null = null;
+  for (const entry of feed) {
+    if (entry.kind !== 'system' || entry.payloadSchemaVersion !== 1) continue;
+    try {
+      const payload = JSON.parse(entry.payloadJson) as Record<string, unknown>;
+      if (
+        !assignment &&
+        payload.schemaVersion === 1 &&
+        payload.type === 'team.assignments.published' &&
+        typeof payload.eventId === 'string' &&
+        /^evt_[A-Za-z0-9._:-]{1,96}$/.test(payload.eventId)
+      ) {
+        assignment = { eventId: payload.eventId, route: 'TeamSetup' };
+      }
+      if (
+        !decision &&
+        payload.schemaVersion === 1 &&
+        ['team.decision.opened', 'team.decision.closed'].includes(
+          String(payload.type),
+        ) &&
+        typeof payload.decisionId === 'string' &&
+        /^tdc_[A-Za-z0-9._:-]{1,96}$/.test(payload.decisionId)
+      ) {
+        decision = { decisionId: payload.decisionId, route: 'Decision' };
+      }
+    } catch {
+      // Malformed local system entries never become navigation targets.
+    }
+  }
+  return role === 'owner' || role === 'organizer'
+    ? assignment ?? decision
+    : decision ?? assignment;
 }
 
 function relativeTime(value: string, now: Date) {

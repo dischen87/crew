@@ -22,9 +22,10 @@ Use one of these exact labels on every screen section in `00 Contract`:
 | `DESIGN-REQUIRED`       | The inventory requires the Figma state/prototype, but native delivery is not claimed                              |
 | `CONTRACT-PLANNED`      | A named API/mutation/data behavior is still planned; the frame may illustrate it only with a `PENDING` annotation |
 
-The current routed native set is `SCR-001`, the existing-draft slice of
-`SCR-003`, `SCR-004`, `SCR-013`, `SCR-022`, `SCR-023`, `SCR-031`, `SCR-032`,
-`SCR-033`, `SCR-060`, `SCR-061`, `SCR-062`, the role-composed
+The current routed native set is `SCR-001`, `SCR-002`, the new-root and
+existing-draft slices of `SCR-003`, `SCR-004`, `SCR-013`, `SCR-022`, `SCR-023`,
+`SCR-031`, `SCR-032`, `SCR-033`, the root text-feed/composer slices of
+`SCR-040/041`, `SCR-060`, `SCR-061`, `SCR-062`, the role-composed
 `SCR-070/071/072` route, and the safe unavailable route represented by
 `SCR-080`. `NATIVE-CURRENT-ROUTED` means registered production navigation plus
 automated coverage; it does not imply every route has a discoverable Hub entry,
@@ -35,6 +36,38 @@ evidence says otherwise.
 The current `EventSetupRecovery` route supplies only the narrow online
 template, default-capability, and primary-place actions required by `SCR-013`.
 It does not make the generalized `SCR-011` or `SCR-012` editor contracts current.
+
+## Current runtime route crosswalk
+
+This table mirrors `RootStackParamList`. The product-contract check rejects a
+registered route without a row and a row whose route no longer exists.
+Qualifiers keep partial current slices from becoming full-screen delivery
+claims.
+
+| Runtime route | Catalog coverage |
+| ------------- | ---------------- |
+| `Events` | `SCR-001` |
+| `CreateEvent` | `SCR-002`; new-root `SCR-003` |
+| `EventBasicsEdit` | existing-draft `SCR-003` |
+| `EventInbound` | `SCR-004` |
+| `EventPublish` | `SCR-013` |
+| `EventSetupRecovery` | narrow recovery in `SCR-013` |
+| `ItemInbound` | inbound gate for `SCR-014`; full screen remains design-required |
+| `FeedInbound` | inbound gate for `SCR-040` |
+| `FeedbackInbound` | inbound gate for `SCR-061` |
+| `FeedbackCompose` | `SCR-060` |
+| `CommunityFeedbackList` | `SCR-062` |
+| `CommunityFeedbackItem` | `SCR-061` |
+| `RecapInbound` | role-composed `SCR-070`, `SCR-071`, and `SCR-072` |
+| `GolfScorecard` | `SCR-031` |
+| `TeamFeed` | root text-feed/composer slices of `SCR-040` and `SCR-041` |
+| `NativeE2EEvidence` | `EVIDENCE-ONLY` development proof surface |
+| `TeamSetup` | `SCR-032` |
+| `Decision` | `SCR-033` |
+| `InvitePreview` | `SCR-022`; `SCR-024` redemption contract only |
+| `SignIn` | request slice of `SCR-023` |
+| `EmailIdentity` | redemption slice of `SCR-023` |
+| `Unavailable` | `SCR-080` |
 
 ## Screen registry and copy namespaces
 
@@ -54,9 +87,9 @@ masters and replace them only in a named fixture instance.
 
 | Screen    | Human name                  | Copy namespace   | Current handoff status                                                                                                                                                                 |
 | --------- | --------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCR-001` | Events                      | `COPY-SCR-001-*` | `NATIVE-CURRENT-ROUTED`; remaining state frames `DESIGN-REQUIRED`                                                                                                                      |
-| `SCR-002` | Starting shape              | `COPY-SCR-002-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
-| `SCR-003` | Event details editor        | `COPY-SCR-003-*` | existing-draft `NATIVE-CURRENT-ROUTED`; new-root and remaining state variants `DESIGN-REQUIRED`                                                                                        |
+| `SCR-001` | Events                      | `COPY-SCR-001-*` | `NATIVE-CURRENT-ROUTED`; current native logout confirmation, pending, and retry states; remaining state frames `DESIGN-REQUIRED`                                                       |
+| `SCR-002` | Starting shape              | `COPY-SCR-002-*` | `NATIVE-CURRENT-ROUTED` inside `CreateEvent`; remaining template/state variants `DESIGN-REQUIRED`                                                                                      |
+| `SCR-003` | Event details editor        | `COPY-SCR-003-*` | new-root and existing-draft `NATIVE-CURRENT-ROUTED`; remaining state variants `DESIGN-REQUIRED`                                                                                        |
 | `SCR-004` | Event hub and action center | `COPY-SCR-004-*` | `NATIVE-CURRENT-ROUTED`, `VISUAL-EVIDENCE-IOS` for participant baseline/feed                                                                                                           |
 | `SCR-010` | Plan tree and timeline      | `COPY-SCR-010-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
 | `SCR-011` | Plan item editor            | `COPY-SCR-011-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
@@ -73,8 +106,8 @@ masters and replace them only in a named fixture instance.
 | `SCR-031` | Golf scorecard              | `COPY-SCR-031-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; queued, conflict, read-only and Accessibility Large `VISUAL-EVIDENCE-IOS`; remaining state/platform variants `DESIGN-REQUIRED`                |
 | `SCR-032` | Team collaboration setup    | `COPY-SCR-032-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`, organizer `VISUAL-EVIDENCE-IOS`; discoverable Hub entry, remaining states and Android `DESIGN-REQUIRED`                                      |
 | `SCR-033` | Team decision               | `COPY-SCR-033-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`, closed-attention participant `VISUAL-EVIDENCE-IOS`; discoverable Hub entry, remaining states and Android `DESIGN-REQUIRED`                   |
-| `SCR-040` | Event feed                  | `COPY-SCR-040-*` | feed data current; full screen `DESIGN-REQUIRED`                                                                                                                                       |
-| `SCR-041` | Feed composer               | `COPY-SCR-041-*` | feed mutation/attachment seams current; full screen `DESIGN-REQUIRED`                                                                                                                  |
+| `SCR-040` | Event feed                  | `COPY-SCR-040-*` | root text-feed slice `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; target, media, reaction, and remaining state variants `DESIGN-REQUIRED`                                                  |
+| `SCR-041` | Feed composer               | `COPY-SCR-041-*` | root text composer `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; photo, edit, target, and remaining state variants `DESIGN-REQUIRED`                                                        |
 | `SCR-050` | Sync center                 | `COPY-SCR-050-*` | sync/outbox data current; full screen `DESIGN-REQUIRED`                                                                                                                                |
 | `SCR-051` | Conflict resolver           | `COPY-SCR-051-*` | conflict data current; full screen `DESIGN-REQUIRED`                                                                                                                                   |
 | `SCR-060` | Feedback compose            | `COPY-SCR-060-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; consented screenshot and duplicate suggestions current; native/device and service-backed evidence pending                                    |

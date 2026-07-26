@@ -62,6 +62,9 @@ const participantImages = {
 
 export type EventHubRole = 'organizer' | 'owner' | 'participant' | 'viewer';
 export type EventHubTab = 'crew' | 'feed' | 'more' | 'plan';
+export type EventHubCrewTarget =
+  | { eventId: string; route: 'TeamSetup' }
+  | { decisionId: string; route: 'Decision' };
 
 type EventHubReadAction = {
   access: 'read';
@@ -104,6 +107,7 @@ export type EventHubTimelineItem = {
 };
 
 type EventHubBaseModel = {
+  crewTarget: EventHubCrewTarget | null;
   dateRange: string;
   dates: readonly EventHubDate[];
   feedUpdate: {
@@ -154,6 +158,7 @@ export function participantCountLabel(count: number) {
 }
 
 export const turkeyGolfEventHubModel: EventHubModel = {
+  crewTarget: null,
   dateRange: '20.–24. September 2026',
   dates: [
     {
@@ -281,19 +286,11 @@ function EventTimelineRow({
   onPress,
 }: {
   item: EventHubTimelineItem;
-  onPress(): void;
+  onPress?: () => void;
 }) {
-  return (
-    <Pressable
-      accessibilityHint="Öffnet die Aktivitätsdetails."
-      accessibilityLabel={`${item.time}, ${item.title}, ${item.location}`}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.timelineRow,
-        pressed && styles.timelinePressed,
-      ]}
-    >
+  const accessibilityLabel = `${item.time}, ${item.title}, ${item.location}`;
+  const content = (
+    <>
       <Text numberOfLines={1} style={styles.timelineTime}>
         {item.time}
       </Text>
@@ -315,7 +312,35 @@ function EventTimelineRow({
           <Text style={styles.timelineLocation}>{item.location}</Text>
         </View>
       </View>
-      <AssetIcon name="caretRight" size={18} />
+      {onPress ? <AssetIcon name="caretRight" size={18} /> : null}
+    </>
+  );
+
+  if (!onPress) {
+    return (
+      <View
+        accessible
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="text"
+        style={styles.timelineRow}
+      >
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityHint="Öffnet die Aktivitätsdetails."
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.timelineRow,
+        pressed && styles.timelinePressed,
+      ]}
+    >
+      {content}
     </Pressable>
   );
 }
@@ -382,11 +407,8 @@ export function EventHubView({
 
         <Text
           accessibilityRole="header"
-          maxFontSizeMultiplier={2}
-          style={[
-            styles.eventTitle,
-            usesLargeTextLayout && styles.eventTitleLargeText,
-          ]}
+          lineBreakStrategyIOS="push-out"
+          style={styles.eventTitle}
           testID="event-hub-title"
         >
           {model.title}
@@ -557,7 +579,11 @@ export function EventHubView({
                 <EventTimelineRow
                   item={item}
                   key={item.id}
-                  onPress={() => onTimelineSelect(item.id)}
+                  onPress={
+                    item.icon === 'golf'
+                      ? () => onTimelineSelect(item.id)
+                      : undefined
+                  }
                 />
               ))
           ) : (
@@ -622,17 +648,19 @@ export function EventHubView({
       <BottomNavigationShell style={styles.bottomNavigation}>
         {(
           [
-            ['plan', 'Plan', 'calendar'],
-            ['feed', 'Feed', 'chat'],
-            ['crew', 'Crew', 'crew'],
-            ['more', 'Mehr', 'more'],
+            ['plan', 'Plan', 'calendar', true],
+            ['feed', 'Feed', 'chat', true],
+            ['crew', 'Crew', 'crew', model.crewTarget !== null],
+            ['more', 'Mehr', 'more', true],
           ] as const
-        ).map(([tab, label, icon]) => (
+        ).map(([tab, label, icon, available]) => (
           <BottomNavigationItem
+            accessibilityHint={available ? undefined : 'Noch nicht verfügbar.'}
+            disabled={!available}
             icon={<AssetIcon name={icon} size={25} />}
             key={tab}
             label={label}
-            onPress={() => onTabSelect(tab)}
+            onPress={available ? () => onTabSelect(tab) : undefined}
             selected={selectedTab === tab}
             testID={`event-hub-tab-${tab}`}
           />
@@ -723,9 +751,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
     marginTop: spacing.lg,
-  },
-  eventTitleLargeText: {
-    ...typography.heading,
   },
   emptyCard: {
     gap: spacing.xs,

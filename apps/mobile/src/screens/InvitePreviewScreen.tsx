@@ -424,7 +424,9 @@ function ReadyInviteView({
     >
       <View style={styles.details}>
         <Text style={styles.detailLabel}>DEINE ROLLE</Text>
-        <Text style={styles.detailValue}>{roleLabel(preview.role)}</Text>
+        <Text lineBreakStrategyIOS="push-out" style={styles.detailValue}>
+          {roleLabel(preview.role)}
+        </Text>
         {preview.emailBound ? (
           <StatusChip label="An eingeladene E-Mail gebunden" tone="lavender" />
         ) : null}

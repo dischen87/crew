@@ -10,7 +10,7 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import { Button } from '../src/design/primitives';
-import { colors } from '../src/design/theme';
+import { colors, typography } from '../src/design/theme';
 import {
   EmailIdentityView,
   type EmailIdentityViewPhase,
@@ -59,7 +59,7 @@ async function unmount(renderer: ReactTestRenderer.ReactTestRenderer) {
   await ReactTestRenderer.act(() => renderer.unmount());
 }
 
-test('keeps the Option 2 access shell exact, scrollable and leaves the display H1 uncapped', async () => {
+test('keeps the Option 2 access shell exact, scrollable and naturally wrapping', async () => {
   const renderer = await render(
     <SignInView
       email=""
@@ -306,6 +306,57 @@ test('renders signed-out and signed-in invite actions from one safe preview', as
   expect(props.onRetrySession).toHaveBeenCalledTimes(1);
   expect(onRedeem).toHaveBeenCalledTimes(1);
   await unmount(unavailable);
+});
+
+test('preserves invite base typography and natural wrapping at Large Text', async () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+  try {
+    renderer = await render(
+      <InvitePreviewView
+        onBackToEvents={jest.fn()}
+        onRedeem={jest.fn()}
+        onRetry={jest.fn()}
+        onRetrySession={jest.fn()}
+        onSwitchAccount={jest.fn()}
+        phase="ready"
+        preview={{
+          emailBound: true,
+          endsAt: null,
+          role: 'organizer',
+          rootEventId: 'evt_private_root',
+          startsAt: null,
+          title:
+            'Strategiewoche für Produkt, Betrieb und internationale Partnerorganisationen',
+          usable: true,
+        }}
+        redeeming={false}
+        sessionStatus="signedOut"
+      />,
+    );
+    const description = renderer.root.findByProps({
+      children:
+        'Strategiewoche für Produkt, Betrieb und internationale Partnerorganisationen',
+    });
+    const role = renderer.root.findByProps({ children: 'Organisation' });
+
+    expect(StyleSheet.flatten(description.props.style)).toMatchObject({
+      fontSize: typography.body.fontSize,
+      lineHeight: typography.body.lineHeight,
+    });
+    expect(StyleSheet.flatten(role.props.style)).toMatchObject({
+      fontSize: typography.heading.fontSize,
+      lineHeight: typography.heading.lineHeight,
+    });
+    expect(description.props.lineBreakStrategyIOS).toBe('push-out');
+    expect(role.props.lineBreakStrategyIOS).toBe('push-out');
+    expect(description.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(role.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(description.props.numberOfLines).toBeUndefined();
+    expect(role.props.numberOfLines).toBeUndefined();
+  } finally {
+    if (renderer) await unmount(renderer);
+  }
 });
 
 test.each<PrivateAccessViewState>([

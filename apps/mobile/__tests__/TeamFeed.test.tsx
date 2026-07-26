@@ -451,7 +451,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
 
   const input = renderer.root.findByType(TextInput);
   expect(input.props).toMatchObject({
-    accessibilityLabel: 'Nachricht',
+    accessibilityLabel: 'Update',
     maxLength: TEAM_FEED_MAX_LENGTH,
     multiline: true,
     testID: 'team-feed-input',
@@ -488,7 +488,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
     );
   expect(longText?.props.numberOfLines).toBeUndefined();
   expect(longText?.props).toMatchObject({
-    accessibilityActions: [{ label: 'Beitrag kopieren', name: 'copy' }],
+    accessibilityActions: [{ label: 'Update kopieren', name: 'copy' }],
     accessibilityRole: 'text',
     accessible: true,
   });
@@ -502,9 +502,9 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
     children: 'Bitte prüfen.',
   });
   expect(attentionBody.props).toMatchObject({
-    accessibilityActions: [{ label: 'Beitrag kopieren', name: 'copy' }],
+    accessibilityActions: [{ label: 'Update kopieren', name: 'copy' }],
     accessibilityHint:
-      'Aktion verfügbar: Beitrag kopieren. Der Text bleibt lokal.',
+      'Aktion verfügbar: Update kopieren. Der Text bleibt lokal.',
     accessible: true,
     accessibilityRole: 'text',
   });
@@ -524,7 +524,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
     }),
   );
   expect(copy).toHaveBeenCalledWith('Bitte prüfen.');
-  expect(announce).toHaveBeenCalledWith('Beitrag kopiert.');
+  expect(announce).toHaveBeenCalledWith('Update kopiert.');
   await ReactTestRenderer.act(() =>
     renderer.root
       .findByProps({ testID: 'team-feed-entry-copy-fed_attention' })
@@ -544,7 +544,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
   });
   expect(renderer.root.findByProps({ accessibilityRole: 'list' })).toBeTruthy();
   expect(
-    renderer.root.findByProps({ children: 'LETZTE BEITRÄGE' }).props
+    renderer.root.findByProps({ children: 'LETZTE UPDATES' }).props
       .accessibilityRole,
   ).toBe('header');
   expect(
@@ -555,7 +555,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
       node =>
         node.props.role === 'status' &&
         String(node.props.accessibilityLabel).includes(
-          'Aktion „Beitrag kopieren“',
+          'Aktion „Update kopieren“',
         ),
     ),
   ).toBeTruthy();
@@ -565,7 +565,7 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
   });
   const helperColor = StyleSheet.flatten(helper.props.style).color as string;
   const helperText = helper.props.children.join('');
-  expect(helperText).toContain('Beim Teilen lokal gespeichert');
+  expect(helperText).toContain('Beim Posten zuerst lokal gespeichert');
   expect(helperText).not.toContain('bleibt offline erhalten');
   expect(helperColor).toBe(colors.text);
   expect(
@@ -573,7 +573,10 @@ test('Option-2 view hardens long German, emoji, delivery truth, keyboard and acc
   ).toBeGreaterThanOrEqual(contrastThresholds.normalText);
 
   const submit = renderer.root.findByProps({ testID: 'team-feed-submit' });
-  expect(submit.props.accessibilityHint).toContain('genau einen Beitrag');
+  expect(submit.props).toMatchObject({
+    accessibilityHint: expect.stringContaining('zuerst auf diesem Gerät'),
+    label: 'Update posten',
+  });
   await ReactTestRenderer.act(() => submit.props.onPress());
   expect(onSubmit).toHaveBeenCalledTimes(1);
   await ReactTestRenderer.act(() => renderer.unmount());
@@ -584,19 +587,19 @@ test.each([
   [
     'attention',
     true,
-    'Mindestens ein Beitrag braucht Aufmerksamkeit. Nutze beim betroffenen Beitrag die Aktion „Beitrag kopieren“; er bleibt lokal.',
+    'Mindestens ein Update braucht Aufmerksamkeit. Nutze beim betroffenen Update die Aktion „Update kopieren“; es bleibt lokal.',
   ],
   [
     'sending',
     true,
-    'Mindestens ein Beitrag wird synchronisiert und wartet auf Serverbestätigung.',
+    'Mindestens ein Update wird synchronisiert und wartet auf Serverbestätigung.',
   ],
   [
     'queued',
     false,
-    'Mindestens ein Beitrag ist offline gespeichert. Crew sendet bei der nächsten Verbindung.',
+    'Mindestens ein Update ist offline gespeichert. Crew sendet bei der nächsten Verbindung.',
   ],
-  ['converged', true, 'Alle sichtbaren Beiträge sind synchronisiert.'],
+  ['converged', true, 'Alle sichtbaren Updates sind synchronisiert.'],
 ] as const)(
   'announces the %s delivery state without relying on color',
   async (deliveryState, online, expectedLabel) => {
@@ -628,7 +631,7 @@ test.each([
   },
 );
 
-test('Option-2 view blocks blank, oversize, busy and viewer submissions without losing readable states', async () => {
+test('Option-2 view hides unusable submit actions and blocks busy or viewer submissions', async () => {
   const baseProps = {
     error: null,
     model: feedModel(),
@@ -641,8 +644,8 @@ test('Option-2 view blocks blank, oversize, busy and viewer submissions without 
   };
   const renderer = await render(<TeamFeedView {...baseProps} draft="   " />);
   expect(
-    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.disabled,
-  ).toBe(true);
+    renderer.root.findAllByProps({ testID: 'team-feed-submit' }),
+  ).toHaveLength(0);
   expect(renderer.root.findByType(TextInput).props.accessibilityHint).toContain(
     'sichtbares Zeichen',
   );
@@ -658,8 +661,8 @@ test('Option-2 view blocks blank, oversize, busy and viewer submissions without 
     );
   });
   expect(
-    renderer.root.findByProps({ testID: 'team-feed-submit' }).props.disabled,
-  ).toBe(true);
+    renderer.root.findAllByProps({ testID: 'team-feed-submit' }),
+  ).toHaveLength(0);
   expect(renderer.root.findByType(TextInput).props.accessibilityHint).toContain(
     "10'000 Zeichen",
   );
@@ -682,7 +685,7 @@ test('Option-2 view blocks blank, oversize, busy and viewer submissions without 
     renderer.root.findByProps({ testID: 'team-feed-submit' }).props,
   ).toMatchObject({
     accessibilityHint:
-      'Der Beitrag wird verarbeitet. Eine zweite Übermittlung ist gesperrt.',
+      'Das Update wird verarbeitet. Eine zweite Übermittlung ist gesperrt.',
     label: 'Wird verarbeitet …',
   });
   expect(
@@ -819,7 +822,7 @@ test('production route exposes a rejected queued entry as an assistive attention
       node =>
         node.props.role === 'status' &&
         String(node.props.accessibilityLabel).includes(
-          'Aktion „Beitrag kopieren“',
+          'Aktion „Update kopieren“',
         ),
     ),
   ).toBeTruthy();
@@ -861,7 +864,7 @@ test('production route keeps unsaved text in the field when the durable enqueue 
   expect(
     renderer.root.findByProps({ accessibilityRole: 'alert' }).props.children,
   ).toBe(
-    'Der Beitrag konnte nicht lokal gespeichert werden. Dein Text bleibt in diesem Feld.',
+    'Das Update konnte nicht lokal gespeichert werden. Dein Text bleibt in diesem Feld.',
   );
   expect(
     renderer.root.findByProps({ testID: 'team-feed-input' }).props.value,
@@ -908,7 +911,7 @@ test('production route clears a durably saved draft and names refresh when proje
   expect(
     renderer.root.findByProps({ accessibilityRole: 'alert' }).props.children,
   ).toBe(
-    'Der Beitrag wurde lokal gespeichert, aber der Feed konnte nicht aktualisiert werden. Tippe auf «Feed aktualisieren».',
+    'Das Update wurde lokal gespeichert, aber der Feed konnte nicht aktualisiert werden. Tippe auf «Feed aktualisieren».',
   );
   expect(
     renderer.root.findByProps({ testID: 'team-feed-input' }).props.value,

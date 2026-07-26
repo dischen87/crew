@@ -13,6 +13,6 @@
 	"scripts": {
 		"check:mobile-client": "cd packages/mobile-client && bun run generate:check && bun run lint && bun run typecheck && bun test",
 		"check:mobile-app": "cd apps/mobile && bun run lint && bun run typecheck && bun run test --runInBand",
-		"check:product-contracts": "bun scripts/check-figma-api-inventory.ts && bun test scripts/check-figma-api-inventory.test.ts"
+		"check:product-contracts": "shasum -a 256 -c docs/product/figma-handoff/asset-manifest.sha256 && bun scripts/check-figma-api-inventory.ts && bun test scripts/check-figma-api-inventory.test.ts"
 	}
 }

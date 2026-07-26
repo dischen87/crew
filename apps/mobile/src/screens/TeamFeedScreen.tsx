@@ -208,8 +208,8 @@ export function TeamFeedScreen({ navigation, route }: Props) {
       if (activeAccountRef.current === privateDatabase.accountId) {
         setError(
           locallySaved
-            ? 'Der Beitrag wurde lokal gespeichert, aber der Feed konnte nicht aktualisiert werden. Tippe auf «Feed aktualisieren».'
-            : 'Der Beitrag konnte nicht lokal gespeichert werden. Dein Text bleibt in diesem Feld.',
+            ? 'Das Update wurde lokal gespeichert, aber der Feed konnte nicht aktualisiert werden. Tippe auf «Feed aktualisieren».'
+            : 'Das Update konnte nicht lokal gespeichert werden. Dein Text bleibt in diesem Feld.',
         );
       }
     } finally {
@@ -268,23 +268,17 @@ export function TeamFeedView({
       : draft.length > 0 && draft.trim().length === 0
       ? 'Gib mindestens ein sichtbares Zeichen ein.'
       : undefined;
-  const canSubmit =
-    model.canPost &&
-    !submitting &&
-    draft.trim().length > 0 &&
-    draft.trim().length <= TEAM_FEED_MAX_LENGTH;
+  const hasUsableDraft =
+    draft.trim().length > 0 && draft.length <= TEAM_FEED_MAX_LENGTH;
+  const canSubmit = model.canPost && !submitting && hasUsableDraft;
   const delivery = feedDeliverySummary(model.entries, online);
   const submitHint = submitting
-    ? 'Der Beitrag wird verarbeitet. Eine zweite Übermittlung ist gesperrt.'
-    : fieldError
-    ? fieldError
-    : draft.trim().length === 0
-    ? 'Gib zuerst eine Nachricht ein.'
-    : 'Speichert genau einen Beitrag im Offline-Ausgang.';
+    ? 'Das Update wird verarbeitet. Eine zweite Übermittlung ist gesperrt.'
+    : 'Speichert das Update zuerst auf diesem Gerät und synchronisiert es bei verfügbarer Verbindung.';
 
   return (
     <ScreenFrame
-      description="Geteilte Nachrichten werden zuerst lokal gespeichert und dann mit derselben Identität synchronisiert."
+      description="Deine Updates werden zuerst auf diesem Gerät gespeichert und bei verfügbarer Verbindung mit deinem Konto synchronisiert."
       eyebrow="TEAM-FEED"
       icon={delivery.icon}
       statusLabel={delivery.statusLabel}
@@ -302,13 +296,13 @@ export function TeamFeedView({
         <View style={styles.composer}>
           <View style={styles.field}>
             <TextField
-              accessibilityHint="Schreibe eine Nachricht für die Mitglieder dieses Events."
+              accessibilityHint="Schreibe ein Update für die Mitglieder dieses Events."
               autoCapitalize="sentences"
               autoComplete="off"
               disabled={submitting}
               error={fieldError}
               inputStyle={styles.input}
-              label="Nachricht"
+              label="Update"
               maxLength={TEAM_FEED_MAX_LENGTH}
               multiline
               onChangeText={onChange}
@@ -318,11 +312,12 @@ export function TeamFeedView({
               value={draft}
             />
             <Text
-              accessibilityLabel={`${draft.length} von 10'000 Zeichen. Beim Teilen wird die Nachricht lokal gespeichert.`}
+              accessibilityLabel={`${draft.length} von 10'000 Zeichen. Beim Posten wird das Update zuerst lokal gespeichert.`}
               style={styles.helper}
               testID="team-feed-character-count"
             >
-              {draft.length} / 10'000 Zeichen · Beim Teilen lokal gespeichert.
+              {draft.length} / 10'000 Zeichen · Beim Posten zuerst lokal
+              gespeichert.
             </Text>
           </View>
           {error ? (
@@ -334,29 +329,31 @@ export function TeamFeedView({
               {error}
             </Text>
           ) : null}
-          <Button
-            accessibilityHint={submitHint}
-            disabled={!canSubmit}
-            icon={<ScreenIcon source={icons.chat} />}
-            label={submitting ? 'Wird verarbeitet …' : 'Im Feed teilen'}
-            loading={submitting}
-            onPress={onSubmit}
-            testID="team-feed-submit"
-            variant="action"
-          />
+          {hasUsableDraft || submitting ? (
+            <Button
+              accessibilityHint={submitHint}
+              disabled={!canSubmit}
+              icon={<ScreenIcon source={icons.chat} />}
+              label={submitting ? 'Wird verarbeitet …' : 'Update posten'}
+              loading={submitting}
+              onPress={onSubmit}
+              testID="team-feed-submit"
+              variant="action"
+            />
+          ) : null}
         </View>
       ) : (
         <Card tone="surface">
           <StatusChip label="NUR ANSEHEN" tone="lavender" />
           <Text style={styles.supportCopy}>
-            Du kannst Beiträge lesen, aber in diesem Event nichts posten.
+            Du kannst Updates lesen, aber in diesem Event nichts posten.
           </Text>
         </Card>
       )}
 
       <View style={styles.feed}>
         <Text accessibilityRole="header" style={styles.sectionTitle}>
-          LETZTE BEITRÄGE
+          LETZTE UPDATES
         </Text>
         {model.entries.length > 0 ? (
           <View accessibilityRole="list" style={styles.entryList}>
@@ -367,10 +364,10 @@ export function TeamFeedView({
         ) : (
           <Card tone="surface">
             <Text accessibilityLiveRegion="polite" style={styles.emptyTitle}>
-              Noch keine Nachrichten
+              Noch keine Updates
             </Text>
             <Text style={styles.supportCopy}>
-              Der erste lokal gespeicherte Beitrag erscheint sofort hier.
+              Das erste lokal gespeicherte Update erscheint sofort hier.
             </Text>
           </Card>
         )}
@@ -380,8 +377,8 @@ export function TeamFeedView({
         <Button
           accessibilityHint={
             submitting
-              ? 'Warte, bis der Beitrag verarbeitet wurde.'
-              : 'Lädt ausstehende Beiträge und den aktuellen Event-Feed erneut.'
+              ? 'Warte, bis das Update verarbeitet wurde.'
+              : 'Lädt ausstehende Updates und den aktuellen Event-Feed erneut.'
           }
           disabled={submitting}
           label="Feed aktualisieren"
@@ -392,8 +389,8 @@ export function TeamFeedView({
         <Button
           accessibilityHint={
             submitting
-              ? 'Warte, bis der Beitrag verarbeitet wurde.'
-              : 'Kehrt zum Event zurück. Ausstehende Beiträge bleiben gespeichert.'
+              ? 'Warte, bis das Update verarbeitet wurde.'
+              : 'Kehrt zum Event zurück. Ausstehende Updates bleiben gespeichert.'
           }
           disabled={submitting}
           label="Zurück zum Event"
@@ -410,11 +407,11 @@ function TeamFeedEntry({ entry }: { entry: TeamFeedEntryViewModel }) {
   const timestamp = feedTimestamp(entry.createdAt);
   const copyHint =
     entry.deliveryState === 'attention'
-      ? 'Aktion verfügbar: Beitrag kopieren. Der Text bleibt lokal.'
-      : 'Aktion verfügbar: Beitrag kopieren.';
+      ? 'Aktion verfügbar: Update kopieren. Der Text bleibt lokal.'
+      : 'Aktion verfügbar: Update kopieren.';
   const copyEntry = () => {
     Clipboard.setString(entry.body);
-    AccessibilityInfo.announceForAccessibility('Beitrag kopiert.');
+    AccessibilityInfo.announceForAccessibility('Update kopiert.');
   };
   return (
     <Card
@@ -439,7 +436,7 @@ function TeamFeedEntry({ entry }: { entry: TeamFeedEntryViewModel }) {
       </View>
       <Text
         accessible
-        accessibilityActions={[{ label: 'Beitrag kopieren', name: 'copy' }]}
+        accessibilityActions={[{ label: 'Update kopieren', name: 'copy' }]}
         accessibilityHint={copyHint}
         accessibilityLabel={`${entry.author}. ${entry.body} ${timestamp}.`}
         accessibilityRole="text"
@@ -459,8 +456,8 @@ function TeamFeedEntry({ entry }: { entry: TeamFeedEntryViewModel }) {
       </Text>
       {entry.deliveryState === 'attention' ? (
         <Button
-          accessibilityHint="Kopiert den lokal erhaltenen Beitrag in die Zwischenablage."
-          label="Beitrag kopieren"
+          accessibilityHint="Kopiert das lokal erhaltene Update in die Zwischenablage."
+          label="Update kopieren"
           onPress={copyEntry}
           testID={`team-feed-entry-copy-${entry.id}`}
           variant="surface"
@@ -486,7 +483,7 @@ function feedDeliverySummary(
     return {
       icon: icons.cloudOffline,
       label:
-        'Mindestens ein Beitrag braucht Aufmerksamkeit. Nutze beim betroffenen Beitrag die Aktion „Beitrag kopieren“; er bleibt lokal.',
+        'Mindestens ein Update braucht Aufmerksamkeit. Nutze beim betroffenen Update die Aktion „Update kopieren“; es bleibt lokal.',
       state: 'attention',
       statusLabel: 'AKTION ERFORDERLICH',
     };
@@ -495,7 +492,7 @@ function feedDeliverySummary(
     return {
       icon: icons.cloudOffline,
       label:
-        'Mindestens ein Beitrag wird synchronisiert und wartet auf Serverbestätigung.',
+        'Mindestens ein Update wird synchronisiert und wartet auf Serverbestätigung.',
       state: 'syncing',
       statusLabel: 'WIRD GESENDET',
     };
@@ -504,8 +501,8 @@ function feedDeliverySummary(
     return {
       icon: icons.cloudOffline,
       label: online
-        ? 'Mindestens ein Beitrag ist lokal gespeichert. Crew versucht die Synchronisierung.'
-        : 'Mindestens ein Beitrag ist offline gespeichert. Crew sendet bei der nächsten Verbindung.',
+        ? 'Mindestens ein Update ist lokal gespeichert. Crew versucht die Synchronisierung.'
+        : 'Mindestens ein Update ist offline gespeichert. Crew sendet bei der nächsten Verbindung.',
       state: 'offline',
       statusLabel: 'LOKAL GESPEICHERT',
     };
@@ -513,13 +510,13 @@ function feedDeliverySummary(
   return online
     ? {
         icon: icons.check,
-        label: 'Alle sichtbaren Beiträge sind synchronisiert.',
+        label: 'Alle sichtbaren Updates sind synchronisiert.',
         state: 'ready',
         statusLabel: 'SYNCHRONISIERT',
       }
     : {
         icon: icons.cloudOffline,
-        label: 'Offline. Synchronisierte Beiträge bleiben verfügbar.',
+        label: 'Offline. Synchronisierte Updates bleiben verfügbar.',
         state: 'offline',
         statusLabel: 'OFFLINE BEREIT',
       };

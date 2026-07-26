@@ -8,6 +8,22 @@ const inventoryUrl = new URL(
 	"docs/product/figma-screen-inventory.md",
 	repositoryRoot,
 );
+const handoffUrl = new URL(
+	"docs/product/figma-handoff/03-flows-and-annotations.md",
+	repositoryRoot,
+);
+const evidenceUrl = new URL(
+	"docs/product/figma-handoff/04-evidence-and-provenance.md",
+	repositoryRoot,
+);
+const evidenceManifestUrl = new URL(
+	"docs/product/figma-handoff/asset-manifest.sha256",
+	repositoryRoot,
+);
+const mobileRouteTypesUrl = new URL(
+	"apps/mobile/src/navigation/types.ts",
+	repositoryRoot,
+);
 const gatewayContractUrl = new URL(
 	"services/api-gateway/openapi/openapi.json",
 	repositoryRoot,
@@ -89,15 +105,104 @@ export function validateFigmaApiInventory(
 	return errors;
 }
 
+export function validateFigmaRouteInventory(
+	routeTypesSource: string,
+	handoffMarkdown: string,
+): string[] {
+	const errors: string[] = [];
+	const routeTypeBlock = routeTypesSource.match(
+		/export type RootStackParamList = \{([\s\S]*?)^\};/m,
+	)?.[1];
+	const crosswalk = handoffMarkdown.match(
+		/## Current runtime route crosswalk\n([\s\S]*?)(?=\n## )/,
+	)?.[1];
+	if (!routeTypeBlock) return ["RootStackParamList was not found"];
+	if (!crosswalk) return ["Current runtime route crosswalk was not found"];
+
+	const runtimeRoutes = new Set(
+		[...routeTypeBlock.matchAll(/^[ \t]{2}([A-Za-z][A-Za-z0-9]*):/gm)].map(
+			([, route]) => route,
+		),
+	);
+	const documentedRoutes = new Set<string>();
+	for (const [, route, coverage] of crosswalk.matchAll(
+		/^\| `([^`]+)` \| ([^|]+) \|/gm,
+	)) {
+		if (documentedRoutes.has(route)) {
+			errors.push(`Duplicate runtime route mapping: ${route}`);
+		}
+		documentedRoutes.add(route);
+		if (!/`SCR-\d{3}`|`EVIDENCE-ONLY`/.test(coverage)) {
+			errors.push(`${route}: coverage must name an SCR or EVIDENCE-ONLY`);
+		}
+	}
+
+	for (const route of runtimeRoutes) {
+		if (!documentedRoutes.has(route)) {
+			errors.push(`Missing runtime route mapping: ${route}`);
+		}
+	}
+	for (const route of documentedRoutes) {
+		if (!runtimeRoutes.has(route)) {
+			errors.push(`Stale runtime route mapping: ${route}`);
+		}
+	}
+	if (runtimeRoutes.size === 0) errors.push("No runtime routes found");
+	if (documentedRoutes.size === 0) {
+		errors.push("No runtime route mappings found");
+	}
+	return errors;
+}
+
+export function validateFigmaEvidenceManifest(
+	markdown: string,
+	manifest: string,
+): string[] {
+	const listed = new Set(
+		manifest
+			.split("\n")
+			.map((line) => line.match(/^[a-f0-9]{64} {2}(.+)$/)?.[1])
+			.filter((path): path is string => path !== undefined),
+	);
+	const linked = new Set(
+		[
+			...markdown.matchAll(
+				/\]\(\.\.\/\.\.\/\.\.\/(apps\/mobile\/evidence\/[^)#]+)/g,
+			),
+		]
+			.map(([, path]) => path)
+			.filter((path): path is string => path !== undefined),
+	);
+	if (linked.size === 0) return ["No linked mobile evidence artifacts found"];
+	return [...linked]
+		.filter((path) => !listed.has(path))
+		.map((path) => `Missing linked evidence checksum: ${path}`);
+}
+
 export async function checkFigmaApiInventory(): Promise<void> {
-	const [markdown, document] = await Promise.all([
+	const [
+		markdown,
+		document,
+		routeTypesSource,
+		handoffMarkdown,
+		evidenceMarkdown,
+		evidenceManifest,
+	] = await Promise.all([
 		Bun.file(inventoryUrl).text(),
 		Bun.file(gatewayContractUrl).json() as Promise<OpenApiDocument>,
+		Bun.file(mobileRouteTypesUrl).text(),
+		Bun.file(handoffUrl).text(),
+		Bun.file(evidenceUrl).text(),
+		Bun.file(evidenceManifestUrl).text(),
 	]);
-	const errors = validateFigmaApiInventory(markdown, document);
+	const errors = [
+		...validateFigmaApiInventory(markdown, document),
+		...validateFigmaRouteInventory(routeTypesSource, handoffMarkdown),
+		...validateFigmaEvidenceManifest(evidenceMarkdown, evidenceManifest),
+	];
 	if (errors.length > 0) {
 		throw new Error(
-			`Figma API inventory is stale:\n${errors.map((error) => `- ${error}`).join("\n")}`,
+			`Figma inventory is stale:\n${errors.map((error) => `- ${error}`).join("\n")}`,
 		);
 	}
 }

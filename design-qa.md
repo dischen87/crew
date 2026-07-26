@@ -1,6 +1,6 @@
 # Event Hub Option 2 — Design QA
 
-- Date: 2026-07-19
+- Date: 2026-07-26
 - Source visual truth: `apps/mobile/evidence/event-hub-option-2/reference-390x844.png`
 - Implementation screenshot: `apps/mobile/evidence/event-hub-option-2/01-final-unscrolled-390x844.png`
 - Viewport: iPhone 16e, 390 × 844 logical points (1170 × 2532 physical pixels)
@@ -26,7 +26,7 @@
 ## Comparison history
 
 1. P2 — `qa-iteration-1-single-line-title.png`: the implementation compressed `Welcome Dinner` to one line. Removing the local 30/32 override restored the existing 32/36 title token and the reference's two-line hierarchy. Post-fix evidence: `comparison-reference-vs-implementation.png`.
-2. P1 — `qa-iteration-2-large-nav-wrapping.png`: real Accessibility Large split `Crew` and `Mehr` into mid-word fragments. The shared bottom-navigation label now remains one line with a 2× navigation-only scaling ceiling while VoiceOver retains the full tab label. Post-fix evidence: `03-final-accessibility-large-unscrolled-390x844.png`.
+2. P1 — `qa-iteration-2-large-nav-wrapping.png`: real Accessibility Large split `Crew` and `Mehr` into mid-word fragments. The font cap and line clamp are now removed; from `fontScale >= 2` each item drops horizontal padding to zero, the navigation shell grows naturally, and the complete labels remain uncapped and intact. Post-fix evidence: `03-final-accessibility-large-unscrolled-390x844.png`.
 3. P1 — `qa-iteration-3-large-timeline-wrap.png`: fixed-width time columns fragmented `09:00`. Times now keep their intrinsic width, never shrink and remain one line; itinerary copy uses the remaining width. Post-fix evidence: `04-final-accessibility-large-feed-390x844.png`.
 4. P2 — `qa-iteration-4-android-large-next-time-wrap.png`: Android 2.0 split the next-card `18:30` inside the fixed 88-point column. The time and its parent now use an intrinsic width with an 88-point minimum. This corrected the number but exposed the next responsive checkpoint.
 5. P1 — `qa-iteration-5-ios-intrinsic-column-large-next-card.png` and the two `qa-iteration-5-android-intrinsic-column-*` images: the widened horizontal time column squeezed adjacent title and action content. At `fontScale >= 2`, the shared card now composes vertically with a time/icon row and horizontal divider. The same-state iOS correction is visible in `comparison-ios-large-before-after-next-card.png`.
@@ -43,6 +43,10 @@
 - Android real 2.0 top/feed: `06-final-android-accessibility-2x-unscrolled-*` and `07-final-android-accessibility-2x-feed-*`.
 - `maestro-scroll.yaml` passed on the exact iPhone 16e for both Dynamic Type sizes and makes the full feed summary visible before capture.
 - Android focused Jest: 2 suites, 24 tests passed. Final mobile Jest passed 60 suites and 479 tests; Prettier, TypeScript, ESLint, checksum and manifest-coverage gates also passed.
+- The 2026-07-26 iOS Accessibility Large set was recaptured after removing the
+  display-title and navigation-label caps. The retained Android images belong
+  to their earlier documented source and are not current proof for this
+  uncapped navigation revision.
 - The isolated iOS Release build used `evidence/event-hub-option-2-entry.js`, copied 22 raster assets and stayed below the 1.5 GiB stop limit. Android's isolated Release build and cache growth was 605,288 KiB, also below the limit.
 - iOS restored the exact Debug executable (`36ccae09…746e`) and Debug dylib (`9464da6e…fa17`), medium Dynamic Type and a signed-out screenshot byte-identical to the pre-gate hash (`9e671a6d…1b53`). Android restored its byte-identical Debug APK, font scale 1.0 and signed-out surface. Ports 8081 and 8082 retained their original listeners.
 

@@ -200,12 +200,17 @@ type SyncStatusProps = {
 };
 
 export function SyncStatus({ icon, label, state }: SyncStatusProps) {
+  const usesLargeTextLayout = useWindowDimensions().fontScale >= 2;
+
   return (
     <View
       accessibilityLabel={label}
       accessibilityLiveRegion="polite"
       role="status"
-      style={styles.syncStatus}
+      style={[
+        styles.syncStatus,
+        usesLargeTextLayout && styles.syncStatusLargeText,
+      ]}
     >
       <View
         accessibilityElementsHidden
@@ -217,7 +222,14 @@ export function SyncStatus({ icon, label, state }: SyncStatusProps) {
       >
         {icon}
       </View>
-      <Text style={styles.syncLabel}>{label}</Text>
+      <Text
+        style={[
+          styles.syncLabel,
+          usesLargeTextLayout && styles.syncLabelLargeText,
+        ]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -597,6 +609,8 @@ export function BottomNavigationItem({
   style,
   ...props
 }: BottomNavigationItemProps) {
+  const usesLargeTextLayout = useWindowDimensions().fontScale >= 2;
+
   return (
     <Pressable
       {...props}
@@ -607,19 +621,14 @@ export function BottomNavigationItem({
       style={({ pressed }) => [
         styles.bottomNavigationItem,
         selected && styles.bottomNavigationItemSelected,
+        usesLargeTextLayout && styles.bottomNavigationItemLargeText,
         style,
         pressed && styles.rowPressed,
         disabled && styles.disabled,
       ]}
     >
       {icon}
-      <Text
-        maxFontSizeMultiplier={2}
-        numberOfLines={1}
-        style={styles.bottomNavigationLabel}
-      >
-        {label}
-      </Text>
+      <Text style={styles.bottomNavigationLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -679,9 +688,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceBrand,
     borderColor: colors.border,
   },
+  bottomNavigationItemLargeText: {
+    paddingHorizontal: spacing.none,
+  },
   bottomNavigationLabel: {
     ...typography.caption,
     color: colors.text,
+    textAlign: 'center',
   },
   button: {
     alignItems: 'center',
@@ -815,11 +828,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
   },
+  syncLabelLargeText: {
+    width: '100%',
+  },
   syncStatus: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
     minHeight: componentMetrics.control.minimumTouchSize,
+  },
+  syncStatusLargeText: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+    paddingVertical: spacing.xs,
   },
   textField: {
     gap: spacing.xs,

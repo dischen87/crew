@@ -1,5 +1,11 @@
 # Private unavailable — safe Option-2 escape evidence
 
+> **Current iOS Large-Text refresh (2026-07-26):** Evidence `04` through `06`
+> was recaptured from the current uncapped shared frame in an isolated Release
+> app on the iPhone 16e simulator. Both scroll states and the native
+> confirmation were visually inspected. The earlier Android evidence remains
+> retained under its documented source boundary.
+
 This folder is the cross-platform native evidence for the `crew-paq.3.5.6`
 `PrivateUnavailable` recovery slice. The current production
 `PrivateBootstrapGate`, `PrivateUnavailableScreen`, and `PrivateAccessView`
@@ -90,7 +96,9 @@ the focused tests listed in `asset-manifest.sha256`.
 The exact viewport was iPhone 16e, iOS 26.2, 390 x 844 points. Normal and
 Accessibility Large captures use the production scroll surface; the Large
 sequence proves both the top content and off-screen actions are readable and
-reachable.
+reachable. The refreshed frame retains its base `title` and `body` tokens
+without a multiplier cap, uses iOS push-out line breaking and narrows only the
+extreme Large-Text gutter to four points.
 
 A read-only native accessibility-hierarchy inspection, without enabling or
 changing host VoiceOver, exposed this order for both unavailable reasons:
@@ -109,9 +117,11 @@ source-level proof for that hint. No stronger runtime hint claim is made.
   `cde22f259868bf3c47e51ac0bedf5d3ad5c8c4442a32714598fb86e1d3c68245`.
 - Production binding SHA-256:
   `PrivateBootstrapGate.tsx`
-  `c658b35889c452d425fd465041e3362e3e1f810d1563a73c25eb6987c541ce60`;
+  `4a037ae37b36fbef5c95d1a6a17745ea1aaa3bbabb663f34e138f700dc124724`;
   `PrivateAccessScreen.tsx`
-  `6e67a5ef402b92d32bf90683fb76ecdffb927341d4485bdd015514a63a314004`.
+  `6e67a5ef402b92d32bf90683fb76ecdffb927341d4485bdd015514a63a314004`;
+  `ScreenFrame.tsx`
+  `77aa18be4f729ae3d72c8434a81baa643b0e535fc3a57588c3fcf2140c66bccc`.
 - Re-signed Release evidence executable SHA-256:
   `fadb65e382e82a8a31ce30b22bd30038b3892bb6ef88d9d44a6092a94191745a`;
   JS bundle:

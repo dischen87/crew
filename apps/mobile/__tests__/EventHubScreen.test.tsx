@@ -627,7 +627,7 @@ test('uses singular participant copy in the screen accessibility summary', () =>
   );
 });
 
-test('makes route, date, sync, timeline and unfinished-tab callbacks safe', async () => {
+test('makes route, date, sync and available-tab callbacks safe', async () => {
   const store = storeFor(snapshot(accountA, rootA, 'Interaktive Reise'));
   const syncRoot = jest.fn(async () => syncStatus());
   mockPrivateDatabase = {
@@ -637,16 +637,12 @@ test('makes route, date, sync, timeline and unfinished-tab callbacks safe', asyn
   const navigate = jest.fn();
   const renderer = await renderScreen(rootA, true, navigate);
 
-  const timeline = renderer.root.find(
-    node =>
-      node.props.accessibilityRole === 'button' &&
-      String(node.props.accessibilityLabel).includes('Welcome Dinner'),
-  );
-  await ReactTestRenderer.act(async () => timeline.props.onPress());
-  expect(Alert.alert).toHaveBeenCalledWith(
-    'Welcome Dinner',
-    expect.stringContaining('noch nicht verfügbar'),
-  );
+  const timeline = renderer.root.findByProps({
+    accessibilityLabel: '18:30, Welcome Dinner, Hotellobby',
+  });
+  expect(timeline.props.accessibilityRole).toBe('text');
+  expect(timeline.props.onPress).toBeUndefined();
+  expect(Alert.alert).not.toHaveBeenCalled();
 
   await ReactTestRenderer.act(async () => {
     renderer.root
@@ -680,6 +676,12 @@ test('makes route, date, sync, timeline and unfinished-tab callbacks safe', asyn
   expect(navigate).toHaveBeenCalledWith('CommunityFeedbackList', {
     rootEventId: rootA,
   });
+  expect(
+    renderer.root.findByProps({ testID: 'event-hub-tab-crew' }).props,
+  ).toMatchObject({
+    disabled: true,
+    onPress: undefined,
+  });
 
   await ReactTestRenderer.act(async () => {
     renderer.root
@@ -692,6 +694,67 @@ test('makes route, date, sync, timeline and unfinished-tab callbacks safe', asyn
   );
 
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('routes the Crew tab to the latest role-correct synchronized team surface', async () => {
+  const participantRead = snapshot(
+    accountA,
+    rootA,
+    'Teamtag',
+    'participant',
+  );
+  participantRead.feed = [
+    systemFeed(accountA, rootA, {
+      decisionId: 'tdc_lunch',
+      eventId: rootA,
+      type: 'team.decision.opened',
+    }),
+    systemFeed(accountA, rootA, {
+      eventId: rootA,
+      type: 'team.assignments.published',
+    }),
+  ];
+  mockPrivateDatabase = {
+    accountId: accountA,
+    database: {
+      store: storeFor(participantRead),
+      sync: { syncRoot: jest.fn(async () => syncStatus()) },
+    },
+  };
+  const participantNavigate = jest.fn();
+  const participant = await renderScreen(rootA, true, participantNavigate);
+  const participantCrew = participant.root.findByProps({
+    testID: 'event-hub-tab-crew',
+  });
+  expect(participantCrew.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => participantCrew.props.onPress());
+  expect(participantNavigate).toHaveBeenCalledWith('Decision', {
+    decisionId: 'tdc_lunch',
+    rootEventId: rootA,
+  });
+  await ReactTestRenderer.act(() => participant.unmount());
+
+  const organizerRead = snapshot(accountA, rootA, 'Teamtag', 'organizer');
+  organizerRead.feed = participantRead.feed;
+  mockPrivateDatabase = {
+    accountId: accountA,
+    database: {
+      store: storeFor(organizerRead),
+      sync: { syncRoot: jest.fn(async () => syncStatus()) },
+    },
+  };
+  const organizerNavigate = jest.fn();
+  const organizer = await renderScreen(rootA, true, organizerNavigate);
+  const organizerCrew = organizer.root.findByProps({
+    testID: 'event-hub-tab-crew',
+  });
+  expect(organizerCrew.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => organizerCrew.props.onPress());
+  expect(organizerNavigate).toHaveBeenCalledWith('TeamSetup', {
+    eventId: rootA,
+    rootEventId: rootA,
+  });
+  await ReactTestRenderer.act(() => organizer.unmount());
 });
 
 test('opens a synced golf itinerary on the production scorecard route with its real event scope', async () => {
@@ -897,5 +960,47 @@ function syncStatus() {
     pendingCount: 0,
     state: 'synced' as const,
     summary: 'All changes saved',
+  };
+}
+
+function systemFeed(
+  accountUserId: string,
+  rootEventId: string,
+  payload: {
+    decisionId?: string;
+    eventId: string;
+    type:
+      | 'team.assignments.published'
+      | 'team.decision.closed'
+      | 'team.decision.opened';
+  },
+): FeedRecord {
+  return {
+    accountUserId,
+    actorUserId: accountUserId,
+    createdAt: '2026-07-18T12:00:00.000Z',
+    createdRootRevision:
+      payload.type === 'team.assignments.published' ? '3' : '4',
+    deletedAt: null,
+    eventId: payload.eventId,
+    id:
+      payload.type === 'team.assignments.published'
+        ? 'fed_sys_team_assignments'
+        : 'fed_sys_team_decision',
+    kind: 'system',
+    parentEntryId: null,
+    payloadJson: JSON.stringify({
+      actorUserId: accountUserId,
+      entityVersion: 1,
+      schemaVersion: 1,
+      ...payload,
+    }),
+    payloadSchemaVersion: 1,
+    revisionOrdinal: 1,
+    rootEventId,
+    rootRevision:
+      payload.type === 'team.assignments.published' ? '3' : '4',
+    updatedAt: '2026-07-18T12:00:00.000Z',
+    version: 1,
   };
 }

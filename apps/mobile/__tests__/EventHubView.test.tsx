@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import { contrastRatio, contrastThresholds } from '../src/design/contrast';
 import { Button } from '../src/design/primitives';
-import { colors } from '../src/design/theme';
+import { colors, typography } from '../src/design/theme';
 import {
   EventHubView,
   turkeyGolfEventHubModel,
@@ -90,7 +90,7 @@ test('keeps scrolling content below the live top safe area without a double inse
   await ReactTestRenderer.act(() => zeroInset.renderer.unmount());
 });
 
-test('offers exactly one primary action and interactive bottom tabs', async () => {
+test('offers exactly one primary action and only working bottom tabs', async () => {
   const onPrimaryAction = jest.fn();
   const onTabSelect = jest.fn();
   const { renderer } = await renderHub(turkeyGolfEventHubModel, {
@@ -120,8 +120,8 @@ test('offers exactly one primary action and interactive bottom tabs', async () =
     turkeyGolfEventHubModel.primaryAction,
   );
 
-  const tabs: EventHubTab[] = ['plan', 'feed', 'crew', 'more'];
-  for (const tab of tabs) {
+  const availableTabs: EventHubTab[] = ['plan', 'feed', 'more'];
+  for (const tab of availableTabs) {
     const item = renderer.root.find(
       node =>
         node.props.testID === `event-hub-tab-${tab}` &&
@@ -129,7 +129,7 @@ test('offers exactly one primary action and interactive bottom tabs', async () =
     );
     await ReactTestRenderer.act(() => item.props.onPress());
   }
-  expect(onTabSelect.mock.calls.map(([tab]) => tab)).toEqual(tabs);
+  expect(onTabSelect.mock.calls.map(([tab]) => tab)).toEqual(availableTabs);
   expect(
     renderer.root.find(
       node =>
@@ -137,6 +137,45 @@ test('offers exactly one primary action and interactive bottom tabs', async () =
         node.props.accessibilityRole === 'tab',
     ).props.accessibilityState,
   ).toMatchObject({ selected: true });
+  const crew = renderer.root.find(
+    node =>
+      node.props.testID === 'event-hub-tab-crew' &&
+      node.props.accessibilityRole === 'tab',
+  );
+  expect(crew.props).toMatchObject({
+    accessibilityHint: 'Noch nicht verfügbar.',
+    disabled: true,
+    onPress: undefined,
+  });
+  expect(crew.props.accessibilityState).toMatchObject({
+    disabled: true,
+    selected: false,
+  });
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('offers only routed itinerary rows as actions', async () => {
+  const onTimelineSelect = jest.fn();
+  const { renderer } = await renderHub(turkeyGolfEventHubModel, {
+    onTimelineSelect,
+  });
+
+  const golf = renderer.root.find(
+    node =>
+      node.props.accessibilityRole === 'button' &&
+      String(node.props.accessibilityLabel).includes('Carya Golf Club'),
+  );
+  const transfer = renderer.root.findByProps({
+    accessibilityLabel: '13:30, Transfer zum Club, Hotellobby',
+  });
+  expect(transfer.props.accessibilityRole).toBe('text');
+  expect(transfer.props.accessibilityHint).toBeUndefined();
+  expect(transfer.props.onPress).toBeUndefined();
+
+  await ReactTestRenderer.act(() => golf.props.onPress());
+  expect(onTimelineSelect).toHaveBeenCalledWith('carya-round-one');
+  expect(onTimelineSelect).toHaveBeenCalledTimes(1);
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -259,7 +298,7 @@ test('stacks the next card before large text can squeeze its content', async () 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
-test('keeps a dynamic event title readable without consuming the large-text viewport', async () => {
+test('preserves the Event Hub display token and natural wrapping at Large Text', async () => {
   setFontScale(3.2);
   const { renderer } = await renderHub({
     ...turkeyGolfEventHubModel,
@@ -267,15 +306,39 @@ test('keeps a dynamic event title readable without consuming the large-text view
   });
   const title = renderer.root.findByProps({ testID: 'event-hub-title' });
 
-  expect(title.props).toMatchObject({
-    accessibilityRole: 'header',
-    maxFontSizeMultiplier: 2,
-  });
+  expect(title.props.accessibilityRole).toBe('header');
+  expect(title.props.lineBreakStrategyIOS).toBe('push-out');
+  expect(title.props.maxFontSizeMultiplier).toBeUndefined();
   expect(StyleSheet.flatten(title.props.style)).toMatchObject({
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: typography.display.fontSize,
+    lineHeight: typography.display.lineHeight,
   });
   expect(title.props.numberOfLines).toBeUndefined();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('stacks the complete sync status at Large Text', async () => {
+  setFontScale(3.2);
+  const { renderer } = await renderHub();
+  const status = renderer.root.find(
+    node =>
+      node.props.role === 'status' &&
+      node.props.accessibilityLabel ===
+        'Offline bereit · vor 2 Min. synchronisiert',
+  );
+  const label = renderer.root.findByProps({
+    children: 'Offline bereit · vor 2 Min. synchronisiert',
+  });
+
+  expect(StyleSheet.flatten(status.props.style)).toMatchObject({
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+  });
+  expect(StyleSheet.flatten(label.props.style)).toMatchObject({
+    width: '100%',
+  });
+  expect(label.props.numberOfLines).toBeUndefined();
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });

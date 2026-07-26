@@ -1,5 +1,12 @@
 import React from 'react';
-import { Dimensions, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import {
@@ -15,10 +22,20 @@ import {
   TextField,
   TimelineRow,
 } from '../src/design/primitives';
-import { borders, colors, componentMetrics } from '../src/design/theme';
+import {
+  borders,
+  colors,
+  componentMetrics,
+  typography,
+} from '../src/design/theme';
+import { ScreenFrame } from '../src/screens/ScreenFrame';
 
 const originalWindow = Dimensions.get('window');
 const originalScreen = Dimensions.get('screen');
+const metrics = {
+  frame: { height: 844, width: 390, x: 0, y: 0 },
+  insets: { bottom: 34, left: 0, right: 0, top: 47 },
+};
 
 function setFontScale(fontScale: number) {
   Dimensions.set({
@@ -127,6 +144,67 @@ test('stacks the icon above the complete label for Large Text', async () => {
   }
 });
 
+test('preserves ScreenFrame base typography and natural wrapping for Large Text', async () => {
+  const normal = await render(
+    <SafeAreaProvider initialMetrics={metrics}>
+      <ScreenFrame
+        description="Private Events öffnen."
+        title="Bitte anmelden"
+      />
+    </SafeAreaProvider>,
+  );
+  const normalTitle = normal.root
+    .findAllByType(Text)
+    .find(node => node.props.children === 'Bitte anmelden')!;
+  expect(normalTitle.props.accessibilityRole).toBe('header');
+  expect(StyleSheet.flatten(normalTitle.props.style)).toMatchObject({
+    fontSize: typography.title.fontSize,
+    lineHeight: typography.title.lineHeight,
+  });
+  await ReactTestRenderer.act(() => normal.unmount());
+
+  setFontScale(3.2);
+  let large: ReactTestRenderer.ReactTestRenderer | undefined;
+  try {
+    large = await render(
+      <SafeAreaProvider initialMetrics={metrics}>
+        <ScreenFrame
+          description="Private Events öffnen."
+          title="Bitte anmelden"
+        />
+      </SafeAreaProvider>,
+    );
+    const largeTitle = large.root
+      .findAllByType(Text)
+      .find(node => node.props.children === 'Bitte anmelden')!;
+    expect(largeTitle.props.accessibilityRole).toBe('header');
+    expect(largeTitle.props.lineBreakStrategyIOS).toBe('push-out');
+    expect(largeTitle.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(largeTitle.props.numberOfLines).toBeUndefined();
+    expect(StyleSheet.flatten(largeTitle.props.style)).toMatchObject({
+      fontSize: typography.title.fontSize,
+      lineHeight: typography.title.lineHeight,
+    });
+    const largeScroll = large.root.findByType(ScrollView);
+    expect(
+      StyleSheet.flatten(largeScroll.props.contentContainerStyle),
+    ).toMatchObject({ paddingHorizontal: 4 });
+    const largeDescription = large.root
+      .findAllByType(Text)
+      .find(node => node.props.children === 'Private Events öffnen.')!;
+    expect(largeDescription.props.lineBreakStrategyIOS).toBe('push-out');
+    expect(largeDescription.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(largeDescription.props.numberOfLines).toBeUndefined();
+    expect(StyleSheet.flatten(largeDescription.props.style)).toMatchObject({
+      fontSize: typography.body.fontSize,
+      lineHeight: typography.body.lineHeight,
+    });
+  } finally {
+    await ReactTestRenderer.act(() => large?.unmount());
+    setFontScale(1);
+  }
+});
+
 test('status, card, avatars and timeline keep information beyond color', async () => {
   const onPress = jest.fn();
   const renderer = await render(
@@ -209,7 +287,8 @@ test('status, card, avatars and timeline keep information beyond color', async (
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
-test('bottom navigation is tab-semantic and respects the safe-area floor', async () => {
+test('bottom navigation is uncapped, tab-semantic and Large Text responsive', async () => {
+  setFontScale(3.2);
   const renderer = await render(
     <SafeAreaProvider
       initialMetrics={{
@@ -241,13 +320,15 @@ test('bottom navigation is tab-semantic and respects the safe-area floor', async
     .find(node => node.props.testID === 'bottom-navigation')!;
   expect(navigation.props.accessibilityRole).toBe('tablist');
   expect(StyleSheet.flatten(navigation.props.style).paddingBottom).toBe(34);
+  const planTab = renderer.root.find(
+    node =>
+      node.props.testID === 'plan-tab' &&
+      node.props.accessibilityRole === 'tab',
+  );
+  expect(planTab.props.accessibilityState).toMatchObject({ selected: true });
   expect(
-    renderer.root.find(
-      node =>
-        node.props.testID === 'plan-tab' &&
-        node.props.accessibilityRole === 'tab',
-    ).props.accessibilityState,
-  ).toMatchObject({ selected: true });
+    StyleSheet.flatten(planTab.props.style({ pressed: false })),
+  ).toMatchObject({ paddingHorizontal: 0 });
   expect(
     renderer.root.find(
       node =>
@@ -255,10 +336,9 @@ test('bottom navigation is tab-semantic and respects the safe-area floor', async
         node.props.accessibilityRole === 'tab',
     ).props.accessibilityState,
   ).toMatchObject({ selected: false });
-  expect(renderer.root.findByProps({ children: 'Plan' }).props).toMatchObject({
-    maxFontSizeMultiplier: 2,
-    numberOfLines: 1,
-  });
+  const planLabel = renderer.root.findByProps({ children: 'Plan' });
+  expect(planLabel.props.maxFontSizeMultiplier).toBeUndefined();
+  expect(planLabel.props.numberOfLines).toBeUndefined();
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });

@@ -1,4 +1,8 @@
 import { GatewayClientError, type Session } from '@crew/mobile-client';
+import {
+  MobileSyncAccountChangedError,
+  MobileSyncEngine,
+} from '@crew/mobile-data';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { Text, TextInput } from 'react-native';
@@ -20,12 +24,18 @@ const mockLifecycle = {
   replaceSession: jest.fn(async () => undefined),
   status: 'signedOut' as 'loading' | 'signedOut' | 'unavailable' | 'ready',
 };
+const mockPrivateDatabase = {
+  accountId: null as string | null,
+  database: { all: jest.fn() },
+};
+const mockSyncRoot = jest.spyOn(MobileSyncEngine.prototype, 'syncRoot');
 
 jest.mock('../src/app/GatewayProvider', () => ({
   useGatewayClient: () => mockGatewayClient,
 }));
 
 jest.mock('../src/app/PrivateBootstrapGate', () => ({
+  usePrivateDatabase: () => mockPrivateDatabase,
   usePrivateSessionLifecycle: () => mockLifecycle,
 }));
 
@@ -110,6 +120,9 @@ async function flush() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGatewayClient.request.mockReset();
+  mockSyncRoot.mockReset().mockResolvedValue({} as never);
+  mockPrivateDatabase.accountId = accountId;
+  mockPrivateDatabase.database.all.mockReset().mockResolvedValue([]);
   mockLifecycle.accountId = null;
   mockLifecycle.status = 'signedOut';
   mockLifecycle.reloadSession.mockReset().mockResolvedValue(undefined);
@@ -147,6 +160,8 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue(true);
 });
+
+afterAll(() => mockSyncRoot.mockRestore());
 
 test('keeps magic-link redeem protected through session replacement and returns without token params', async () => {
   jest.mocked(keychainPendingRouteStore.peek).mockResolvedValue({
@@ -682,11 +697,22 @@ test('conceals an unauthorized event root after the generated Gateway check', as
   client.clear();
 });
 
-test('retries a routed inbound outage and reveals only the authorized event title', async () => {
+test('retries an item route and resolves its real itinerary ID from the private projection', async () => {
   mockLifecycle.accountId = accountId;
   mockLifecycle.status = 'ready';
+  let projectedRows: ReturnType<typeof itineraryRow>[] = [];
+  mockPrivateDatabase.database.all.mockImplementation(
+    async () => projectedRows,
+  );
+  mockSyncRoot.mockImplementation(async () => {
+    projectedRows = [
+      itineraryRow('iti_other', 'Andere Session'),
+      itineraryRow('iti_private_item', 'Workshop'),
+    ];
+    return {} as never;
+  });
   mockGatewayClient.request
-    .mockRejectedValueOnce(new Error('offline evt_private_item'))
+    .mockRejectedValueOnce(new Error('offline iti_private_item'))
     .mockResolvedValueOnce({
       data: { event: { title: 'Sommerfest' } },
       requestId: 'request-recovered-root',
@@ -708,7 +734,7 @@ test('retries a routed inbound outage and reveals only the authorized event titl
               name: 'ItemInbound',
               params: {
                 rootEventId: 'evt_private_root',
-                itemId: 'evt_private_item',
+                itemId: 'iti_private_item',
               },
             } as never
           }
@@ -724,7 +750,7 @@ test('retries a routed inbound outage and reveals only the authorized event titl
 
   expect(textInside(renderer!)).toContain('Zugriff nicht bestätigt');
   expect(textInside(renderer!)).not.toMatch(
-    /evt_private_root|evt_private_item|offline/,
+    /evt_private_root|iti_private_item|offline/,
   );
   await ReactTestRenderer.act(async () => {
     renderer!.root
@@ -736,18 +762,106 @@ test('retries a routed inbound outage and reveals only the authorized event titl
 
   expect(mockGatewayClient.request).toHaveBeenNthCalledWith(2, 'eventsGet', {
     path: {
-      eventId: 'evt_private_item',
+      eventId: 'evt_private_root',
       rootEventId: 'evt_private_root',
     },
   });
-  expect(textInside(renderer!)).toContain('Sommerfest');
+  expect(mockSyncRoot).toHaveBeenCalledWith(accountId, 'evt_private_root');
+  expect(mockPrivateDatabase.database.all).toHaveBeenCalledWith(
+    expect.any(String),
+    [accountId, 'evt_private_root'],
+  );
+  expect(mockGatewayClient.request.mock.invocationCallOrder[1]).toBeLessThan(
+    mockSyncRoot.mock.invocationCallOrder[0]!,
+  );
+  expect(mockSyncRoot.mock.invocationCallOrder[0]).toBeLessThan(
+    mockPrivateDatabase.database.all.mock.invocationCallOrder[0]!,
+  );
+  expect(textInside(renderer!)).toContain('Workshop');
+  expect(textInside(renderer!)).not.toContain('Andere Session');
   expect(textInside(renderer!)).not.toMatch(
-    /evt_private_root|evt_private_item|request-recovered-root/,
+    /evt_private_root|iti_private_item|request-recovered-root/,
   );
 
   await ReactTestRenderer.act(async () => renderer!.unmount());
   client.clear();
 });
+
+test('conceals an item when the active account changes during root sync', async () => {
+  mockLifecycle.accountId = accountId;
+  mockLifecycle.status = 'ready';
+  mockGatewayClient.request.mockResolvedValue({
+    data: { event: { title: 'Sommerfest' } },
+    requestId: 'request-authorized-root',
+    status: 200,
+  });
+  mockSyncRoot.mockRejectedValue(new MobileSyncAccountChangedError());
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <QueryClientProvider client={client}>
+        <InboundGateScreen
+          navigation={{ navigate: jest.fn() } as never}
+          route={
+            {
+              name: 'ItemInbound',
+              params: {
+                rootEventId: 'evt_private_root',
+                itemId: 'iti_private_item',
+              },
+            } as never
+          }
+        />
+      </QueryClientProvider>,
+    );
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+
+  expect(textInside(renderer!)).toContain('Dieser Inhalt ist nicht verfügbar.');
+  expect(
+    renderer!.root.findAllByProps({ testID: 'inbound-gate-retry' }),
+  ).toHaveLength(0);
+  expect(mockPrivateDatabase.database.all).not.toHaveBeenCalled();
+  expect(textInside(renderer!)).not.toMatch(
+    /evt_private_root|iti_private_item|request-authorized-root/,
+  );
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+  client.clear();
+});
+
+function itineraryRow(id: string, title: string) {
+  return {
+    account_user_id: accountId,
+    all_day: 0,
+    created_at: '2026-07-18T12:00:00.000Z',
+    deleted_at: null,
+    details_json: '{}',
+    details_schema_version: 1,
+    ends_at: '2026-07-18T14:00:00.000Z',
+    event_id: 'evt_private_session',
+    id,
+    notes: null,
+    place_id: null,
+    place_snapshot_json: null,
+    root_event_id: 'evt_private_root',
+    sort_key: '1',
+    starts_at: '2026-07-18T13:00:00.000Z',
+    status: 'active',
+    time_zone: 'Europe/Zurich',
+    title,
+    updated_at: '2026-07-18T12:00:00.000Z',
+    version: 1,
+  };
+}
 
 function invitePreview() {
   return {

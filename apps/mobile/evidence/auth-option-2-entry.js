@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, AppRegistry, Settings } from 'react-native';
+import { Alert, AppRegistry, Settings, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { EmailIdentityView } from '../src/screens/EmailIdentityScreen';
 import { InboundGateView } from '../src/screens/InboundGateScreen';
@@ -115,6 +115,7 @@ function EvidenceSurface() {
 function AuthEvidenceApp() {
   return (
     <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" hidden={false} />
       <EvidenceSurface />
     </SafeAreaProvider>
   );

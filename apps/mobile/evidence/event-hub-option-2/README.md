@@ -54,13 +54,16 @@ viewport rather than being cropped to the iOS source.
 
 ## Gate status
 
-The iOS normal and Accessibility Large surfaces and Android normal and real
-2.0-font surfaces passed visual inspection on the same frozen
-`EventHubView.tsx` source. Both platforms were restored to their original Debug
-app, normal text setting and signed-out boundary without uninstalling or
-clearing app data. `asset-manifest.sha256` binds every rendering input,
-comparison, QA checkpoint and final artifact with real digests; the
-`event-hub-option-2` coverage-policy status is `current`.
+The iOS Accessibility Large surfaces were recaptured on 2026-07-26 after the
+display title and persistent navigation labels were returned to uncapped base
+tokens; every final raw and normalized image was visually inspected. The
+existing Android normal and real 2.0-font images remain the documented earlier
+Android run and are not current proof for the uncapped navigation behavior.
+The isolated iOS evidence app was removed and the simulator text setting and
+status bar were restored without clearing the original Debug app data.
+`asset-manifest.sha256` binds the current rendering inputs, comparison, QA
+checkpoints and artifacts with real digests; the coverage-policy status remains
+`current` for the recaptured iOS slice.
 
 See `apps/mobile/evidence/option-2-native-qa.md` for the coordinated platform
 capture order.
