@@ -1,0 +1,260 @@
+name: crew-next-staging
+
+services:
+  internal-tls:
+    image: haproxy:3.4.2-alpine@sha256:0878b11eb64c433be1b0f578a584b8aca12f6caaa64c8f239b8b556c0dd5eeeb
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /run:size=8m,mode=0755
+      - /var/lib/haproxy:size=8m,mode=0755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ${CREW_DEPLOY_ASSET_DIR:?CREW_DEPLOY_ASSET_DIR is required}/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ${CREW_DEPLOY_SHARED_DIR:?CREW_DEPLOY_SHARED_DIR is required}/tls/staging.pem:/usr/local/etc/haproxy/certs/staging.pem:ro
+    ports:
+      - 0.0.0.0:8444:8444
+    networks:
+      default:
+        aliases:
+          - staging.crew-haus.com
+    healthcheck:
+      test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      USER_DB_OWNER_PASSWORD: ${USER_DB_OWNER_PASSWORD:?USER_DB_OWNER_PASSWORD is required}
+      USER_DB_API_PASSWORD: ${USER_DB_API_PASSWORD:?USER_DB_API_PASSWORD is required}
+      USER_DB_MAGIC_WORKER_PASSWORD: ${USER_DB_MAGIC_WORKER_PASSWORD:?USER_DB_MAGIC_WORKER_PASSWORD is required}
+      USER_DB_PUSH_WORKER_PASSWORD: ${USER_DB_PUSH_WORKER_PASSWORD:?USER_DB_PUSH_WORKER_PASSWORD is required}
+      EVENT_DB_OWNER_PASSWORD: ${EVENT_DB_OWNER_PASSWORD:?EVENT_DB_OWNER_PASSWORD is required}
+      EVENT_DB_API_PASSWORD: ${EVENT_DB_API_PASSWORD:?EVENT_DB_API_PASSWORD is required}
+      EVENT_DB_ATTACHMENT_WORKER_PASSWORD: ${EVENT_DB_ATTACHMENT_WORKER_PASSWORD:?EVENT_DB_ATTACHMENT_WORKER_PASSWORD is required}
+      EVENT_DB_NOTIFICATION_WORKER_PASSWORD: ${EVENT_DB_NOTIFICATION_WORKER_PASSWORD:?EVENT_DB_NOTIFICATION_WORKER_PASSWORD is required}
+      EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD: ${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:?EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD is required}
+
+  redis-rate-limit:
+    image: crew-next-rate-limit-redis:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      REDIS_GATEWAY_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?REDIS_GATEWAY_PASSWORD is required}
+      REDIS_USER_PASSWORD: ${REDIS_USER_PASSWORD:?REDIS_USER_PASSWORD is required}
+
+  jwt-bootstrap:
+    image: crew-next-infra:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+
+  user-migrate:
+    image: crew-next-user-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      USER_DATABASE_URL: postgres://crew_user_owner:${USER_DB_OWNER_PASSWORD:?USER_DB_OWNER_PASSWORD is required}@postgres:5432/crew_user
+
+  event-migrate:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      EVENT_DATABASE_URL: postgres://crew_event_owner:${EVENT_DB_OWNER_PASSWORD:?EVENT_DB_OWNER_PASSWORD is required}@postgres:5432/crew_event
+
+  db-grants:
+    environment:
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+
+  minio-bootstrap:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_API_ACCESS_KEY: ${MINIO_API_ACCESS_KEY:?MINIO_API_ACCESS_KEY is required}
+      MINIO_API_SECRET_KEY: ${MINIO_API_SECRET_KEY:?MINIO_API_SECRET_KEY is required}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?MINIO_WORKER_ACCESS_KEY is required}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?MINIO_WORKER_SECRET_KEY is required}
+
+  typesense:
+    command:
+      - --data-dir=/data
+      - --api-key=${TYPESENSE_API_KEY:?TYPESENSE_API_KEY is required}
+
+  provider-sink:
+    image: crew-next-infra:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      PROVIDER_SINK_BEARER: ${PROVIDER_SINK_BEARER:?PROVIDER_SINK_BEARER is required}
+      PROVIDER_SINK_FIXTURE_BEARER: ${PROVIDER_SINK_FIXTURE_BEARER:?PROVIDER_SINK_FIXTURE_BEARER is required}
+
+  user-api:
+    image: crew-next-user-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://crew_user_api:${USER_DB_API_PASSWORD:?USER_DB_API_PASSWORD is required}@postgres:5432/crew_user
+      JWT_KEY_ID: staging-user-jwt-v1
+      REFRESH_TOKEN_KEY: ${REFRESH_TOKEN_KEY:?REFRESH_TOKEN_KEY is required}
+      RATE_LIMIT_REDIS_URL: rediss://crew_user:${REDIS_USER_PASSWORD:?REDIS_USER_PASSWORD is required}@staging.crew-haus.com:6379/0
+      RATE_LIMIT_KEY: ${USER_RATE_LIMIT_KEY:?USER_RATE_LIMIT_KEY is required}
+      IDEMPOTENCY_PAYLOAD_CURRENT_KEY_ID: staging-idempotency-v1
+      IDEMPOTENCY_PAYLOAD_CURRENT_KEY: ${IDEMPOTENCY_PAYLOAD_CURRENT_KEY:?IDEMPOTENCY_PAYLOAD_CURRENT_KEY is required}
+      DELIVERY_PAYLOAD_CURRENT_KEY_ID: staging-delivery-v1
+      DELIVERY_PAYLOAD_CURRENT_KEY: ${DELIVERY_PAYLOAD_CURRENT_KEY:?DELIVERY_PAYLOAD_CURRENT_KEY is required}
+      PUSH_PAYLOAD_CURRENT_KEY_ID: staging-push-v1
+      PUSH_PAYLOAD_CURRENT_KEY: ${PUSH_PAYLOAD_CURRENT_KEY:?PUSH_PAYLOAD_CURRENT_KEY is required}
+      EVENT_NOTIFICATION_SERVICE_CURRENT_KEY_ID: staging-event-service-v1
+      EVENT_NOTIFICATION_SERVICE_CURRENT_KEY: ${EVENT_NOTIFICATION_SERVICE_CURRENT_KEY:?EVENT_NOTIFICATION_SERVICE_CURRENT_KEY is required}
+      MEMBER_DIRECTORY_SERVICE_CURRENT_KEY_ID: staging-member-directory-v1
+      MEMBER_DIRECTORY_SERVICE_CURRENT_KEY: ${MEMBER_DIRECTORY_SERVICE_CURRENT_KEY:?MEMBER_DIRECTORY_SERVICE_CURRENT_KEY is required}
+      MAGIC_LINK_APP_URL: https://crew-haus.com/auth/redeem
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  event-api:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      EVENT_DATABASE_URL: postgres://crew_event_api:${EVENT_DB_API_PASSWORD:?EVENT_DB_API_PASSWORD is required}@postgres:5432/crew_event
+      INVITATION_TOKEN_CURRENT_KEY_ID: staging-invitation-v1
+      INVITATION_TOKEN_KEY: ${INVITATION_TOKEN_KEY:?INVITATION_TOKEN_KEY is required}
+      RECAP_SHARE_TOKEN_CURRENT_KEY_ID: staging-recap-share-v1
+      RECAP_SHARE_TOKEN_CURRENT_KEY: ${RECAP_SHARE_TOKEN_CURRENT_KEY:?RECAP_SHARE_TOKEN_CURRENT_KEY is required}
+      RECAP_EXTERNAL_CAPTIONS_ENABLED: "false"
+      RECAP_CAPTION_FIELD_REF_CURRENT_KEY: ${RECAP_CAPTION_FIELD_REF_CURRENT_KEY:?RECAP_CAPTION_FIELD_REF_CURRENT_KEY is required}
+      SYNC_CURSOR_KEY: ${SYNC_CURSOR_KEY:?SYNC_CURSOR_KEY is required}
+      USER_SERVICE_JWKS_URL: https://staging.crew-haus.com:8443/.well-known/jwks.json
+      ATTACHMENT_GRANT_KEY: ${ATTACHMENT_GRANT_KEY:?ATTACHMENT_GRANT_KEY is required}
+      ATTACHMENT_GRANT_KID: staging-attachment-v1
+      EVENT_OBJECT_STORE_ENDPOINT: https://staging.crew-haus.com:8444
+      EVENT_OBJECT_STORE_BUCKET: crew-event-development
+      EVENT_OBJECT_STORE_ACCESS_KEY_ID: ${MINIO_API_ACCESS_KEY:?MINIO_API_ACCESS_KEY is required}
+      EVENT_OBJECT_STORE_SECRET_ACCESS_KEY: ${MINIO_API_SECRET_KEY:?MINIO_API_SECRET_KEY is required}
+      EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY_ID: staging-notification-v1
+      EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY: ${EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY:?EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY is required}
+      PLACE_CANDIDATE_SERVICE_CURRENT_KEY_ID: staging-place-catalog-v1
+      PLACE_CANDIDATE_SERVICE_CURRENT_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:?PLACE_CANDIDATE_SERVICE_CURRENT_KEY is required}
+      PLACE_SEARCH_CURSOR_KEY: ${PLACE_SEARCH_CURSOR_KEY:?PLACE_SEARCH_CURSOR_KEY is required}
+      PLACE_SEARCH_TYPESENSE_URL: https://staging.crew-haus.com:8445
+      PLACE_SEARCH_TYPESENSE_SEARCH_API_KEY: ${TYPESENSE_SEARCH_API_KEY:?TYPESENSE_SEARCH_API_KEY is required}
+      EVENT_ENRICHMENT_ENABLED: "false"
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  place-golf-import:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      PLACE_GOLF_IMPORT_SERVICE_KEY_ID: staging-place-catalog-v1
+      PLACE_GOLF_IMPORT_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:?PLACE_CANDIDATE_SERVICE_CURRENT_KEY is required}
+
+  place-search-reindex:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      PLACE_SEARCH_REINDEX_TYPESENSE_URL: https://staging.crew-haus.com:8445
+      PLACE_SEARCH_REINDEX_TYPESENSE_ADMIN_API_KEY: ${TYPESENSE_API_KEY:?TYPESENSE_API_KEY is required}
+      PLACE_SEARCH_REINDEX_SERVICE_KEY_ID: staging-place-catalog-v1
+      PLACE_SEARCH_REINDEX_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:?PLACE_CANDIDATE_SERVICE_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  magic-worker:
+    image: crew-next-user-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://crew_user_magic_worker:${USER_DB_MAGIC_WORKER_PASSWORD:?USER_DB_MAGIC_WORKER_PASSWORD is required}@postgres:5432/crew_user
+      MAGIC_LINK_APP_URL: https://crew-haus.com/auth/redeem
+      MAGIC_LINK_DELIVERY_URL: https://staging.crew-haus.com:8446/magic-links
+      MAGIC_LINK_DELIVERY_BEARER: ${PROVIDER_SINK_BEARER:?PROVIDER_SINK_BEARER is required}
+      DELIVERY_PAYLOAD_CURRENT_KEY_ID: staging-delivery-v1
+      DELIVERY_PAYLOAD_CURRENT_KEY: ${DELIVERY_PAYLOAD_CURRENT_KEY:?DELIVERY_PAYLOAD_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  push-worker:
+    image: crew-next-user-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://crew_user_push_worker:${USER_DB_PUSH_WORKER_PASSWORD:?USER_DB_PUSH_WORKER_PASSWORD is required}@postgres:5432/crew_user
+      PUSH_DELIVERY_URL: https://staging.crew-haus.com:8446/push
+      PUSH_DELIVERY_BEARER: ${PROVIDER_SINK_BEARER:?PROVIDER_SINK_BEARER is required}
+      PUSH_PAYLOAD_CURRENT_KEY_ID: staging-push-v1
+      PUSH_PAYLOAD_CURRENT_KEY: ${PUSH_PAYLOAD_CURRENT_KEY:?PUSH_PAYLOAD_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  attachment-worker:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      EVENT_ATTACHMENT_WORKER_ID: staging-attachment-worker
+      EVENT_ATTACHMENT_WORKER_DATABASE_URL: postgres://crew_event_attachment_worker:${EVENT_DB_ATTACHMENT_WORKER_PASSWORD:?EVENT_DB_ATTACHMENT_WORKER_PASSWORD is required}@postgres:5432/crew_event
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ENDPOINT: https://staging.crew-haus.com:8444
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_BUCKET: crew-event-development
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_ACCESS_KEY_ID: ${MINIO_WORKER_ACCESS_KEY:?MINIO_WORKER_ACCESS_KEY is required}
+      EVENT_ATTACHMENT_WORKER_OBJECT_STORE_SECRET_ACCESS_KEY: ${MINIO_WORKER_SECRET_KEY:?MINIO_WORKER_SECRET_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  notification-worker:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      EVENT_NOTIFICATION_WORKER_ID: staging-notification-worker
+      EVENT_NOTIFICATION_WORKER_DATABASE_URL: postgres://crew_event_notification_worker:${EVENT_DB_NOTIFICATION_WORKER_PASSWORD:?EVENT_DB_NOTIFICATION_WORKER_PASSWORD is required}@postgres:5432/crew_event
+      EVENT_NOTIFICATION_WORKER_USER_SERVICE_URL: https://staging.crew-haus.com:8443
+      EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY_ID: staging-notification-v1
+      EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY: ${EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY:?EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY is required}
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_CURRENT_KEY_ID: staging-event-service-v1
+      EVENT_NOTIFICATION_WORKER_SERVICE_AUTH_CURRENT_KEY: ${EVENT_NOTIFICATION_SERVICE_CURRENT_KEY:?EVENT_NOTIFICATION_SERVICE_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  recap-retention-worker:
+    image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      EVENT_RECAP_RETENTION_WORKER_ID: staging-recap-retention-worker
+      EVENT_RECAP_RETENTION_WORKER_DATABASE_URL: postgres://crew_event_recap_retention_worker:${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:?EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD is required}@postgres:5432/crew_event
+
+  api-gateway:
+    image: crew-next-api-gateway:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      NODE_ENV: production
+      RATE_LIMIT_REDIS_URL: rediss://crew_gateway:${REDIS_GATEWAY_PASSWORD:?REDIS_GATEWAY_PASSWORD is required}@staging.crew-haus.com:6379/0
+      RATE_LIMIT_KEY: ${GATEWAY_RATE_LIMIT_KEY:?GATEWAY_RATE_LIMIT_KEY is required}
+      MEMBER_DIRECTORY_SERVICE_CURRENT_KEY_ID: staging-member-directory-v1
+      MEMBER_DIRECTORY_SERVICE_CURRENT_KEY: ${MEMBER_DIRECTORY_SERVICE_CURRENT_KEY:?MEMBER_DIRECTORY_SERVICE_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
+
+  fixture-bootstrap:
+    image: crew-next-infra:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    environment:
+      PROVIDER_SINK_FIXTURE_BEARER: ${PROVIDER_SINK_FIXTURE_BEARER:?PROVIDER_SINK_FIXTURE_BEARER is required}
+
+  web:
+    image: crew-next-web:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data:size=8m,mode=0755
+      - /config:size=8m,mode=0755
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - 127.0.0.1:8080:80
+    healthcheck:
+      test: [CMD, wget, --spider, --quiet, http://127.0.0.1/]
+      interval: 10s
+      timeout: 5s
+      retries: 6

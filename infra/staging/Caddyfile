@@ -1,0 +1,34 @@
+{
+	admin 127.0.0.1:2019
+}
+
+(security_headers) {
+	header {
+		-Server
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}
+
+crew-haus.com, www.crew-haus.com {
+	import security_headers
+
+	@unverified_associations path /.well-known/apple-app-site-association /.well-known/assetlinks.json
+	respond @unverified_associations 404
+
+	@gateway path /core/* /docs /docs/* /internal/live /internal/ready
+	handle @gateway {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+
+staging.crew-haus.com {
+	import security_headers
+	reverse_proxy 127.0.0.1:3000
+}

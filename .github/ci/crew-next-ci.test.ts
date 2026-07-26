@@ -26,13 +26,15 @@ const attachmentCleanupFunctionRevoke = `REVOKE EXECUTE ON FUNCTION delete_claim
 ) FROM
 	PUBLIC, crew_event_api, crew_event_notification_worker,
 	crew_event_recap_retention_worker;`;
-const checkoutSha = "34e114876b0b11c390a56381ad16ebd13914f8d5";
+const checkoutSha = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
 const postgresImage =
 	"postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193";
 const redisImage =
 	"redis:8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005";
+const bunImage =
+	"oven/bun:1.3.9-alpine@sha256:9028ee7a60a04777190f0c3129ce49c73384d3fc918f3e5c75f5af188e431981";
 const minioImage =
 	"quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
 const minioMcImage =
@@ -151,8 +153,8 @@ describe("Crew Next GitHub Actions workflow", () => {
 			expect(dockerfile).toBeDefined();
 			expect(dockerfile).not.toMatch(/latest/i);
 			expect(dockerfile?.match(/^FROM .+$/gm)).toEqual([
-				"FROM oven/bun:1.3.9-alpine AS deps",
-				"FROM oven/bun:1.3.9-alpine",
+				`FROM ${bunImage} AS deps`,
+				`FROM ${bunImage}`,
 			]);
 			expect(dockerfile?.match(/^RUN .+$/gm)).toContain(
 				`RUN bun install --production --frozen-lockfile --filter ${workspace}`,
@@ -542,9 +544,9 @@ function validateWorkflow(source: string) {
 		commands(steps, "Validate Crew Next CI structure and migration prefixes"),
 	).toEqual(["bunx biome check .github/ci", "bun test ./.github/ci"]);
 	expect(commands(steps, "Check release tooling")).toEqual([
-		"bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts",
-		"bun test scripts/crew-next-release.test.ts",
-		"bunx tsc --noEmit --allowImportingTsExtensions --moduleResolution bundler --module preserve --target esnext --types bun scripts/crew-next-release.ts scripts/crew-next-release.test.ts",
+		"bash -n infra/staging/host-release.sh",
+		"bunx biome check infra/staging-config.test.ts",
+		"bun test infra/staging-config.test.ts",
 	]);
 	expect(commands(steps, "Check User service")).toEqual([
 		"bun run lint",

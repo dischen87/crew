@@ -1,233 +1,143 @@
-# Crew Next staging release and rollback
+# Crew staging deployment and rollback
 
-This runbook defines the Crew staging release contract for the new services.
+Crew staging is a greenfield Docker Compose deployment. It does not import,
+copy, or migrate data from the retired Crew project. The normal User and Event
+schema migrations only initialize or advance Crew's own new PostgreSQL
+databases.
 
-The repository currently has no approved staging host, Swarm, registry target,
-GitHub environment or deployment credentials. Consequently the committed tool
-is deliberately **dry-run only**: it validates immutable inputs and emits the
-complete ordered plan, but it cannot mutate Docker, GitHub or a remote host.
-An authorized environment-specific executor may consume the plan only after the
-infrastructure prerequisites below exist.
-
-## Contract and safety boundary
-
-`scripts/crew-next-release.ts` accepts only the literal environment `staging`
-and the stack name `crew-next-staging`. Unknown fields, a production value,
-tag-only images, mutable Git identifiers, private or non-HTTPS Gateway origins,
-and inconsistent service captures fail before a plan is returned.
-
-A release record binds:
-
-- one immutable Git release ID;
-- a separate database release ID, needed after a code-only rollback;
-- digest-qualified API Gateway, User Service and Event Service images;
-- the SHA-256 of `infra/postgres/grant-runtime.sql`;
-- one canonical public HTTPS Gateway origin;
-- the exact same origin as the mobile `CREW_GATEWAY_BASE_URL`;
-- the eight current Swarm runtimes: Gateway, two APIs and five workers.
-
-The User image is shared by `user-api`, `magic-worker` and `push-worker`. The
-Event image is shared by `event-api`, `attachment-worker`,
-`notification-worker` and `recap-retention-worker`. A capture is rejected if
-any member of an image group differs.
-
-Rollback changes code images only. It never reverses a schema migration, grant
-or live data. After the first successful release, an immutable CI evidence
-record must prove that the previous code is compatible with the target database
-release before a forward rollout or manual rollback can be planned.
-
-The initial Greenfield deployment has no previous release. The current planner
-does not implement that bootstrap path; the staging executor must add and prove
-it before the first deployment.
-
-## Required staging infrastructure
-
-Provisioning is intentionally outside this repository slice because no target
-has been approved. Before execution, the staging owner must provide and record:
-
-- a Swarm manager and attachable `crew-next-staging_internal` overlay network;
-- an authenticated OCI registry containing all three release images by digest;
-- the eight pre-provisioned services named by the contract;
-- private PostgreSQL, Redis, object-store, Typesense and provider dependencies;
-- existing Swarm secrets named
-  `crew-next-staging-user-owner-database-url`,
-  `crew-next-staging-event-owner-database-url` and
-  `crew-next-staging-postgres-admin-url`;
-- TLS and routing for the approved staging Gateway origin;
-- an append-only, access-controlled location for release records and evidence;
-- an authorized executor that implements each emitted step and stops on the
-  first mismatch or failed health check.
-
-No secret value belongs in Git, a release record, a Docker label, command
-output, or CI artifact.
-
-## Release record
-
-The canonical JSON shape is:
-
-```json
-{
-  "schemaVersion": 1,
-  "environment": "staging",
-  "stack": "crew-next-staging",
-  "releaseId": "<40-or-64-character-lowercase-git-revision>",
-  "databaseReleaseId": "<same-revision-for-a-forward-deploy>",
-  "recordedAt": "2026-07-20T10:00:00.000Z",
-  "publicGatewayOrigin": "https://<approved-staging-gateway-host>",
-  "mobileGatewayBaseUrl": "https://<approved-staging-gateway-host>",
-  "runtimeGrantSha256": "<sha256-of-infra/postgres/grant-runtime.sql>",
-  "images": {
-    "api-gateway": "<registry>/<repository>@sha256:<64-lowercase-hex>",
-    "user-service": "<registry>/<repository>@sha256:<64-lowercase-hex>",
-    "event-service": "<registry>/<repository>@sha256:<64-lowercase-hex>"
-  }
-}
-```
-
-For a normal forward deploy, `releaseId` and `databaseReleaseId` must match.
-After rollback, the code `releaseId` is the previous release while
-`databaseReleaseId` and `runtimeGrantSha256` remain at the current forward
-state.
-
-## Capture the previous live release
-
-This section applies after the initial Greenfield deployment.
-
-Capture all services before any migration, grant or image update:
+The executable release path is `infra/staging/host-release.sh`. It accepts one
+literal action and one full Git SHA:
 
 ```sh
-docker service inspect \
-  crew-next-staging_user-api \
-  crew-next-staging_magic-worker \
-  crew-next-staging_push-worker \
-  crew-next-staging_event-api \
-  crew-next-staging_attachment-worker \
-  crew-next-staging_notification-worker \
-  crew-next-staging_recap-retention-worker \
-  crew-next-staging_api-gateway \
-  > previous-services.json
-
-bun scripts/crew-next-release.ts capture \
-  --environment staging \
-  --inspect previous-services.json \
-  --recorded-at "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
-  > previous-release.json
+sudo infra/staging/host-release.sh deploy <40-character-main-sha>
+sudo infra/staging/host-release.sh rollback <40-character-previous-sha>
 ```
 
-The capture requires identical `crew.environment`, `crew.release-id`,
-`crew.database-release-id`, `crew.runtime-grant-sha256`,
-`crew.public-gateway-origin` and `crew.mobile-gateway-base-url` labels on all
-eight services. Missing, duplicate or unexpected services fail closed. Store
-the raw inspect output and canonical record together before continuing.
+The executor supports only the `crew-next-staging` Compose project and the
+public origins `https://crew-haus.com` and
+`https://staging.crew-haus.com`. Run it as root on the approved single staging
+host. The host needs Git, Docker Engine with Compose, Caddy, OpenSSL, curl,
+`flock`, and GNU coreutils.
 
-## Rollback compatibility proof
+## Immutable inputs
 
-The proof is a separate immutable record so an old release record never needs
-to be edited after publication:
+Before any service is changed, the executor:
 
-```json
-{
-  "schemaVersion": 1,
-  "environment": "staging",
-  "fromReleaseId": "<target-release-id>",
-  "toReleaseId": "<captured-previous-release-id>",
-  "databaseReleaseId": "<target-database-release-id>",
-  "verifiedAt": "2026-07-20T09:59:00.000Z",
-  "evidence": "ci:crew-next:rollback-compatibility:<target-release-id>",
-  "evidenceSha256": "<sha256-of-the-evidence-bundle>"
-}
+1. requires a full lowercase Git SHA;
+2. clones that exact revision into `/opt/crew-new/releases/<sha>`;
+3. rejects a dirty or mismatched existing checkout;
+4. builds SHA-tagged images with the Git revision as an OCI label;
+5. pins all third-party runtime images by digest.
+
+Secrets are generated once in `/opt/crew-new/shared/environment` with mode
+`0600`. Secret values are never written to Git or release records.
+
+## First greenfield deployment
+
+The first deploy starts fresh PostgreSQL, Redis, MinIO, Typesense, provider
+sink, and internal TLS containers. It then runs, in order:
+
+1. JWT bootstrap;
+2. User and Event schema initialization;
+3. least-privilege runtime grants;
+4. MinIO bootstrap;
+5. User, Event, worker, Gateway, and web runtimes;
+6. the bounded Belek golf import and Typesense reindex;
+7. private and public smoke checks.
+
+The smoke contract requires:
+
+- Gateway readiness and OpenAPI 3.1 over public TLS;
+- the customer-visible Crew web marker;
+- MinIO and Typesense readiness over TLS;
+- API-only golf-tour and team-event fixture bootstraps.
+
+The executor never runs `docker compose down`, removes a volume, drops a
+database, or restores legacy data.
+
+## Release evidence
+
+After all smoke checks pass, the executor writes a mode-`0600` JSON record under
+`/opt/crew-new/shared/records`. It binds:
+
+- the code release SHA;
+- the active database release SHA;
+- the runtime grant SHA-256;
+- a deterministic database-compatibility SHA-256 covering both migration
+  directories and `infra/postgres/grant-runtime.sql`;
+- exact local image IDs for Gateway, User, Event, and web;
+- public and mobile Gateway origins;
+- the executed smoke checks;
+- the availability state of provider-backed enrichment.
+
+The active state files and `current-record` pointer must agree with that record.
+A mismatch fails closed before a later deploy or rollback.
+
+## Rollback compatibility
+
+Rollback changes code images only. It does not reverse migrations, grants, or
+data.
+
+The current executor deliberately supports only the smallest provably safe
+case: the previous code, current database release, and target release must have
+an identical database-compatibility digest and runtime-grant digest. A forward
+deploy with an existing release writes an immutable
+`identical-database-contract` proof for the exact
+`fromReleaseId`/`toReleaseId`/`databaseReleaseId` tuple before any public route
+or runtime is changed.
+
+If migrations or grants differ, the forward deploy stops with:
+
+```text
+Forward deploy changes the database contract; richer rollback evidence is required
 ```
 
-The evidence bundle must show the previous Gateway, User/Event APIs and worker
-images starting against databases migrated and granted by the target release,
-then passing the same private readiness and public Gateway contract probes. A
-human assertion is not accepted as `ci:` evidence.
+That path must not be bypassed. A future schema-changing release needs a richer
+CI compatibility proof that starts the previous Gateway, APIs, and workers
+against a clone migrated and granted by the target release.
 
-## Generate the forward plan
+Before rollback mutates Caddy, images, or services, it validates:
 
-The source checkout must be clean, `HEAD` must equal `origin/main`, the target
-record must name that exact revision, and all images must already be available
-by digest. Generate the plan without side effects:
+1. the current release record;
+2. the active database release checkout;
+3. the stored and recomputed grant digest;
+4. the stored and recomputed database-compatibility digest;
+5. the immutable proof written by the forward deploy.
+
+Only then does it restore Gateway first, followed by Event API/workers and User
+API/workers, run the same smoke contract, and record the resulting code release
+with the still-current database release.
+
+## Public association files and optional providers
+
+Until real Apple Team ID and Android signing fingerprints are supplied,
+`/.well-known/apple-app-site-association` and
+`/.well-known/assetlinks.json` return `404`. Placeholder associations are never
+published.
+
+Provider-backed place enrichment remains disabled without a real provider
+worker. Create/retry requests fail with the documented retryable `503`; exact
+completed idempotency replays remain available. E-mail and push delivery stay
+inside the provider sink until approved providers are configured.
+
+## Verification
+
+Repository checks:
 
 ```sh
-bun scripts/crew-next-release.ts deploy \
-  --environment staging \
-  --target target-release.json \
-  --previous previous-release.json \
-  --proof rollback-proof.json \
-  > deploy-plan.json
+bash -n infra/staging/host-release.sh
+bunx biome check infra/staging-config.test.ts
+bun test infra/staging-config.test.ts
 ```
 
-The plan is ordered and must be executed sequentially:
-
-1. Verify clean source, exact `origin/main`, previous live capture, image
-   digests and the repository grant digest.
-2. Run User and Event migrations as isolated `replicated-job` tasks using the
-   owner URL secrets. Both must exit successfully.
-3. Apply the exact runtime grants with the pinned PostgreSQL image and admin URL
-   secret. This must exit successfully.
-4. Update User API/workers, Event API/workers, and finally the Gateway. Use
-   `start-first`, parallelism one, automatic image rollback on update failure,
-   and pause if rollback itself fails.
-5. Wait up to 180 seconds for every desired task to run; reject paused or failed
-   updates.
-6. From the private overlay, require HTTP 200 plus `status: ready` from User,
-   Event and Gateway `/internal/ready` endpoints.
-7. Through the public HTTPS origin, require the Gateway readiness contract and
-   the pinned OpenAPI 3.1 document.
-8. Recapture all eight services and store the resulting release record.
-
-The executor must not skip a failed step, use a mutable tag, substitute a
-different grant file, or turn a failed probe into a warning.
-
-## Generate and exercise the rollback plan
-
-Use the recaptured current release, the pre-deploy release and the same
-compatibility proof:
+After a deploy or rollback, verify externally:
 
 ```sh
-bun scripts/crew-next-release.ts rollback \
-  --environment staging \
-  --current current-release.json \
-  --previous previous-release.json \
-  --proof rollback-proof.json \
-  > rollback-plan.json
+curl --fail https://crew-haus.com/
+curl --fail https://staging.crew-haus.com/internal/ready
+curl --fail https://staging.crew-haus.com/docs/openapi.json
+curl --fail https://staging.crew-haus.com:8444/minio/health/ready
 ```
 
-The rollback plan is gateway-first to stop newer edge behavior before older
-service images return. It then restores Event API/workers and User API/workers,
-waits for convergence, repeats all private/public probes, and requires a new
-capture. Its `retain-database-state` step explicitly sets migration, grant and
-data-restore actions to `none`.
-
-Generating this plan and passing the unit suite exercises the local rollback
-contract. It is not evidence that a real staging rollback succeeded.
-
-## Mobile environment selection
-
-The release record requires `mobileGatewayBaseUrl` to equal the approved public
-Gateway origin byte-for-byte. Use that value as `CREW_GATEWAY_BASE_URL` for the
-staging Release archive as documented in `apps/mobile/README.md`. A development,
-localhost, private, placeholder or production origin is rejected by this
-staging contract. Built mobile binaries still require their own signed-artifact
-inspection and authenticated Gateway smoke before distribution.
-
-## Local verification
-
-These checks do not require Docker and do not contact staging:
-
-```sh
-bunx biome check scripts/crew-next-release.ts scripts/crew-next-release.test.ts
-bun test scripts/crew-next-release.test.ts
-bunx tsc --noEmit \
-  --allowImportingTsExtensions \
-  --moduleResolution bundler \
-  --module preserve \
-  --target esnext \
-  --types bun \
-  scripts/crew-next-release.ts \
-  scripts/crew-next-release.test.ts
-```
-
-Keep `crew-paq.9.5` open until an approved staging target runs a clean forward
-deploy, public/private smoke, live capture and actual rollback successfully.
+Inspect the active record and Compose state on the host. Source, CI, or image
+timestamps alone are not live-deployment proof.
