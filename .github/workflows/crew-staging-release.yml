@@ -17,6 +17,21 @@ on:
         required: true
         default: false
         type: boolean
+      reset_staging_data:
+        description: Permanently reset only Crew Next staging data before this deploy
+        required: true
+        default: false
+        type: boolean
+      expected_current_staging_sha:
+        description: Exact currently deployed SHA required by a staging data reset
+        required: false
+        default: ""
+        type: string
+      resume_reset_id:
+        description: Existing github-actions-N reset audit to resume after main advances
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +52,10 @@ jobs:
     env:
       RELEASE_SHA: ${{ inputs.release_sha }}
       DEPLOY_REQUESTED: ${{ inputs.deploy }}
+      REUSE_STORED_MANIFEST: ${{ inputs.reuse_stored_manifest }}
+      RESET_STAGING_DATA: ${{ inputs.reset_staging_data }}
+      EXPECTED_CURRENT_STAGING_SHA: ${{ inputs.expected_current_staging_sha }}
+      RESUME_RESET_ID: ${{ inputs.resume_reset_id }}
       IMAGE_SOURCE: https://github.com/dischen87/crew
     steps:
       - name: Check out requested release
@@ -53,8 +72,21 @@ jobs:
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           test "$(git rev-parse "$RELEASE_SHA^{commit}")" = "$RELEASE_SHA"
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-          if [[ "$DEPLOY_REQUESTED" == true ]]; then
+          if [[ "$DEPLOY_REQUESTED" == true && -z "$RESUME_RESET_ID" ]]; then
             test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          fi
+          if [[ -n "$RESUME_RESET_ID" ]]; then
+            [[ "$RESUME_RESET_ID" =~ ^github-actions-[0-9]+$ ]]
+            test "$DEPLOY_REQUESTED" = true
+            test "$REUSE_STORED_MANIFEST" = true
+            test "$RESET_STAGING_DATA" = false
+            test -z "$EXPECTED_CURRENT_STAGING_SHA"
+          elif [[ "$RESET_STAGING_DATA" == true ]]; then
+            test "$DEPLOY_REQUESTED" = true
+            test "$REUSE_STORED_MANIFEST" = false
+            [[ "$EXPECTED_CURRENT_STAGING_SHA" =~ ^[0-9a-f]{40}$ ]]
+          else
+            test -z "$EXPECTED_CURRENT_STAGING_SHA"
           fi
 
       - name: Require successful Crew CI
@@ -227,6 +259,21 @@ jobs:
               "platform": "linux/amd64",
               "images": images,
           }
+          reset_staging_data = os.environ["RESET_STAGING_DATA"]
+          if reset_staging_data not in {"true", "false"}:
+              raise SystemExit("Invalid staging reset intent")
+          if reset_staging_data == "true":
+              expected_current = os.environ["EXPECTED_CURRENT_STAGING_SHA"]
+              if not re.fullmatch(r"[0-9a-f]{40}", expected_current):
+                  raise SystemExit("Invalid expected current staging release")
+              run_id = os.environ["GITHUB_RUN_ID"]
+              if not re.fullmatch(r"[0-9]+", run_id):
+                  raise SystemExit("Invalid GitHub run ID")
+              manifest["resetStaging"] = {
+                  "id": f"github-actions-{run_id}",
+                  "environment": "crew-next-staging",
+                  "expectedCurrentReleaseId": expected_current,
+              }
           encoded = f"{json.dumps(manifest, indent=2)}\n".encode()
           with open("crew-staging-image-manifest.json", "wb") as output:
               output.write(encoded)
@@ -239,6 +286,7 @@ jobs:
           name: crew-staging-image-manifest-${{ inputs.release_sha }}
           path: crew-staging-image-manifest.json
           if-no-files-found: error
+          overwrite: true
           retention-days: 30
 
   deploy:
@@ -259,6 +307,7 @@ jobs:
       CREW_STAGING_DEPLOY_TARGET: ${{ vars.CREW_STAGING_DEPLOY_TARGET }}
       RELEASE_SHA: ${{ inputs.release_sha }}
       REUSE_STORED_MANIFEST: ${{ inputs.reuse_stored_manifest }}
+      RESUME_RESET_ID: ${{ inputs.resume_reset_id }}
     steps:
       - name: Download immutable image manifest
         if: ${{ !inputs.reuse_stored_manifest }}
@@ -272,7 +321,10 @@ jobs:
           set -euo pipefail
           test "$CREW_STAGING_DEPLOY_TARGET" = root@49.12.64.155
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          if [[ "$REUSE_STORED_MANIFEST" == true ]]; then
+          if [[ -n "$RESUME_RESET_ID" ]]; then
+            [[ "$RESUME_RESET_ID" =~ ^github-actions-[0-9]+$ ]]
+            remote_command="resume-reset $RELEASE_SHA $RESUME_RESET_ID"
+          elif [[ "$REUSE_STORED_MANIFEST" == true ]]; then
             remote_command="redeploy $RELEASE_SHA"
           else
             manifest=.crew-release/crew-staging-image-manifest.json

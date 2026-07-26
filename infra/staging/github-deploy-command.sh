@@ -21,6 +21,7 @@ fi
 action=
 target_sha=
 manifest_base64=
+reset_resume_id=
 if [[ "${original_command}" =~ ^deploy\ ([0-9a-f]{40})\ ([A-Za-z0-9+/]+={0,2})$ ]]; then
 	action=deploy
 	target_sha=${BASH_REMATCH[1]}
@@ -31,6 +32,10 @@ elif [[ "${original_command}" =~ ^rollback\ ([0-9a-f]{40})$ ]]; then
 elif [[ "${original_command}" =~ ^redeploy\ ([0-9a-f]{40})$ ]]; then
 	action=redeploy
 	target_sha=${BASH_REMATCH[1]}
+elif [[ "${original_command}" =~ ^resume-reset\ ([0-9a-f]{40})\ (github-actions-[0-9]+)$ ]]; then
+	action=resume-reset
+	target_sha=${BASH_REMATCH[1]}
+	reset_resume_id=${BASH_REMATCH[2]}
 else
 	echo "Crew deploy command is not permitted" >&2
 	exit 2
@@ -77,10 +82,16 @@ else
 			echo "Redeploy target must be the current main revision" >&2
 			exit 1
 		}
-	else
+	elif [[ "${action}" == rollback ]]; then
 		git --git-dir="${repository_dir}" merge-base --is-ancestor \
 			"${target_sha}" "${controller_sha}" || {
 			echo "Rollback target must be an ancestor of current main" >&2
+			exit 1
+		}
+	else
+		git --git-dir="${repository_dir}" merge-base --is-ancestor \
+			"${target_sha}" "${controller_sha}" || {
+			echo "Reset resume target must be an ancestor of current main" >&2
 			exit 1
 		}
 	fi
@@ -120,6 +131,12 @@ elif [[ "${action}" == redeploy ]]; then
 	env -i \
 		PATH="${PATH}" HOME="${HOME}" GIT_TERMINAL_PROMPT=0 \
 		CREW_DEPLOY_ROOT="${deploy_root}" \
+		bash "${controller}" deploy "${target_sha}"
+elif [[ "${action}" == resume-reset ]]; then
+	env -i \
+		PATH="${PATH}" HOME="${HOME}" GIT_TERMINAL_PROMPT=0 \
+		CREW_DEPLOY_ROOT="${deploy_root}" \
+		CREW_RESET_RESUME_ID="${reset_resume_id}" \
 		bash "${controller}" deploy "${target_sha}"
 else
 	env -i \
