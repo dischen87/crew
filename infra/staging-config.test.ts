@@ -14,6 +14,12 @@ const services = overlay.services ?? {};
 const hostDeploy = await Bun.file(
 	new URL("infra/staging/host-release.sh", root),
 ).text();
+const githubDeploy = await Bun.file(
+	new URL("infra/staging/github-deploy-command.sh", root),
+).text();
+const releaseWorkflow = await Bun.file(
+	new URL(".github/workflows/crew-staging-release.yml", root),
+).text();
 const haproxy = await Bun.file(
 	new URL("infra/staging/haproxy.cfg", root),
 ).text();
@@ -138,10 +144,41 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(hostDeploy).toContain(
 		"Target release must be a full lowercase Git SHA",
 	);
+	expect(hostDeploy).toContain("shopt -s inherit_errexit");
 	expect(hostDeploy).toContain("checkout --quiet --detach");
 	expect(hostDeploy).toContain("status --short");
 	expect(hostDeploy).toContain(`chmod -R a=rX -- "\${release_dir}"`);
-	expect(hostDeploy).toContain("--file apps/web/Dockerfile");
+	expect(hostDeploy).not.toContain("build_images");
+	expect(hostDeploy).not.toContain("docker build");
+	expect(hostDeploy).toContain("load_target_image_manifest");
+	expect(hostDeploy).toContain("pull_release_images");
+	expect(hostDeploy).toContain("write_digest_override");
+	expect(hostDeploy).toContain(`--file "\${digest_override_file}"`);
+	expect(hostDeploy.match(/pull_policy: never/g)?.length).toBe(17);
+	for (const repository of [
+		"ghcr.io/dischen87/crew-api-gateway",
+		"ghcr.io/dischen87/crew-user-service",
+		"ghcr.io/dischen87/crew-event-service",
+		"ghcr.io/dischen87/crew-infra",
+		"ghcr.io/dischen87/crew-rate-limit-redis",
+		"ghcr.io/dischen87/crew-web",
+	]) {
+		expect(hostDeploy).toContain(repository);
+	}
+	expect(hostDeploy).toContain(
+		`source}" != "https://github.com/dischen87/crew"`,
+	);
+	const installCaddyIndex = hostDeploy.lastIndexOf(
+		`\ninstall_caddy "\${release_dir}"`,
+	);
+	for (const preflight of [
+		"load_target_image_manifest",
+		"pull_release_images",
+		"write_digest_override",
+		`compose_command "\${release_dir}" config --quiet`,
+	]) {
+		expect(hostDeploy.lastIndexOf(preflight)).toBeLessThan(installCaddyIndex);
+	}
 	expect(hostDeploy.indexOf("place-golf-import")).toBeLessThan(
 		hostDeploy.indexOf('\n\tsmoke "'),
 	);
@@ -172,6 +209,15 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	);
 	expect(hostDeploy).toContain("databaseCompatibilitySha256");
 	expect(hostDeploy).toContain("runtimeInfrastructureCompatibilitySha256");
+	expect(hostDeploy).toContain("imageManifestSha256");
+	expect(hostDeploy).toContain("imageDistributionOverrideSha256");
+	expect(hostDeploy).toContain("fromImageManifestSha256");
+	expect(hostDeploy).toContain("toImageManifestSha256");
+	expect(hostDeploy).toContain('"schemaVersion": 2');
+	expect(hostDeploy).toContain(
+		"legacy_digest_bridge_sha=b97b6bf355da0f1eb08aedc75263a9d8f2c48c6e",
+	);
+	expect(hostDeploy).toContain("verify_service_image_references");
 	expect(hostDeploy).toContain(
 		`runtime_contract_file="\${shared_dir}/runtime-infrastructure-contract-sha256"`,
 	);
@@ -182,10 +228,11 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 		'"features": {"placeEnrichment": "disabled-no-provider-worker"}',
 	);
 	expect(hostDeploy).toContain("infra/postgres/grant-runtime.sql");
-	expect(hostDeploy).toContain(`"crew-next-web:\${target_sha}"`);
-	expect(hostDeploy).toContain('\\"provider-sink\\":');
+	expect(hostDeploy).not.toContain(`"crew-next-web:\${target_sha}"`);
+	expect(hostDeploy).toContain('\\"infra\\":');
 	expect(hostDeploy).toContain('\\"rate-limit-redis\\":');
 	expect(hostDeploy).toContain('\\"internal-tls\\":');
+	expect(hostDeploy).toContain('"localImageIds": {');
 	const rollbackInfrastructureRestart =
 		"--force-recreate redis-rate-limit provider-sink internal-tls";
 	expect(hostDeploy).toContain(rollbackInfrastructureRestart);
@@ -199,6 +246,101 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(hostDeploy).toContain(`-e CREW_FIXTURE_AUTH_RUN_ID="\${auth_run_id}"`);
 	expect(hostDeploy).toContain("-e CREW_FIXTURE_ATTACHMENT_E2E=1");
 	expect(hostDeploy).toContain("-e CREW_FIXTURE_SCENARIO=team-event");
+});
+
+test("staging release publishes six digests behind the reviewed environment", () => {
+	const workflow = Bun.YAML.parse(releaseWorkflow) as {
+		permissions?: Record<string, unknown>;
+		jobs?: Record<string, Record<string, unknown>>;
+	};
+	expect(workflow.permissions).toEqual({ contents: "read" });
+	expect(workflow.jobs?.publish?.permissions).toEqual({
+		actions: "read",
+		contents: "read",
+		packages: "write",
+	});
+	expect(workflow.jobs?.deploy?.environment).toEqual({
+		name: "crew-next-staging",
+		url: "https://staging.crew-haus.com",
+	});
+	for (const action of [
+		"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+		"docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9",
+		"docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+		"docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+		"actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+		"actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+	]) {
+		expect(releaseWorkflow).toContain(action);
+	}
+	for (const image of [
+		"crew-api-gateway",
+		"crew-user-service",
+		"crew-event-service",
+		"crew-infra",
+		"crew-rate-limit-redis",
+		"crew-web",
+	]) {
+		expect(releaseWorkflow).toContain(
+			`ghcr.io/dischen87/${image}:\${{ inputs.release_sha }}`,
+		);
+	}
+	expect(releaseWorkflow).toContain("git merge-base --is-ancestor");
+	expect(releaseWorkflow).toContain(
+		`test "$(git rev-parse origin/main)" = "$RELEASE_SHA"`,
+	);
+	expect(releaseWorkflow).toContain("crew-next-ci.yml/runs");
+	expect(releaseWorkflow).toContain("status=success");
+	expect(releaseWorkflow).toContain("platforms: linux/amd64");
+	expect(releaseWorkflow).toContain(
+		["org.opencontainers.image.source=", "$", "{{ env.IMAGE_SOURCE }}"].join(
+			"",
+		),
+	);
+	expect(releaseWorkflow).toContain(
+		[
+			"org.opencontainers.image.revision=",
+			"$",
+			"{{ inputs.release_sha }}",
+		].join(""),
+	);
+	expect(releaseWorkflow).toContain(
+		"apps/mobile/evidence/event-hub-option-2/reference-390x844.png",
+	);
+	expect(releaseWorkflow).toContain("crew-staging-image-manifest.json");
+	expect(releaseWorkflow).toContain("if: inputs.deploy");
+	expect(releaseWorkflow).toContain("reuse_stored_manifest:");
+	expect(releaseWorkflow).toContain('remote_command="redeploy $RELEASE_SHA"');
+	expect(releaseWorkflow).toContain(
+		'test "$CREW_STAGING_DEPLOY_TARGET" = root@49.12.64.155',
+	);
+	expect(releaseWorkflow).toContain("StrictHostKeyChecking=yes");
+	expect(releaseWorkflow).not.toContain("StrictHostKeyChecking=no");
+	for (const use of releaseWorkflow.matchAll(/uses:\s+([^\s]+)/g)) {
+		expect(use[1]).toMatch(/@[0-9a-f]{40}$/);
+	}
+});
+
+test("GitHub deploy key is constrained to the current main controller", () => {
+	expect(githubDeploy).toContain("SSH_ORIGINAL_COMMAND");
+	expect(githubDeploy).toContain(
+		"^deploy\\ ([0-9a-f]{40})\\ ([A-Za-z0-9+/]+={0,2})$",
+	);
+	expect(githubDeploy).toContain("^rollback\\ ([0-9a-f]{40})$");
+	expect(githubDeploy).toContain("^redeploy\\ ([0-9a-f]{40})$");
+	expect(githubDeploy).toContain(
+		`[[ "\${target_sha}" == "\${controller_sha}" ]]`,
+	);
+	expect(githubDeploy).toContain("merge-base --is-ancestor");
+	expect(githubDeploy).toContain(
+		`\${controller_sha}:infra/staging/host-release.sh`,
+	);
+	expect(githubDeploy).toContain("env -i");
+	expect(githubDeploy).toContain("CREW_IMAGE_MANIFEST_SOURCE");
+	expect(githubDeploy).toContain(`manifest_dir="\${shared_dir}/manifests"`);
+	expect(githubDeploy).not.toContain("/shared/environment");
+	expect(githubDeploy).not.toContain("eval ");
+	expect(githubDeploy).not.toContain("StrictHostKeyChecking=no");
 });
 
 test("public Caddy routes only the web and canonical Gateway surfaces", () => {

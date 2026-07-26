@@ -1,0 +1,298 @@
+name: Crew staging release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full lowercase Git SHA from main
+        required: true
+        type: string
+      deploy:
+        description: Deploy the published manifest to Crew staging
+        required: true
+        default: true
+        type: boolean
+      reuse_stored_manifest:
+        description: Redeploy the current main revision from its host-stored manifest
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crew-next-staging-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish immutable Crew images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      DEPLOY_REQUESTED: ${{ inputs.deploy }}
+      IMAGE_SOURCE: https://github.com/dischen87/crew
+    steps:
+      - name: Check out requested release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_sha }}
+
+      - name: Verify immutable main release
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          test "$(git rev-parse "$RELEASE_SHA^{commit}")" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          if [[ "$DEPLOY_REQUESTED" == true ]]; then
+            test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          fi
+
+      - name: Require successful Crew CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          successful_runs=$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/crew-next-ci.yml/runs" \
+            -f head_sha="$RELEASE_SHA" \
+            -f status=success \
+            -f per_page=100 \
+            --jq "[.workflow_runs[] | select(.head_sha == \"$RELEASE_SHA\" and .status == \"completed\" and .conclusion == \"success\")] | length")
+          test "$successful_runs" -ge 1
+
+      - name: Log in to GHCR
+        if: ${{ !inputs.reuse_stored_manifest }}
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: ${{ !inputs.reuse_stored_manifest }}
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Publish API gateway
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: api_gateway
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: services/api-gateway/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-api-gateway:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Publish User service
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: user_service
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: services/user-service/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-user-service:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Publish Event service
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: event_service
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: services/event-service/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-event-service:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Publish infrastructure tools
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: infra
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: infra/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-infra:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Publish rate-limit Redis
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: rate_limit_redis
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: infra/redis/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-rate-limit-redis:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Prepare exact web build context
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: web_context
+        run: |
+          set -euo pipefail
+          context=$(mktemp -d "$RUNNER_TEMP/crew-web-context.XXXXXX")
+          git archive "$RELEASE_SHA" -- \
+            package.json bun.lock \
+            apps/web apps/mobile/package.json apps/mobile/assets/fonts \
+            apps/mobile/src/assets \
+            apps/mobile/evidence/event-hub-option-2/reference-390x844.png \
+            packages/mobile-client/package.json packages/mobile-data/package.json \
+            packages/shared/package.json services/api-gateway/package.json \
+            services/user-service/package.json services/event-service/package.json |
+            tar -x -C "$context"
+          printf 'path=%s\n' "$context" >>"$GITHUB_OUTPUT"
+
+      - name: Publish web
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ${{ steps.web_context.outputs.path }}
+          file: ${{ steps.web_context.outputs.path }}/apps/web/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ghcr.io/dischen87/crew-web:${{ inputs.release_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+            org.opencontainers.image.revision=${{ inputs.release_sha }}
+
+      - name: Create immutable image manifest
+        if: ${{ !inputs.reuse_stored_manifest }}
+        id: manifest
+        env:
+          API_GATEWAY_DIGEST: ${{ steps.api_gateway.outputs.digest }}
+          USER_SERVICE_DIGEST: ${{ steps.user_service.outputs.digest }}
+          EVENT_SERVICE_DIGEST: ${{ steps.event_service.outputs.digest }}
+          INFRA_DIGEST: ${{ steps.infra.outputs.digest }}
+          RATE_LIMIT_REDIS_DIGEST: ${{ steps.rate_limit_redis.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          repositories = {
+              "api-gateway": ("ghcr.io/dischen87/crew-api-gateway", "API_GATEWAY_DIGEST"),
+              "user-service": ("ghcr.io/dischen87/crew-user-service", "USER_SERVICE_DIGEST"),
+              "event-service": ("ghcr.io/dischen87/crew-event-service", "EVENT_SERVICE_DIGEST"),
+              "infra": ("ghcr.io/dischen87/crew-infra", "INFRA_DIGEST"),
+              "rate-limit-redis": ("ghcr.io/dischen87/crew-rate-limit-redis", "RATE_LIMIT_REDIS_DIGEST"),
+              "web": ("ghcr.io/dischen87/crew-web", "WEB_DIGEST"),
+          }
+          images = {}
+          for name, (repository, variable) in repositories.items():
+              digest = os.environ[variable]
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  raise SystemExit(f"Invalid digest for {name}")
+              images[name] = f"{repository}@{digest}"
+
+          manifest = {
+              "schemaVersion": 1,
+              "releaseId": os.environ["RELEASE_SHA"],
+              "platform": "linux/amd64",
+              "images": images,
+          }
+          encoded = f"{json.dumps(manifest, indent=2)}\n".encode()
+          with open("crew-staging-image-manifest.json", "wb") as output:
+              output.write(encoded)
+          PY
+
+      - name: Upload immutable image manifest
+        if: ${{ !inputs.reuse_stored_manifest }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crew-staging-image-manifest-${{ inputs.release_sha }}
+          path: crew-staging-image-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    name: Deploy Crew staging
+    needs: publish
+    if: inputs.deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    environment:
+      name: crew-next-staging
+      url: https://staging.crew-haus.com
+    env:
+      CREW_STAGING_DEPLOY_KEY: ${{ secrets.CREW_STAGING_DEPLOY_KEY }}
+      CREW_STAGING_KNOWN_HOSTS: ${{ secrets.CREW_STAGING_KNOWN_HOSTS }}
+      CREW_STAGING_DEPLOY_TARGET: ${{ vars.CREW_STAGING_DEPLOY_TARGET }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      REUSE_STORED_MANIFEST: ${{ inputs.reuse_stored_manifest }}
+    steps:
+      - name: Download immutable image manifest
+        if: ${{ !inputs.reuse_stored_manifest }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: crew-staging-image-manifest-${{ inputs.release_sha }}
+          path: .crew-release
+
+      - name: Invoke constrained staging deploy
+        run: |
+          set -euo pipefail
+          test "$CREW_STAGING_DEPLOY_TARGET" = root@49.12.64.155
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$REUSE_STORED_MANIFEST" == true ]]; then
+            remote_command="redeploy $RELEASE_SHA"
+          else
+            manifest=.crew-release/crew-staging-image-manifest.json
+            test -s "$manifest"
+            MANIFEST_BASE64=$(base64 --wrap=0 "$manifest")
+            [[ "$MANIFEST_BASE64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+            remote_command="deploy $RELEASE_SHA $MANIFEST_BASE64"
+          fi
+          test -n "$CREW_STAGING_DEPLOY_KEY"
+          test -n "$CREW_STAGING_KNOWN_HOSTS"
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          printf '%s\n' "$CREW_STAGING_DEPLOY_KEY" >"$ssh_dir/id_ed25519"
+          printf '%s\n' "$CREW_STAGING_KNOWN_HOSTS" >"$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh -F /dev/null \
+            -i "$ssh_dir/id_ed25519" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            "$CREW_STAGING_DEPLOY_TARGET" \
+            "$remote_command"
