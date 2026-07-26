@@ -84,6 +84,12 @@ After all smoke checks pass, the executor writes a mode-`0600` JSON record under
 The active state files and `current-record` pointer must agree with that record.
 A mismatch fails closed before a later deploy or rollback.
 
+The first greenfield baseline was recorded on 2026-07-26 for
+`b9e7d56d579973d9851188d35992d9ca69243f41`. It contains only the
+`crew-next-staging` Compose project with fresh dedicated volumes: 15 persistent
+services, seven successful bootstrap jobs, 10 imported golf place candidates,
+and isolated smoke fixtures. No retired Crew data was imported or migrated.
+
 ## Rollback compatibility
 
 Rollback changes only the code/runtime images and configuration selected by
