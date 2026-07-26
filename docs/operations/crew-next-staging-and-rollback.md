@@ -63,6 +63,10 @@ sink, and internal TLS containers. It then runs, in order:
 6. the bounded Belek golf import and Typesense reindex;
 7. private and public smoke checks.
 
+After the greenfield baseline exists, a temporary upstream Overpass failure
+retains and reindexes the existing catalog. The release still fails if that
+verified index is empty; the first greenfield import never falls back.
+
 The smoke contract requires:
 
 - Gateway readiness and OpenAPI 3.1 over public TLS;

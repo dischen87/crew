@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
 	type BoundedFetch,
+	BoundedFetchError,
 	boundedFetch,
 	dependencyUrl,
 } from "./bounded-fetch";
@@ -116,7 +117,14 @@ const ImportResponseSchema = z
 
 export type GolfCandidateImportConfig = z.infer<typeof ConfigSchema>;
 
-export class GolfCandidateSourceError extends Error {}
+export class GolfCandidateSourceError extends Error {
+	constructor(
+		message: string,
+		readonly sourceUnavailable = false,
+	) {
+		super(message);
+	}
+}
 
 export function loadGolfCandidateImportConfig(
 	env: Record<string, string | undefined> = Bun.env,
@@ -163,28 +171,40 @@ export async function importOsmGolfCandidates(
 ) {
 	const fetcher = dependencies.fetch ?? fetch;
 	const retrievedAt = dependencies.now?.() ?? new Date();
-	const { response, text } = await boundedFetch(
-		fetcher,
-		config.overpassUrl,
-		{
-			method: "POST",
-			headers: {
-				Accept: "application/json",
-				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent": OVERPASS_USER_AGENT,
+	let sourceResponse: Awaited<ReturnType<typeof boundedFetch>>;
+	try {
+		sourceResponse = await boundedFetch(
+			fetcher,
+			config.overpassUrl,
+			{
+				method: "POST",
+				headers: {
+					Accept: "application/json",
+					"Content-Type": "application/x-www-form-urlencoded",
+					"User-Agent": OVERPASS_USER_AGENT,
+				},
+				body: new URLSearchParams({
+					data: osmGolfCandidateQuery(config.bounds),
+				}).toString(),
 			},
-			body: new URLSearchParams({
-				data: osmGolfCandidateQuery(config.bounds),
-			}).toString(),
-		},
-		{
-			timeoutMs: config.timeoutMs,
-			maxResponseBytes: MAX_OVERPASS_RESPONSE_BYTES,
-		},
-	);
+			{
+				timeoutMs: config.timeoutMs,
+				maxResponseBytes: MAX_OVERPASS_RESPONSE_BYTES,
+			},
+		);
+	} catch (error) {
+		throw new GolfCandidateSourceError(
+			"OpenStreetMap candidate query was unavailable",
+			error instanceof BoundedFetchError && error.transient,
+		);
+	}
+	const { response, text } = sourceResponse;
 	if (!response.ok) {
 		throw new GolfCandidateSourceError(
 			`OpenStreetMap candidate query failed with status ${response.status}`,
+			response.status === 408 ||
+				response.status === 429 ||
+				response.status >= 500,
 		);
 	}
 

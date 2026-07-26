@@ -100,6 +100,32 @@ describe("OpenStreetMap golf-candidate source", () => {
 		expect(importCalls).toBe(1);
 	});
 
+	test("marks only unavailable OpenStreetMap responses as source outages", async () => {
+		for (const [status, sourceUnavailable] of [
+			[504, true],
+			[400, false],
+		] as const) {
+			const error = await importOsmGolfCandidates(config(), {
+				fetch: async () => new Response("", { status }),
+			}).catch((caught) => caught);
+			expect(error).toBeInstanceOf(GolfCandidateSourceError);
+			expect(error.sourceUnavailable).toBe(sourceUnavailable);
+		}
+
+		const networkError = await importOsmGolfCandidates(config(), {
+			fetch: async () => {
+				throw new Error("network unavailable");
+			},
+		}).catch((caught) => caught);
+		expect(networkError.sourceUnavailable).toBe(true);
+
+		const oversizedResponse = await importOsmGolfCandidates(config(), {
+			fetch: async () =>
+				new Response("", { headers: { "content-length": "2097153" } }),
+		}).catch((caught) => caught);
+		expect(oversizedResponse.sourceUnavailable).toBe(false);
+	});
+
 	test("rejects oversized tiles and unsafe production configuration", () => {
 		expect(() =>
 			osmGolfCandidates(

@@ -127,6 +127,11 @@ test("private production dependencies terminate TLS at the isolated proxy", () =
 	expect(hostDeploy).toContain('"collections": ["crew_places.*"]');
 	expect(hostDeploy).toContain("ensure_typesense_search_key");
 	expect(hostDeploy).toContain("verify_typesense_search_key");
+	expect(hostDeploy).toContain('.get("found", 0) < 1');
+	expect(hostDeploy).toContain(
+		"Crew place source unavailable; retaining the verified existing catalog",
+	);
+	expect(hostDeploy).toContain('import_status}" -eq 75 && -n "${source_sha');
 	expect(
 		(services["event-api"]?.environment as Record<string, unknown>)
 			?.PLACE_SEARCH_TYPESENSE_SEARCH_API_KEY,

@@ -3,7 +3,14 @@ export type BoundedFetch = (
 	init?: RequestInit,
 ) => Promise<Response>;
 
-export class BoundedFetchError extends Error {}
+export class BoundedFetchError extends Error {
+	constructor(
+		message: string,
+		readonly transient = false,
+	) {
+		super(message);
+	}
+}
 
 export async function boundedFetch(
 	fetcher: BoundedFetch,
@@ -20,7 +27,7 @@ export async function boundedFetch(
 				: AbortSignal.timeout(options.timeoutMs),
 		});
 	} catch {
-		throw new BoundedFetchError("Dependency request failed");
+		throw new BoundedFetchError("Dependency request failed", true);
 	}
 
 	const declaredLength = response.headers.get("content-length");
@@ -39,7 +46,10 @@ export async function boundedFetch(
 	let byteCount = 0;
 	for (;;) {
 		const next = await reader.read().catch(() => {
-			throw new BoundedFetchError("Dependency response could not be read");
+			throw new BoundedFetchError(
+				"Dependency response could not be read",
+				true,
+			);
 		});
 		if (next.done) break;
 		byteCount += next.value.byteLength;

@@ -730,15 +730,16 @@ ensure_typesense_search_key() {
 }
 
 verify_typesense_search_key() {
-	local search_key search_status
+	local search_key search_response
 	search_key=$(environment_value TYPESENSE_SEARCH_API_KEY)
-	search_status=$(curl --silent --show-error --output /dev/null \
+	search_response=$(curl --fail --silent --show-error \
 		--max-time 10 \
-		--write-out '%{http_code}' \
 		--header "X-TYPESENSE-API-KEY: ${search_key}" \
 		"http://127.0.0.1:8108/collections/crew_places/documents/search?q=%2A&query_by=name&per_page=1")
-	if [[ "${search_status}" != 200 ]]; then
-		echo "Typesense search-only key failed the indexed Crew search probe" >&2
+	if ! python3 -c \
+		'import json,sys; raise SystemExit(json.load(sys.stdin).get("found", 0) < 1)' \
+		<<<"${search_response}"; then
+		echo "Typesense Crew place index is empty or invalid" >&2
 		exit 1
 	fi
 }
@@ -950,7 +951,16 @@ if [[ "${action}" == deploy ]]; then
 		notification-worker recap-retention-worker api-gateway web; do
 		wait_for_service "${release_dir}" "${service}"
 	done
-	run_job "${release_dir}" place-golf-import
+	if run_job "${release_dir}" place-golf-import; then
+		:
+	else
+		import_status=$?
+		[[ "${import_status}" -eq 75 && -n "${source_sha}" ]] || {
+			echo "Initial Crew place import failed" >&2
+			exit "${import_status}"
+		}
+		echo "Crew place source unavailable; retaining the verified existing catalog" >&2
+	fi
 	run_job "${release_dir}" place-search-reindex
 	verify_typesense_search_key
 	smoke "${release_dir}"
