@@ -180,6 +180,71 @@ test('account change during capture deletes the unbound retained file', async ()
   expect(mockPreview).not.toHaveBeenCalled();
 });
 
+test.each([
+  ['preview', 2, 0],
+  ['retention', 3, 1],
+] as const)(
+  'account change after awaited %s discards the retained screenshot',
+  async (_boundary, activeChecks, expectedRetains) => {
+    let checks = 0;
+    const runtime = createRuntime({
+      activeAccountUserId: () =>
+        ++checks <= activeChecks ? accountUserId : `usr_${'2'.repeat(32)}`,
+      randomUUID: jest
+        .fn()
+        .mockReturnValueOnce('00000000-0000-4000-8000-000000000001')
+        .mockReturnValueOnce('00000000-0000-4000-8000-000000000002'),
+    });
+
+    await expect(runtime.capture(rootEventId)).rejects.toThrow();
+    expect(mockPreview).toHaveBeenCalledWith(
+      accountUserId,
+      captured.retainedFileKey,
+    );
+    expect(mockScreenshotStore.retain).toHaveBeenCalledTimes(expectedRetains);
+    expect(mockScreenshotStore.discard).toHaveBeenCalledWith(
+      accountUserId,
+      'fbk_00000000-0000-4000-8000-000000000001',
+    );
+    expect(mockReconcile).toHaveBeenCalledWith(
+      mockAttachmentStore,
+      accountUserId,
+    );
+  },
+);
+
+test('account change after an awaited restore preview discards the old-account screenshot', async () => {
+  const feedbackId = 'fbk_existing';
+  mockScreenshotStore.get.mockResolvedValue({
+    ...captured,
+    accountUserId,
+    attachmentId: 'att_existing',
+    feedbackId,
+    feedbackSendStartedAt: null,
+    rootEventId,
+    state: 'retained',
+  });
+  let checks = 0;
+  const runtime = createRuntime({
+    activeAccountUserId: () =>
+      ++checks <= 2 ? accountUserId : `usr_${'2'.repeat(32)}`,
+  });
+
+  await expect(runtime.restore(feedbackId, rootEventId)).rejects.toThrow();
+  expect(mockPreview).toHaveBeenCalledWith(
+    accountUserId,
+    captured.retainedFileKey,
+  );
+  expect(mockScreenshotStore.discard).toHaveBeenCalledWith(
+    accountUserId,
+    feedbackId,
+  );
+  expect(mockReconcile).toHaveBeenCalledWith(
+    mockAttachmentStore,
+    accountUserId,
+  );
+});
+
 function createRuntime(
   overrides: Partial<
     ConstructorParameters<typeof FeedbackComposeRuntime>[0]

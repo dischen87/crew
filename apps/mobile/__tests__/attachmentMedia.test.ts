@@ -137,6 +137,43 @@ test('returns only a bounded ephemeral retained screenshot preview', async () =>
   expect(preview).not.toContain('file://');
 });
 
+test.each([
+  ['usr_wrong', `${'7'.repeat(64)}.png`],
+  [draft.accountUserId, '../private.png'],
+])(
+  'rejects an invalid preview account or key before native access',
+  async (accountUserId, retainedFileKey) => {
+    const nativeModule = { previewRetained: jest.fn() };
+
+    await expect(
+      previewRetainedAttachment(accountUserId, retainedFileKey, {
+        nativeModule,
+      }),
+    ).rejects.toThrow(/^attachment_media_invalid$/);
+    expect(nativeModule.previewRetained).not.toHaveBeenCalled();
+  },
+);
+
+test('accepts the exact preview byte ceiling and rejects one byte over or malformed padding', async () => {
+  const prefix = 'data:image/png;base64,';
+  const exactEncoded = `${'A'.repeat(699_051)}=`;
+  const nativeModule = {
+    previewRetained: jest
+      .fn()
+      .mockResolvedValueOnce(prefix + exactEncoded)
+      .mockResolvedValueOnce(prefix + 'A'.repeat(699_052))
+      .mockResolvedValueOnce(`${prefix}AA=A`),
+  };
+  const preview = () =>
+    previewRetainedAttachment(draft.accountUserId, `${'7'.repeat(64)}.png`, {
+      nativeModule,
+    });
+
+  await expect(preview()).resolves.toBe(prefix + exactEncoded);
+  await expect(preview()).rejects.toThrow(/^attachment_media_preview_failed$/);
+  await expect(preview()).rejects.toThrow(/^attachment_media_preview_failed$/);
+});
+
 test('rejects malformed previews and hides native preview causes', async () => {
   await expect(
     previewRetainedAttachment(draft.accountUserId, `${'7'.repeat(64)}.png`, {
