@@ -5,6 +5,7 @@ import ReactTestRenderer from 'react-test-renderer';
 import {
   EventSetupRecoveryConflictError,
   EventSetupRecoveryConnectionError,
+  EventSetupRecoveryEnrichmentUnavailableError,
   type EventSetupRecoverySnapshot,
 } from '../src/screens/EventSetupRecoveryRuntime';
 import { EventSetupRecoveryScreen } from '../src/screens/EventSetupRecoveryScreen';
@@ -25,8 +26,11 @@ let mockLifecycle: {
 let mockRuntime: {
   adoptTemplate: jest.Mock;
   bindPrimaryPlace: jest.Mock;
+  createPlaceEnrichment: jest.Mock;
+  getPlaceEnrichment: jest.Mock;
   loadCached: jest.Mock;
   refresh: jest.Mock;
+  retryPlaceEnrichment: jest.Mock;
   restoreCapability: jest.Mock;
   searchPlaces: jest.Mock;
 };
@@ -70,11 +74,18 @@ beforeEach(() => {
   mockRuntime = {
     adoptTemplate: jest.fn(),
     bindPrimaryPlace: jest.fn(),
+    createPlaceEnrichment: jest.fn(),
+    getPlaceEnrichment: jest.fn(),
     loadCached: jest.fn(async () => null),
     refresh: jest.fn(async () => snapshot()),
+    retryPlaceEnrichment: jest.fn(),
     restoreCapability: jest.fn(async () => resolvedSnapshot()),
     searchPlaces: jest.fn(),
   };
+});
+
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 test('shows only the account-scoped cached context while offline', async () => {
@@ -226,6 +237,225 @@ test('conceals the old account immediately and drops its stale action', async ()
   await ReactTestRenderer.act(() => rendered.renderer.unmount());
 });
 
+test('creates one enrichment job per selection and stops status checks after three polls', async () => {
+  jest.useFakeTimers();
+  const creation = deferred<ReturnType<typeof enrichmentProjection>>();
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [candidate()],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createPlaceEnrichment.mockReturnValue(creation.promise);
+  const pollStatuses: Array<'pending' | 'retry' | 'succeeded'> = [
+    'pending',
+    'pending',
+    'pending',
+    'pending',
+    'pending',
+    'retry',
+    'pending',
+    'pending',
+    'succeeded',
+  ];
+  mockRuntime.getPlaceEnrichment.mockImplementation(() =>
+    Promise.resolve(enrichmentProjection(pollStatuses.shift() ?? 'pending')),
+  );
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Alpine'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  const option = renderer.root.findByProps({
+    testID: `event-setup-place-${candidate().id}`,
+  });
+  await ReactTestRenderer.act(() => {
+    option.props.onPress();
+    option.props.onPress();
+  });
+  expect(mockRuntime.createPlaceEnrichment).toHaveBeenCalledTimes(1);
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-primary-action' }).props
+      .disabled,
+  ).toBe(true);
+  expect(mockRuntime.bindPrimaryPlace).not.toHaveBeenCalled();
+
+  await ReactTestRenderer.act(async () => {
+    creation.resolve(enrichmentProjection('pending'));
+    await flush();
+  });
+  expect(textInside(renderer)).toContain('Ortsdetails werden ergänzt.');
+  for (let poll = 0; poll < 3; poll += 1) {
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(2_000);
+      await flush();
+    });
+  }
+  jest.advanceTimersByTime(20_000);
+  expect(mockRuntime.getPlaceEnrichment).toHaveBeenCalledTimes(3);
+  expect(textInside(renderer)).toContain(
+    'Zusätzliche Ortsdetails sind gerade nicht verfügbar.',
+  );
+
+  await ReactTestRenderer.act(async () => {
+    option.props.onPress();
+    await flush();
+  });
+  for (let poll = 0; poll < 3; poll += 1) {
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(2_000);
+      await flush();
+    });
+  }
+  expect(textInside(renderer)).toContain(
+    'Ortsdetails brauchen einen neuen Versuch.',
+  );
+
+  await ReactTestRenderer.act(async () => {
+    option.props.onPress();
+    await flush();
+  });
+  for (let poll = 0; poll < 3; poll += 1) {
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(2_000);
+      await flush();
+    });
+  }
+  expect(textInside(renderer)).toContain('Ortsdetails sind verfügbar.');
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('polls a newly selected place while the previous place poll is still in flight', async () => {
+  jest.useFakeTimers();
+  const first = candidate();
+  const second = {
+    ...candidate(),
+    id: `pcd_${'c'.repeat(64)}`,
+    name: 'Second Golf Club',
+  };
+  const oldPoll = deferred<ReturnType<typeof enrichmentProjection>>();
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [first, second],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createPlaceEnrichment.mockResolvedValue(
+    enrichmentProjection('pending'),
+  );
+  mockRuntime.getPlaceEnrichment.mockImplementation(
+    (_intent, selected: ReturnType<typeof candidate>) =>
+      selected.id === first.id
+        ? oldPoll.promise
+        : Promise.resolve(enrichmentProjection('succeeded')),
+  );
+  const { renderer } = await renderScreen(
+    'EVENT_CAPABILITY_PLACE_REQUIRED',
+  );
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Golf'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: `event-setup-place-${first.id}` })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    jest.advanceTimersByTime(2_000);
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: `event-setup-place-${second.id}` })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    jest.advanceTimersByTime(2_000);
+    await flush();
+  });
+
+  expect(mockRuntime.getPlaceEnrichment).toHaveBeenCalledWith(
+    expect.anything(),
+    second,
+    expect.any(String),
+  );
+  expect(textInside(renderer)).toContain('Ortsdetails sind verfügbar.');
+
+  await ReactTestRenderer.act(async () => {
+    oldPoll.resolve(enrichmentProjection('pending'));
+    await flush();
+    renderer.unmount();
+  });
+});
+
+test('keeps candidate binding available when enrichment is unavailable', async () => {
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [candidate()],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createPlaceEnrichment.mockRejectedValue(
+    new EventSetupRecoveryEnrichmentUnavailableError(),
+  );
+  mockRuntime.bindPrimaryPlace.mockResolvedValue(resolvedPlaceSnapshot());
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Alpine'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: `event-setup-place-${candidate().id}` })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(renderer)).toContain(
+    'Zusätzliche Ortsdetails sind gerade nicht verfügbar.',
+  );
+  const primary = renderer.root.findByProps({
+    testID: 'event-setup-primary-action',
+  });
+  expect(primary.props).toMatchObject({
+    disabled: false,
+    label: 'Als Hauptort übernehmen',
+  });
+  await ReactTestRenderer.act(async () => {
+    primary.props.onPress();
+    await flush();
+  });
+  expect(mockRuntime.bindPrimaryPlace).toHaveBeenCalledWith(
+    expect.anything(),
+    candidate(),
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('refetches authoritative setup when the recovery route regains focus', async () => {
   const { focusListeners, renderer } = await renderScreen();
   expect(mockRuntime.refresh).toHaveBeenCalledTimes(1);
@@ -242,6 +472,7 @@ test('refetches authoritative setup when the recovery route regains focus', asyn
 async function renderScreen(
   blocker:
     | 'EVENT_CAPABILITY_REQUIRED'
+    | 'EVENT_CAPABILITY_PLACE_REQUIRED'
     | 'EVENT_TEMPLATE_REQUIRED' = 'EVENT_CAPABILITY_REQUIRED',
 ) {
   const focusListeners: Array<() => void> = [];
@@ -266,6 +497,7 @@ function screen(
   navigation?: object,
   blocker:
     | 'EVENT_CAPABILITY_REQUIRED'
+    | 'EVENT_CAPABILITY_PLACE_REQUIRED'
     | 'EVENT_TEMPLATE_REQUIRED' = 'EVENT_CAPABILITY_REQUIRED',
 ) {
   return (
@@ -284,11 +516,11 @@ function screen(
             params: {
               blocker,
               capabilityType:
-                blocker === 'EVENT_CAPABILITY_REQUIRED' ? 'golf' : undefined,
+                blocker === 'EVENT_TEMPLATE_REQUIRED' ? undefined : 'golf',
               eventId:
-                blocker === 'EVENT_CAPABILITY_REQUIRED'
-                  ? roundEventId
-                  : undefined,
+                blocker === 'EVENT_TEMPLATE_REQUIRED'
+                  ? undefined
+                  : roundEventId,
               rootEventId,
             },
           } as never
@@ -329,6 +561,30 @@ function snapshot(
   };
 }
 
+function placeSnapshot(): EventSetupRecoverySnapshot {
+  const value = snapshot();
+  return {
+    ...value,
+    intent: {
+      capabilityType: 'golf',
+      code: 'EVENT_CAPABILITY_PLACE_REQUIRED',
+      eventId: roundEventId,
+      rootEventId,
+    },
+    target: value.target
+      ? {
+          ...value.target,
+          capability: golfCapability(),
+          capabilityVersion: 3,
+        }
+      : null,
+  };
+}
+
+function resolvedPlaceSnapshot(): EventSetupRecoverySnapshot {
+  return { ...placeSnapshot(), blockerActive: false };
+}
+
 function templateSnapshot(
   source: EventSetupRecoverySnapshot['source'],
 ): EventSetupRecoverySnapshot {
@@ -364,6 +620,48 @@ function golfCapability() {
     },
     schemaVersion: 1 as const,
     type: 'golf' as const,
+  };
+}
+
+function candidate() {
+  return {
+    attribution: 'Crew places',
+    confidence: 0.9,
+    countryCode: 'CH',
+    id: `pcd_${'a'.repeat(64)}`,
+    kind: 'golf_course' as const,
+    latitude: 47.37,
+    licenseCode: 'first-party',
+    licenseUrl: null,
+    locality: 'Zürich',
+    longitude: 8.54,
+    name: 'Alpine Golf Club',
+    region: 'ZH',
+    retrievedAt: '2026-07-19T08:00:00.000Z',
+    source: 'crew',
+    sourceRecordUrl: null,
+    status: 'pending' as const,
+    version: 1,
+  };
+}
+
+function enrichmentProjection(
+  status: 'pending' | 'retry' | 'succeeded' = 'pending',
+) {
+  const active = status !== 'succeeded';
+  return {
+    enrichment: {
+      completedAt: active ? null : '2026-07-19T10:01:00.000Z',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'b'.repeat(64)}`,
+      pollAfterSeconds: active ? (status === 'retry' ? 5 : 2) : null,
+      retryAllowed: status === 'retry',
+      status,
+      updatedAt: active
+        ? '2026-07-19T10:00:00.000Z'
+        : '2026-07-19T10:01:00.000Z',
+    },
+    place: null,
   };
 }
 

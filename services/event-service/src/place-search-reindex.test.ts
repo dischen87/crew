@@ -33,7 +33,7 @@ describe("place-search reindex", () => {
 			[...(fake.collections.get(result.collectionName)?.values() ?? [])].map(
 				(document) => document.status,
 			),
-		).toEqual(["pending", "pending"]);
+		).toEqual(["pending", "enriched"]);
 		expect(fake.placeSchema?.fields).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ name: "kind", facet: true }),
@@ -136,6 +136,7 @@ function candidate(
 		version: 1,
 		createdAt: "2026-07-18T10:00:00.000Z",
 		updatedAt: "2026-07-18T10:00:00.000Z",
+		status: idSuffix === "a" ? ("pending" as const) : ("enriched" as const),
 	};
 }
 

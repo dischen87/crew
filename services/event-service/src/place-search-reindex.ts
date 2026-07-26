@@ -43,6 +43,7 @@ const CandidateSchema = z
 		version: z.number().int().positive(),
 		createdAt: z.string().datetime({ offset: true }),
 		updatedAt: z.string().datetime({ offset: true }),
+		status: z.enum(["pending", "enriched"]),
 	})
 	.strict()
 	.superRefine((value, context) => {
@@ -546,7 +547,7 @@ export function candidateDocument(candidate: Candidate) {
 		...(candidate.latitude !== null && candidate.longitude !== null
 			? { latitude: candidate.latitude, longitude: candidate.longitude }
 			: {}),
-		status: "pending" as const,
+		status: candidate.status,
 		source: candidate.source,
 		...(candidate.sourceRecordUrl
 			? { sourceRecordUrl: candidate.sourceRecordUrl }

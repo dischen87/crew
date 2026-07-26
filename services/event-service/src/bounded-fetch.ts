@@ -22,6 +22,7 @@ export async function boundedFetch(
 	try {
 		response = await fetcher(input, {
 			...init,
+			redirect: "error",
 			signal: init.signal
 				? AbortSignal.any([init.signal, AbortSignal.timeout(options.timeoutMs)])
 				: AbortSignal.timeout(options.timeoutMs),

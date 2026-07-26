@@ -11,11 +11,13 @@ import {
   EventSetupRecoveryBusyError,
   EventSetupRecoveryConflictError,
   EventSetupRecoveryConnectionError,
+  EventSetupRecoveryEnrichmentUnavailableError,
   EventSetupRecoveryManagerRequiredError,
   EventSetupRecoveryOnlineRequiredError,
   EventSetupRecoveryRuntime,
   EventSetupRecoveryUnavailableError,
   type EventSetupPlaceCandidate,
+  type EventSetupPlaceEnrichment,
   type EventSetupRecoveryIntent,
   type EventSetupRecoverySnapshot,
   type EventSetupTemplateId,
@@ -29,7 +31,12 @@ import { useOnlineState } from './useOnlineState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EventSetupRecovery'>;
 
-type ScreenState = EventSetupRecoveryViewModel & { key: string };
+type ScreenState = EventSetupRecoveryViewModel & {
+  key: string;
+  placePollCount: number;
+};
+
+const maximumPlacePolls = 3;
 
 export function EventSetupRecoveryScreen({ navigation, route }: Props) {
   const client = useGatewayClient();
@@ -187,6 +194,119 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
     };
   }, [intent, online, publish, refreshRequest, runtime, scopeKey]);
 
+  useEffect(() => {
+    const enrichment = state.placeEnrichment?.enrichment;
+    const delay = enrichment?.pollAfterSeconds;
+    if (
+      !runtime ||
+      !scopeKey ||
+      !enrichment ||
+      state.key !== scopeKey ||
+      state.phase !== 'ready' ||
+      state.placeEnrichmentUnavailable ||
+      !online ||
+      delay === null ||
+      delay === undefined ||
+      state.placePollCount >= maximumPlacePolls
+    ) {
+      return;
+    }
+    const jobId = enrichment.id;
+    const candidate =
+      state.placeResults.find(result => result.id === state.selectedPlaceId) ??
+      null;
+    if (!candidate) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (
+        cancelled ||
+        scopeRef.current !== scopeKey ||
+        activeAccountRef.current !== privateDatabase.accountId ||
+        stateRef.current.phase !== 'ready' ||
+        stateRef.current.selectedPlaceId !== candidate.id ||
+        stateRef.current.placeEnrichment?.enrichment.id !== jobId
+      ) {
+        return;
+      }
+      (async () => {
+        try {
+          const result = await runtime.getPlaceEnrichment(
+            intent,
+            candidate,
+            jobId,
+          );
+          if (
+            cancelled ||
+            scopeRef.current !== scopeKey ||
+            activeAccountRef.current !== privateDatabase.accountId ||
+            stateRef.current.phase !== 'ready' ||
+            stateRef.current.selectedPlaceId !== candidate.id ||
+            stateRef.current.placeEnrichment?.enrichment.id !== jobId
+          ) {
+            return;
+          }
+          const placePollCount = stateRef.current.placePollCount + 1;
+          publish({
+            ...stateRef.current,
+            message: null,
+            placeEnrichment: result,
+            placeEnrichmentUnavailable:
+              placePollCount >= maximumPlacePolls &&
+              (result.enrichment.status === 'pending' ||
+                result.enrichment.status === 'processing'),
+            placePollCount,
+          });
+        } catch (error) {
+          if (
+            cancelled ||
+            scopeRef.current !== scopeKey ||
+            activeAccountRef.current !== privateDatabase.accountId
+          ) {
+            return;
+          }
+          if (
+            conceals(error) ||
+            error instanceof EventSetupRecoveryConflictError
+          ) {
+            publish(concealedState(scopeKey, onlineRef.current));
+            return;
+          }
+          publish({
+            ...stateRef.current,
+            message:
+              error instanceof EventSetupRecoveryEnrichmentUnavailableError
+                ? null
+                : safeMessage(error),
+            placeEnrichmentUnavailable: true,
+            placePollCount: stateRef.current.placePollCount + 1,
+          });
+        }
+      })().catch(() => undefined);
+    }, delay * 1_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    intent,
+    online,
+    privateDatabase.accountId,
+    publish,
+    runtime,
+    scopeKey,
+    state.key,
+    state.phase,
+    state.placeEnrichment?.enrichment,
+    state.placeEnrichment?.enrichment.id,
+    state.placeEnrichment?.enrichment.pollAfterSeconds,
+    state.placeEnrichment?.enrichment.status,
+    state.placeEnrichment?.enrichment.updatedAt,
+    state.placeEnrichmentUnavailable,
+    state.placePollCount,
+    state.placeResults,
+    state.selectedPlaceId,
+  ]);
+
   const runAction = useCallback(
     (action: EventSetupRecoveryAction) => {
       if (
@@ -203,12 +323,21 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
         return;
       }
       const accountUserId = privateDatabase.accountId;
-      const selectedPlace = selectedPlaceForAction(stateRef.current, action);
+      const selected = selectedPlace(stateRef.current);
+      const enrichment = stateRef.current.placeEnrichment;
       const selectedTemplate = selectedTemplateForAction(
         stateRef.current,
         action,
       );
-      if (action === 'bind_place' && !selectedPlace) return;
+      if ((action === 'bind_place' || action === 'enrich_place') && !selected) {
+        return;
+      }
+      if (
+        action === 'retry_enrichment' &&
+        (!selected || !enrichment?.enrichment.retryAllowed)
+      ) {
+        return;
+      }
       if (action === 'adopt_template' && !selectedTemplate) return;
       const flight = (async () => {
         publish({
@@ -239,13 +368,47 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
             });
             return;
           }
+          if (action === 'enrich_place' && selected) {
+            const result = await runtime.createPlaceEnrichment(
+              intent,
+              selected,
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              placeEnrichment: result,
+              placeEnrichmentUnavailable: false,
+              placePollCount: 0,
+            });
+            return;
+          }
+          if (action === 'retry_enrichment' && selected && enrichment) {
+            const result = await runtime.retryPlaceEnrichment(
+              intent,
+              selected,
+              enrichment,
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              placeEnrichment: result,
+              placeEnrichmentUnavailable: false,
+              placePollCount: 0,
+            });
+            return;
+          }
           let snapshot: EventSetupRecoverySnapshot;
           if (action === 'adopt_template' && selectedTemplate) {
             snapshot = await runtime.adoptTemplate(intent, selectedTemplate);
           } else if (action === 'restore_capability') {
             snapshot = await runtime.restoreCapability(intent);
-          } else if (action === 'bind_place' && selectedPlace) {
-            snapshot = await runtime.bindPrimaryPlace(intent, selectedPlace);
+          } else if (action === 'bind_place' && selected) {
+            snapshot = await runtime.bindPrimaryPlace(
+              intent,
+              placeForBinding(selected, enrichment),
+            );
           } else {
             return;
           }
@@ -265,6 +428,18 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
           }
           if (conceals(error)) {
             publish(concealedState(scopeKey, onlineRef.current));
+            return;
+          }
+          if (
+            error instanceof EventSetupRecoveryEnrichmentUnavailableError &&
+            (action === 'enrich_place' || action === 'retry_enrichment')
+          ) {
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              placeEnrichmentUnavailable: true,
+            });
             return;
           }
           if (error instanceof EventSetupRecoveryConflictError) {
@@ -337,8 +512,11 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
         publish({
           ...stateRef.current,
           message: null,
+          placeEnrichment: null,
+          placeEnrichmentUnavailable: false,
           placeQuery: value,
           placeResults: [],
+          placePollCount: 0,
           selectedPlaceId: null,
         });
       }}
@@ -354,7 +532,15 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
         ) {
           return;
         }
-        publish({ ...stateRef.current, selectedPlaceId: id });
+        publish({
+          ...stateRef.current,
+          message: null,
+          placeEnrichment: null,
+          placeEnrichmentUnavailable: false,
+          placePollCount: 0,
+          selectedPlaceId: id,
+        });
+        runAction('enrich_place');
       }}
       onSelectTemplate={id => {
         if (
@@ -380,6 +566,9 @@ function initialState(key: string, online: boolean): ScreenState {
     message: null,
     online,
     phase: 'loading',
+    placeEnrichment: null,
+    placeEnrichmentUnavailable: false,
+    placePollCount: 0,
     placeQuery: '',
     placeResults: [],
     selectedPlaceId: null,
@@ -404,15 +593,30 @@ function snapshotState(
   };
 }
 
-function selectedPlaceForAction(
-  state: ScreenState,
-  action: EventSetupRecoveryAction,
-): EventSetupPlaceCandidate | null {
-  if (action !== 'bind_place' || !state.selectedPlaceId) return null;
+function selectedPlace(state: ScreenState): EventSetupPlaceCandidate | null {
+  if (!state.selectedPlaceId) return null;
   return (
     state.placeResults.find(result => result.id === state.selectedPlaceId) ??
     null
   );
+}
+
+function placeForBinding(
+  candidate: EventSetupPlaceCandidate,
+  enrichment: EventSetupPlaceEnrichment | null,
+): EventSetupPlaceCandidate {
+  const place = enrichment?.place;
+  return place
+    ? {
+        ...candidate,
+        countryCode: place.countryCode,
+        latitude: place.latitude,
+        locality: place.locality,
+        longitude: place.longitude,
+        name: place.name,
+        region: place.region,
+      }
+    : candidate;
 }
 
 function selectedTemplateForAction(

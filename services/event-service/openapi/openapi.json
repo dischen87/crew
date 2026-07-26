@@ -10031,7 +10031,181 @@
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/PlaceCandidate"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^pcd_[a-f0-9]{64}$"
+                          },
+                          "source": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+                          },
+                          "sourceRecordId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "golf_course",
+                              "venue"
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "locality": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "region": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "countryCode": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          },
+                          "latitude": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "longitude": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "sourceRecordUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "license": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "url": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048,
+                                "format": "uri",
+                                "default": null
+                              },
+                              "attribution": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 500
+                              },
+                              "allowsSearchIndex": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "attribution",
+                              "allowsSearchIndex"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "retrievedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "retirement": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "retiredAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "source_removed",
+                                  "license_revoked",
+                                  "invalid_record",
+                                  "superseded"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "retiredAt",
+                              "reason"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "enriched"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "source",
+                          "sourceRecordId",
+                          "kind",
+                          "name",
+                          "locality",
+                          "region",
+                          "countryCode",
+                          "latitude",
+                          "longitude",
+                          "sourceRecordUrl",
+                          "license",
+                          "retrievedAt",
+                          "confidence",
+                          "expiresAt",
+                          "retirement",
+                          "version",
+                          "createdAt",
+                          "updatedAt",
+                          "status"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "pageInfo": {

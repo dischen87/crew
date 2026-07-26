@@ -22,6 +22,8 @@ import {
 	PLACE_CANDIDATE_READ_SCOPE,
 	PLACE_CANDIDATE_WRITE_SCOPE,
 } from "./place-candidate-auth";
+import type { PlaceEnrichmentPolicy } from "./place-enrichment";
+import { PostgresPlaceEnrichmentJobs } from "./place-enrichment-jobs";
 import { PostgresPlaceCandidateRepository } from "./postgres-place-candidate-repository";
 import { PostgresEventRepository } from "./postgres-repository";
 import { EventService } from "./service";
@@ -38,6 +40,19 @@ const previous = {
 const issuer = "crew-place-catalog-test";
 const audience = "crew-event-service-test";
 const owner = { id: "usr_00000000000000000000000000000001" };
+const enrichmentPolicy: PlaceEnrichmentPolicy = {
+	pipelineVersion: "place-test-v1",
+	model: "test-model",
+	promptVersion: "place-test-v1",
+	maxAttempts: 3,
+	maxExaCalls: 2,
+	maxLlmCalls: 2,
+	maxInputTokens: 20_000,
+	maxOutputTokens: 512,
+	maxCostMicros: 50_000,
+	providerTimeoutMs: 1_000,
+	maxResponseBytes: 262_144,
+};
 
 if (!databaseUrl) {
 	test.skip("place-candidate PostgreSQL integration (set PLACE_CANDIDATE_TEST_DATABASE_URL)", () => {});
@@ -198,6 +213,7 @@ if (!databaseUrl) {
 					version: 1,
 				},
 			});
+			expect(first.results[0].candidate).not.toHaveProperty("status");
 
 			const exact = await json(
 				await importCandidates(
@@ -304,6 +320,7 @@ if (!databaseUrl) {
 				candidate("active-a"),
 				candidate("active-b"),
 				candidate("active-c"),
+				candidate("active-d"),
 			];
 			const excluded = [
 				candidate("no-index", {
@@ -331,7 +348,41 @@ if (!databaseUrl) {
 			);
 			expect(imported.status).toBe(200);
 
-			const seen: string[] = [];
+			const jobs = new PostgresPlaceEnrichmentJobs(sql);
+			const setJobStatus = async (
+				sourceRecordId: string,
+				status: "succeeded" | "failed",
+			) => {
+				const job = await jobs.enqueueCandidate(
+					placeCandidateId("osm", sourceRecordId),
+					enrichmentPolicy,
+				);
+				await sql`
+					UPDATE place_enrichment_jobs SET
+						status = ${status},
+						outcome_code = ${status === "succeeded" ? "ENRICHMENT_COMPLETED" : "ENRICHMENT_SOURCE_NOT_FOUND"},
+						completed_at = clock_timestamp(), updated_at = clock_timestamp()
+					WHERE id = ${job.id}
+				`;
+			};
+			await setJobStatus("active-a", "succeeded");
+			await setJobStatus("active-b", "failed");
+			await setJobStatus("active-c", "succeeded");
+			expect(
+				(
+					await importCandidates(
+						[
+							candidate("active-c", {
+								name: "Updated active candidate",
+								retrievedAt: "2030-01-02T00:00:00.000Z",
+							}),
+						],
+						writeToken,
+					)
+				).status,
+			).toBe(200);
+
+			const seen: Array<{ sourceRecordId: string; status: string }> = [];
 			let cursor: string | null = null;
 			for (;;) {
 				const response = await app.request(
@@ -342,7 +393,10 @@ if (!databaseUrl) {
 				const page = await json(response);
 				seen.push(
 					...page.items.map(
-						(item: { sourceRecordId: string }) => item.sourceRecordId,
+						(item: { sourceRecordId: string; status: string }) => ({
+							sourceRecordId: item.sourceRecordId,
+							status: item.status,
+						}),
 					),
 				);
 				cursor = page.pageInfo.nextCursor;
@@ -354,9 +408,10 @@ if (!databaseUrl) {
 					.map(({ source, sourceRecordId }) => ({
 						id: placeCandidateId(source, sourceRecordId),
 						sourceRecordId,
+						status: sourceRecordId === "active-a" ? "enriched" : "pending",
 					}))
 					.sort((left, right) => left.id.localeCompare(right.id))
-					.map(({ sourceRecordId }) => sourceRecordId),
+					.map(({ sourceRecordId, status }) => ({ sourceRecordId, status })),
 			);
 		});
 

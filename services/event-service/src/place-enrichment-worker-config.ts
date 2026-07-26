@@ -3,6 +3,7 @@ import type { PlaceEnrichmentPolicy } from "./place-enrichment";
 
 const DEVELOPMENT_DATABASE_URL = "postgres://localhost/crew_event";
 const ACK_BUFFER_MS = 1_000;
+const APPROVED_EXA_ORIGIN = "https://api.exa.ai";
 
 const PlaceEnrichmentPolicySchema = z.object({
 	pipelineVersion: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
@@ -150,7 +151,7 @@ export function loadPlaceEnrichmentWorkerConfig(
 	env: Record<string, string | undefined> = Bun.env,
 ): PlaceEnrichmentWorkerConfig {
 	const environment = env.NODE_ENV ?? "development";
-	return PlaceEnrichmentWorkerConfigSchema.parse({
+	const config = PlaceEnrichmentWorkerConfigSchema.parse({
 		environment,
 		databaseUrl:
 			env.EVENT_ENRICHMENT_WORKER_DATABASE_URL ??
@@ -191,4 +192,68 @@ export function loadPlaceEnrichmentWorkerConfig(
 		baseBackoffMs: env.EVENT_ENRICHMENT_BASE_BACKOFF_MS ?? "1000",
 		maxBackoffMs: env.EVENT_ENRICHMENT_MAX_BACKOFF_MS ?? "60000",
 	});
+	if (config.environment === "production") {
+		assertApprovedProviderDestination({
+			name: "EVENT_ENRICHMENT_EXA_BASE_URL",
+			value: config.exaBaseUrl,
+			allowedOrigin: APPROVED_EXA_ORIGIN,
+			originOnly: true,
+		});
+		assertApprovedProviderDestination({
+			name: "EVENT_ENRICHMENT_LLM_URL",
+			value: config.llmUrl,
+			allowedOrigin: env.EVENT_ENRICHMENT_LLM_ALLOWED_ORIGIN,
+			originOnly: false,
+		});
+	}
+	return config;
+}
+
+function assertApprovedProviderDestination(input: {
+	name: string;
+	value: string;
+	allowedOrigin: string | undefined;
+	originOnly: boolean;
+}) {
+	if (!input.allowedOrigin) {
+		throw new Error(`${input.name} requires an explicitly approved origin`);
+	}
+	let approved: URL;
+	try {
+		approved = new URL(input.allowedOrigin);
+	} catch {
+		throw new Error(`${input.name} approved origin is invalid`);
+	}
+	if (
+		approved.protocol !== "https:" ||
+		approved.username ||
+		approved.password ||
+		input.allowedOrigin !== approved.origin
+	) {
+		throw new Error(
+			`${input.name} approved origin must be one canonical HTTPS origin`,
+		);
+	}
+
+	const destination = new URL(input.value);
+	if (
+		destination.username ||
+		destination.password ||
+		input.value.includes("?") ||
+		input.value.includes("#")
+	) {
+		throw new Error(
+			`${input.name} must not contain userinfo, query parameters or a fragment`,
+		);
+	}
+	if (destination.origin !== approved.origin) {
+		throw new Error(`${input.name} origin is not approved`);
+	}
+	if (input.originOnly) {
+		if (input.value !== destination.origin) {
+			throw new Error(`${input.name} must be one canonical origin`);
+		}
+	} else if (destination.pathname === "/" || input.value !== destination.href) {
+		throw new Error(`${input.name} must be one canonical endpoint URL`);
+	}
 }

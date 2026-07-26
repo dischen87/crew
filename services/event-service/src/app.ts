@@ -776,28 +776,29 @@ const PlaceCandidateInputSchema = z
 			});
 		}
 	});
+const PlaceCandidateShape = {
+	id: PlaceCandidateIdSchema,
+	source: z.string().regex(PLACE_CANDIDATE_SOURCE),
+	sourceRecordId: z.string(),
+	kind: z.enum(["golf_course", "venue"]),
+	name: z.string(),
+	locality: z.string().nullable(),
+	region: z.string().nullable(),
+	countryCode: z.string().regex(/^[A-Z]{2}$/),
+	latitude: z.number().nullable(),
+	longitude: z.number().nullable(),
+	sourceRecordUrl: z.string().nullable(),
+	license: PlaceCandidateLicenseSchema,
+	retrievedAt: DateTimeSchema,
+	confidence: z.number().min(0).max(1),
+	expiresAt: DateTimeSchema.nullable(),
+	retirement: PlaceCandidateRetirementSchema.nullable(),
+	version: z.number().int().positive(),
+	createdAt: DateTimeSchema,
+	updatedAt: DateTimeSchema,
+};
 const PlaceCandidateSchema = z
-	.object({
-		id: PlaceCandidateIdSchema,
-		source: z.string().regex(PLACE_CANDIDATE_SOURCE),
-		sourceRecordId: z.string(),
-		kind: z.enum(["golf_course", "venue"]),
-		name: z.string(),
-		locality: z.string().nullable(),
-		region: z.string().nullable(),
-		countryCode: z.string().regex(/^[A-Z]{2}$/),
-		latitude: z.number().nullable(),
-		longitude: z.number().nullable(),
-		sourceRecordUrl: z.string().nullable(),
-		license: PlaceCandidateLicenseSchema,
-		retrievedAt: DateTimeSchema,
-		confidence: z.number().min(0).max(1),
-		expiresAt: DateTimeSchema.nullable(),
-		retirement: PlaceCandidateRetirementSchema.nullable(),
-		version: z.number().int().positive(),
-		createdAt: DateTimeSchema,
-		updatedAt: DateTimeSchema,
-	})
+	.object(PlaceCandidateShape)
 	.strict()
 	.openapi("PlaceCandidate");
 const PlaceCandidateImportRequestSchema = z
@@ -822,7 +823,14 @@ const PlaceCandidateImportResponseSchema = z
 	.strict();
 const PlaceCandidateFeedResponseSchema = z
 	.object({
-		items: z.array(PlaceCandidateSchema),
+		items: z.array(
+			z
+				.object({
+					...PlaceCandidateShape,
+					status: z.enum(["pending", "enriched"]),
+				})
+				.strict(),
+		),
 		pageInfo: PageInfoSchema,
 	})
 	.strict();
@@ -5371,7 +5379,10 @@ export function createApp(options: AppOptions = {}) {
 		});
 		return c.json(
 			{
-				items: page.items.map(placeCandidateResponse),
+				items: page.items.map((candidate) => ({
+					...placeCandidateResponse(candidate),
+					status: candidate.status,
+				})),
 				pageInfo: page.pageInfo,
 			},
 			200,

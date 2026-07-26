@@ -13,6 +13,7 @@ import type {
 import {
   EventSetupRecoveryAccountChangedError,
   EventSetupRecoveryConflictError,
+  EventSetupRecoveryEnrichmentUnavailableError,
   EventSetupRecoveryOnlineRequiredError,
   EventSetupRecoveryRuntime,
   EventSetupRecoveryUnavailableError,
@@ -27,7 +28,11 @@ const mockListEventPlaces = jest.fn();
 const mockListDrafts = jest.fn();
 const mockPutDraft = jest.fn();
 const mockSha256 = jest.fn(async (value: string) =>
-  value.includes('candidate_golf') ? 'a'.repeat(64) : 'b'.repeat(64),
+  value.includes('2026-07-20')
+    ? 'c'.repeat(64)
+    : value.includes('candidate_golf')
+    ? 'a'.repeat(64)
+    : 'b'.repeat(64),
 );
 const mockSecureUuid = jest.fn(() => '11111111-1111-4111-8111-111111111111');
 
@@ -288,6 +293,121 @@ test('replays the same place identity after capability conflict and finishes saf
   expect(placeRequests[0]?.body.id).toBe(`plc_${'a'.repeat(40)}`);
   expect(placeRequests[1]?.body.id).toBe(placeRequests[0]?.body.id);
   expect(placeRequests[1]?.headers).toEqual(placeRequests[0]?.headers);
+});
+
+test('uses one stable enrichment command and accepts pending facts before confirmed details', async () => {
+  const createRequests: Array<GatewayRequest<'placeEnrichmentJobsCreate'>> = [];
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placeEnrichmentJobsCreate') {
+      createRequests.push(options);
+      return response(enrichmentProjection('pending', null));
+    }
+    if (operationId === 'placeEnrichmentJobsGet') {
+      return response(enrichmentProjection('succeeded', enrichedPlace()));
+    }
+    return onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+
+  const first = await runtime.createPlaceEnrichment(placeIntent, candidate());
+  await runtime.createPlaceEnrichment(placeIntent, candidate());
+  await runtime.createPlaceEnrichment(placeIntent, {
+    ...candidate(),
+    retrievedAt: '2026-07-20T08:00:00.000Z',
+    version: 2,
+  });
+  expect(first).toMatchObject({
+    enrichment: { pollAfterSeconds: 2, status: 'pending' },
+    place: null,
+  });
+  expect(createRequests).toHaveLength(3);
+  expect(createRequests[1]?.headers).toEqual(createRequests[0]?.headers);
+  expect(createRequests[2]?.headers).not.toEqual(createRequests[0]?.headers);
+  await expect(
+    runtime.getPlaceEnrichment(placeIntent, candidate(), first.enrichment.id),
+  ).resolves.toMatchObject({
+    enrichment: { pollAfterSeconds: null, status: 'succeeded' },
+    place: { name: 'Alpine Golf Club' },
+  });
+});
+
+test('retries only an explicitly retryable enrichment with one stable command identity', async () => {
+  const retryRequests: Array<GatewayRequest<'placeEnrichmentJobsRetry'>> = [];
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placeEnrichmentJobsRetry') {
+      retryRequests.push(options);
+      return response(enrichmentProjection('pending', null));
+    }
+    return onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+  const retryable = enrichmentProjection('retry', null);
+
+  await runtime.retryPlaceEnrichment(placeIntent, candidate(), retryable);
+  await runtime.retryPlaceEnrichment(placeIntent, candidate(), retryable);
+  expect(retryRequests).toHaveLength(2);
+  expect(retryRequests[1]?.headers).toEqual(retryRequests[0]?.headers);
+  await expect(
+    runtime.retryPlaceEnrichment(
+      placeIntent,
+      candidate(),
+      enrichmentProjection('pending', null),
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
+});
+
+test('keeps candidate binding available when enrichment is disabled', async () => {
+  let placeCreated = false;
+  let capabilityBound = false;
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placeEnrichmentJobsCreate') {
+      throw serviceUnavailable(operationId);
+    }
+    if (operationId === 'eventPlacesCreate') {
+      placeCreated = true;
+      return response({
+        place: remotePlace(options.body.id, options.body.name),
+      });
+    }
+    if (operationId === 'eventCapabilitiesReplace') {
+      capabilityBound = true;
+      return response({
+        capability: remoteGolfCapability(
+          4,
+          options.body.capability.config.coursePlaceId,
+        ),
+      });
+    }
+    return onlineResponse(operationId, {
+      blocker: capabilityBound ? null : placeIntent,
+      capabilities: [
+        remoteGolfCapability(
+          capabilityBound ? 4 : 3,
+          capabilityBound ? `plc_${'a'.repeat(40)}` : null,
+        ),
+      ],
+      places: placeCreated
+        ? [remotePlace(`plc_${'a'.repeat(40)}`, candidate().name)]
+        : [],
+      revision: capabilityBound ? '14' : '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+
+  await expect(
+    runtime.createPlaceEnrichment(placeIntent, candidate()),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryEnrichmentUnavailableError);
+  await expect(
+    runtime.bindPrimaryPlace(placeIntent, candidate()),
+  ).resolves.toMatchObject({ blockerActive: false });
 });
 
 test('persists caller-stable template child IDs and command identity across a conflict and restart', async () => {
@@ -606,6 +726,18 @@ test('rejects malformed place confirmation and invalid candidates before capabil
   await expect(
     runtime.bindPrimaryPlace(placeIntent, { ...candidate(), latitude: 91 }),
   ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
+  await expect(
+    runtime.createPlaceEnrichment(placeIntent, {
+      ...candidate(),
+      retrievedAt: 'not-a-timestamp',
+    }),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
+  await expect(
+    runtime.createPlaceEnrichment(placeIntent, {
+      ...candidate(),
+      version: 0,
+    }),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
 
   for (const malformed of [
     { locality: 'Bern' },
@@ -709,6 +841,23 @@ test('never searches, creates, replaces or queues while offline', async () => {
   await expect(runtime.searchPlaces(placeIntent, 'Golf')).rejects.toBeInstanceOf(
     EventSetupRecoveryOnlineRequiredError,
   );
+  await expect(
+    runtime.createPlaceEnrichment(placeIntent, candidate()),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
+    runtime.getPlaceEnrichment(
+      placeIntent,
+      candidate(),
+      `pej_${'b'.repeat(64)}`,
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
+    runtime.retryPlaceEnrichment(
+      placeIntent,
+      candidate(),
+      enrichmentProjection('retry', null),
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
   await expect(runtime.restoreCapability(capabilityIntent)).rejects.toBeInstanceOf(
     EventSetupRecoveryOnlineRequiredError,
   );
@@ -831,6 +980,17 @@ function conflict(operationId: string) {
     retryAfterSeconds: null,
     retryable: false,
     status: 409,
+  });
+}
+
+function serviceUnavailable(operationId: string) {
+  return new GatewayClientError({
+    code: 'SERVICE_UNAVAILABLE',
+    operationId: operationId as 'placeEnrichmentJobsCreate',
+    requestId: 'req_enrichment_unavailable',
+    retryAfterSeconds: 60,
+    retryable: true,
+    status: 503,
   });
 }
 
@@ -1032,6 +1192,44 @@ function candidate(): EventSetupPlaceCandidate {
     sourceRecordUrl: null,
     status: 'enriched',
     version: 1,
+  };
+}
+
+function enrichmentProjection(
+  status: 'pending' | 'retry' | 'succeeded',
+  place: ReturnType<typeof enrichedPlace> | null,
+) {
+  const active = status !== 'succeeded';
+  return {
+    enrichment: {
+      completedAt: active ? null : '2026-07-19T10:01:00.000Z',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'b'.repeat(64)}`,
+      pollAfterSeconds: active ? (status === 'retry' ? 5 : 2) : null,
+      retryAllowed: status === 'retry',
+      status,
+      updatedAt: active
+        ? '2026-07-19T10:00:00.000Z'
+        : '2026-07-19T10:01:00.000Z',
+    },
+    place,
+  };
+}
+
+function enrichedPlace() {
+  return {
+    address: 'Alpine Way 1',
+    countryCode: candidate().countryCode,
+    id: `gpl_${'c'.repeat(64)}`,
+    kind: candidate().kind,
+    latitude: candidate().latitude,
+    locality: candidate().locality,
+    longitude: candidate().longitude,
+    name: candidate().name,
+    region: candidate().region,
+    sourceCandidateId: candidate().id,
+    summary: null,
+    websiteUrl: null,
   };
 }
 

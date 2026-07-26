@@ -47,6 +47,10 @@ export type PlaceCandidateRecord = PlaceCandidateInput & {
 	updatedAt: Date;
 };
 
+export type PlaceCandidateIndexRecord = PlaceCandidateRecord & {
+	status: "pending" | "enriched";
+};
+
 export type PlaceCandidateImportOutcome =
 	| "inserted"
 	| "updated"
@@ -59,7 +63,7 @@ export type PlaceCandidateImportResult = {
 };
 
 export type PlaceCandidatePage = {
-	items: PlaceCandidateRecord[];
+	items: PlaceCandidateIndexRecord[];
 	hasMore: boolean;
 };
 

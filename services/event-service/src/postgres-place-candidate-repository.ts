@@ -2,6 +2,7 @@ import type { Sql } from "postgres";
 import { DomainError } from "./domain";
 import {
 	type PlaceCandidateImportResult,
+	type PlaceCandidateIndexRecord,
 	type PlaceCandidateInput,
 	type PlaceCandidatePage,
 	type PlaceCandidateRecord,
@@ -38,6 +39,10 @@ type CandidateRow = {
 	version: number;
 	createdAt: Date;
 	updatedAt: Date;
+};
+
+type CandidateIndexRow = CandidateRow & {
+	status: PlaceCandidateIndexRecord["status"];
 };
 
 export class PostgresPlaceCandidateRepository
@@ -158,8 +163,15 @@ export class PostgresPlaceCandidateRepository
 		afterId: string | null;
 		now: Date;
 	}): Promise<PlaceCandidatePage> {
-		const rows = await this.sql<CandidateRow[]>`
-			SELECT ${candidateColumns(this.sql)} FROM place_candidates
+		const rows = await this.sql<CandidateIndexRow[]>`
+			SELECT ${candidateColumns(this.sql)},
+				CASE WHEN EXISTS (
+					SELECT 1 FROM place_enrichment_jobs job
+					WHERE job.candidate_id = place_candidates.id
+						AND job.candidate_snapshot_hash = place_candidates.snapshot_hash
+						AND job.status = 'succeeded'
+				) THEN 'enriched' ELSE 'pending' END AS status
+			FROM place_candidates
 			WHERE retired_at IS NULL AND search_index_allowed
 				AND (expires_at IS NULL OR expires_at > ${input.now})
 				${input.afterId ? this.sql`AND id > ${input.afterId}` : this.sql``}
@@ -167,7 +179,10 @@ export class PostgresPlaceCandidateRepository
 			LIMIT ${input.limit + 1}
 		`;
 		return {
-			items: rows.slice(0, input.limit).map(candidateRecord),
+			items: rows.slice(0, input.limit).map((row) => ({
+				...candidateRecord(row),
+				status: row.status,
+			})),
 			hasMore: rows.length > input.limit,
 		};
 	}

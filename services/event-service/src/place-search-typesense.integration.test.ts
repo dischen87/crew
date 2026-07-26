@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createApp } from "./app";
 import type {
 	PlaceCandidateImportResult,
-	PlaceCandidateRecord,
+	PlaceCandidateIndexRecord,
 	PlaceCandidateRepository,
 } from "./place-candidate";
 import { PlaceCandidateService } from "./place-candidate";
@@ -22,8 +22,22 @@ if (!typesenseUrl || !adminKey) {
 		test("reindexes through an alias and serves exact, fuzzy, locality and status search", async () => {
 			const alias = `crew_places_it_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 			const repository = new FixtureCandidateRepository([
-				candidate("a", "golf_course", "Golf Club Zürich", "Zürich", "CH"),
-				candidate("b", "venue", "Berlin Convention Hall", "Berlin", "DE"),
+				candidate(
+					"a",
+					"golf_course",
+					"Golf Club Zürich",
+					"Zürich",
+					"CH",
+					"pending",
+				),
+				candidate(
+					"b",
+					"venue",
+					"Berlin Convention Hall",
+					"Berlin",
+					"DE",
+					"enriched",
+				),
 			]);
 			const app = createApp({
 				placeCandidates: new PlaceCandidateService(repository),
@@ -89,7 +103,7 @@ if (!typesenseUrl || !adminKey) {
 					query: "Berlin",
 					kind: "venue",
 					countryCode: "DE",
-					status: "pending",
+					status: "enriched",
 					page: 1,
 					limit: 10,
 				});
@@ -98,45 +112,8 @@ if (!typesenseUrl || !adminKey) {
 					name: "Berlin Convention Hall",
 					locality: "Berlin",
 					countryCode: "DE",
-				});
-
-				const enriched = {
-					id: "enr_typesense_contract_fixture",
-					kind: "venue",
-					name: "Luxury Lakeside Venue",
-					locality: "Zürich",
-					region: "Zürich",
-					countryCode: "CH",
 					status: "enriched",
-					source: "crew-fixture",
-					licenseCode: "CC-BY-4.0",
-					attribution: "Crew fixture",
-					retrievedAt: "2026-07-18T10:00:00.000Z",
-					confidence: 0.99,
-					version: 2,
-					sortId: "enr_typesense_contract_fixture",
-				};
-				const imported = await fetch(
-					`${typesenseUrl}/collections/${encodeURIComponent(result.collectionName)}/documents?action=upsert`,
-					{
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"X-TYPESENSE-API-KEY": adminKey,
-						},
-						body: JSON.stringify(enriched),
-					},
-				);
-				expect(imported.status).toBe(201);
-				const enrichedSearch = await search.search({
-					query: "Luxury",
-					status: "enriched",
-					page: 1,
-					limit: 10,
 				});
-				expect(enrichedSearch.items).toMatchObject([
-					{ id: enriched.id, status: "enriched" },
-				]);
 			} finally {
 				server.stop(true);
 				await typesenseDelete(`aliases/${encodeURIComponent(alias)}`).catch(
@@ -152,7 +129,7 @@ if (!typesenseUrl || !adminKey) {
 }
 
 class FixtureCandidateRepository implements PlaceCandidateRepository {
-	constructor(private readonly records: PlaceCandidateRecord[]) {}
+	constructor(private readonly records: PlaceCandidateIndexRecord[]) {}
 
 	importBatch(): Promise<PlaceCandidateImportResult[]> {
 		throw new Error("Fixture repository is read-only");
@@ -175,7 +152,8 @@ function candidate(
 	name: string,
 	locality: string,
 	countryCode: string,
-): PlaceCandidateRecord {
+	status: PlaceCandidateIndexRecord["status"],
+): PlaceCandidateIndexRecord {
 	const timestamp = new Date("2026-07-18T10:00:00.000Z");
 	return {
 		id: `pcd_${idSuffix.repeat(64)}`,
@@ -202,6 +180,7 @@ function candidate(
 		version: 1,
 		createdAt: timestamp,
 		updatedAt: timestamp,
+		status,
 	};
 }
 

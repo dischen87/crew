@@ -27,6 +27,7 @@ import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 import type {
   EventSetupCapabilityType,
   EventSetupPlaceCandidate,
+  EventSetupPlaceEnrichment,
   EventSetupRecoverySnapshot,
   EventSetupTemplateId,
 } from './EventSetupRecoveryRuntime';
@@ -46,8 +47,10 @@ const icons = {
 export type EventSetupRecoveryAction =
   | 'adopt_template'
   | 'bind_place'
+  | 'enrich_place'
   | 'refresh'
   | 'restore_capability'
+  | 'retry_enrichment'
   | 'search_places';
 
 export type EventSetupRecoveryViewModel = {
@@ -55,6 +58,8 @@ export type EventSetupRecoveryViewModel = {
   message: string | null;
   online: boolean;
   phase: 'concealed' | 'loading' | 'ready' | 'resolved';
+  placeEnrichment: EventSetupPlaceEnrichment | null;
+  placeEnrichmentUnavailable: boolean;
   placeQuery: string;
   placeResults: readonly EventSetupPlaceCandidate[];
   selectedPlaceId: string | null;
@@ -266,6 +271,7 @@ function ReadyState({
         {primary ? (
           <Button
             accessibilityHint={primary.hint}
+            disabled={Boolean(model.busyAction)}
             icon={<ScreenIcon source={primary.icon} />}
             label={primary.label}
             loading={model.busyAction === primary.action}
@@ -442,16 +448,128 @@ function PlaceRecovery({
         </View>
       ) : null}
       {selected ? (
-        <Card style={styles.notice} tone="action">
-          <Text style={styles.cardTitle}>Gewählt: {selected.name}</Text>
-          <Text style={styles.body}>
-            Der Ort wird zuerst sicher im Event angelegt und danach nur im
-            betroffenen Setup als Hauptort verbunden.
-          </Text>
-        </Card>
+        <PlaceEnrichmentStatus
+          model={model}
+          onPrimaryAction={onPrimaryAction}
+          selected={selected}
+        />
       ) : null}
     </View>
   );
+}
+
+function PlaceEnrichmentStatus({
+  model,
+  onPrimaryAction,
+  selected,
+}: {
+  model: EventSetupRecoveryViewModel;
+  onPrimaryAction(action: EventSetupRecoveryAction): void;
+  selected: EventSetupPlaceCandidate;
+}) {
+  const presentation = placeEnrichmentPresentation(model, selected);
+  const canRetry =
+    model.placeEnrichment?.enrichment.retryAllowed === true &&
+    model.online &&
+    !model.placeEnrichmentUnavailable;
+  return (
+    <Card
+      accessibilityLiveRegion="polite"
+      accessibilityRole={presentation.alert ? 'alert' : undefined}
+      style={styles.notice}
+      tone={presentation.tone}
+    >
+      <StatusChip label={presentation.label} tone={presentation.chipTone} />
+      <Text style={styles.cardTitle}>{presentation.title}</Text>
+      <Text style={styles.body}>{presentation.body}</Text>
+      {canRetry ? (
+        <Button
+          accessibilityHint="Startet einen neuen Versuch für die zusätzlichen Ortsdetails. Der gewählte Hauptort bleibt unverändert."
+          disabled={Boolean(model.busyAction)}
+          label="Ortsdetails erneut laden"
+          loading={model.busyAction === 'retry_enrichment'}
+          onPress={() => onPrimaryAction('retry_enrichment')}
+          testID="event-setup-enrichment-retry"
+          variant="surface"
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function placeEnrichmentPresentation(
+  model: EventSetupRecoveryViewModel,
+  selected: EventSetupPlaceCandidate,
+) {
+  if (model.busyAction === 'enrich_place') {
+    return {
+      alert: false,
+      body: `Der gewählte Ort ${selected.name} bleibt unverändert. Sobald die Anfrage bestätigt ist, kannst du ihn als Hauptort übernehmen.`,
+      chipTone: 'lavender' as const,
+      label: 'DETAILS WERDEN ANGEFRAGT',
+      title: 'Ortsdetails werden angefragt.',
+      tone: 'lavender' as const,
+    };
+  }
+  if (model.placeEnrichmentUnavailable) {
+    return {
+      alert: true,
+      body: `Du kannst ${selected.name} trotzdem mit den bereits angezeigten Angaben als Hauptort übernehmen.`,
+      chipTone: 'surface' as const,
+      label: 'DETAILS NICHT VERFÜGBAR',
+      title: 'Zusätzliche Ortsdetails sind gerade nicht verfügbar.',
+      tone: 'brand' as const,
+    };
+  }
+  const status = model.placeEnrichment?.enrichment.status;
+  if (status === 'pending' || status === 'processing') {
+    return {
+      alert: false,
+      body: `Name und Ort von ${selected.name} sind bereits verfügbar. Du kannst den Ort jetzt als Hauptort übernehmen.`,
+      chipTone: 'lavender' as const,
+      label: 'DETAILS WERDEN GELADEN',
+      title: 'Ortsdetails werden ergänzt.',
+      tone: 'lavender' as const,
+    };
+  }
+  if (status === 'retry') {
+    return {
+      alert: true,
+      body: `Der gewählte Ort ${selected.name} bleibt verfügbar. Lade die Details erneut oder übernimm ihn jetzt als Hauptort.`,
+      chipTone: 'surface' as const,
+      label: 'NEUER VERSUCH MÖGLICH',
+      title: 'Ortsdetails brauchen einen neuen Versuch.',
+      tone: 'brand' as const,
+    };
+  }
+  if (status === 'succeeded') {
+    return {
+      alert: false,
+      body: `Die verfügbaren Angaben zu ${selected.name} werden beim Übernehmen als Hauptort verwendet.`,
+      chipTone: 'action' as const,
+      label: 'DETAILS VERFÜGBAR',
+      title: 'Ortsdetails sind verfügbar.',
+      tone: 'action' as const,
+    };
+  }
+  if (status === 'failed' || status === 'dead') {
+    return {
+      alert: true,
+      body: `Du kannst ${selected.name} mit den bereits angezeigten Angaben als Hauptort übernehmen.`,
+      chipTone: 'surface' as const,
+      label: 'DETAILS NICHT VERFÜGBAR',
+      title: 'Zusätzliche Ortsdetails konnten nicht geladen werden.',
+      tone: 'brand' as const,
+    };
+  }
+  return {
+    alert: false,
+    body: `Du kannst ${selected.name} mit den angezeigten Angaben als Hauptort übernehmen.`,
+    chipTone: 'action' as const,
+    label: 'ORT AUSGEWÄHLT',
+    title: `Gewählt: ${selected.name}`,
+    tone: 'action' as const,
+  };
 }
 
 function OptionCard({

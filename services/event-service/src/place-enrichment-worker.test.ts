@@ -13,7 +13,12 @@ import type { PlaceEnrichmentWorkerConfig } from "./place-enrichment-worker-conf
 describe("place enrichment worker", () => {
 	test("runs bounded Exa before LLM and persists validated field provenance", async () => {
 		const harness = workerHarness();
-		const requests: { url: URL; headers: Headers; body: unknown }[] = [];
+		const requests: {
+			url: URL;
+			headers: Headers;
+			body: unknown;
+			redirect: RequestRedirect | undefined;
+		}[] = [];
 		const worker = createPlaceEnrichmentWorker(harness.config, harness.jobs, {
 			now: () => new Date("2026-07-19T08:00:00.000Z"),
 			fetch: async (input, init) => {
@@ -21,6 +26,7 @@ describe("place enrichment worker", () => {
 					url: new URL(input instanceof Request ? input.url : input),
 					headers: new Headers(init?.headers),
 					body: JSON.parse(String(init?.body)),
+					redirect: init?.redirect,
 				};
 				requests.push(request);
 				if (request.url.pathname === "/search") {
@@ -67,6 +73,10 @@ describe("place enrichment worker", () => {
 		expect(requests.map(({ url }) => url.pathname)).toEqual([
 			"/search",
 			"/v1/chat/completions",
+		]);
+		expect(requests.map(({ redirect }) => redirect)).toEqual([
+			"error",
+			"error",
 		]);
 		expect(requests[0]?.body).toMatchObject({
 			type: "fast",
@@ -196,6 +206,31 @@ describe("place enrichment worker", () => {
 		]);
 		expect(harness.retryCode).toBe("ENRICHMENT_EXA_RATE_LIMITED");
 		expect(harness.retryDelay).toBe(1_000);
+		expect(harness.failedCode).toBeNull();
+	});
+
+	test("redacts rejected redirect failures behind a safe retry code", async () => {
+		const harness = workerHarness();
+		const secretFailure =
+			"redirected to https://wrong.example/?provider-key=secret";
+		const worker = createPlaceEnrichmentWorker(harness.config, harness.jobs, {
+			fetch: async (_input, init) => {
+				expect(init?.redirect).toBe("error");
+				throw new Error(secretFailure);
+			},
+		});
+
+		expect(await worker.processOne()).toBe(true);
+		expect(harness.providerRecords).toEqual([
+			{
+				status: "failed",
+				code: "ENRICHMENT_EXA_UNAVAILABLE",
+			},
+		]);
+		expect(JSON.stringify(harness.providerRecords)).not.toContain(
+			secretFailure,
+		);
+		expect(harness.retryCode).toBe("ENRICHMENT_EXA_UNAVAILABLE");
 		expect(harness.failedCode).toBeNull();
 	});
 

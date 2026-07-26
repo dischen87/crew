@@ -52,6 +52,9 @@ type TemplateAdoptionExpectation = {
 export type EventSetupPlaceCandidate =
   GatewayResponseData<'placesSearch'>['items'][number];
 
+export type EventSetupPlaceEnrichment =
+  GatewayResponseData<'placeEnrichmentJobsCreate'>;
+
 export type EventSetupTemplateChoice = Pick<
   Template,
   'id' | 'summary' | 'title' | 'version'
@@ -103,6 +106,8 @@ type CachedReadinessRow = {
 
 const accountPattern = /^usr_[a-f0-9]{32}$/;
 const eventPattern = /^evt_[A-Za-z0-9._:-]{1,96}$/;
+const enrichmentJobPattern = /^pej_[a-f0-9]{64}$/;
+const globalPlacePattern = /^gpl_[a-f0-9]{64}$/;
 const revisionPattern = /^[1-9][0-9]*$/;
 const capabilityTypes = new Set<EventSetupCapabilityType>([
   'golf',
@@ -148,6 +153,13 @@ export class EventSetupRecoveryConnectionError extends Error {
   constructor() {
     super('Event setup recovery could not reach the Gateway');
     this.name = 'EventSetupRecoveryConnectionError';
+  }
+}
+
+export class EventSetupRecoveryEnrichmentUnavailableError extends Error {
+  constructor() {
+    super('Place enrichment is unavailable');
+    this.name = 'EventSetupRecoveryEnrichmentUnavailableError';
   }
 }
 
@@ -281,6 +293,97 @@ WHERE account_user_id = ? AND root_event_id = ?`,
     });
   }
 
+  async createPlaceEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    candidate: EventSetupPlaceCandidate,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceIntent(rawIntent, candidate);
+    return this.#command(intent, async subject => {
+      const snapshot = await this.#refresh(subject, intent);
+      if (!snapshot.blockerActive) throw new EventSetupRecoveryConflictError();
+      if (
+        !snapshot.target ||
+        candidate.kind !== searchKind(snapshot.target.type)
+      ) {
+        throw new EventSetupRecoveryUnavailableError();
+      }
+      const digest = await sha256Hex(
+        JSON.stringify([
+          this.#accountUserId,
+          intent.rootEventId,
+          candidate.id,
+          candidate.version,
+          candidate.retrievedAt,
+        ]),
+      );
+      const response = await this.#request(
+        subject,
+        'placeEnrichmentJobsCreate',
+        {
+          body: { candidateId: candidate.id, target: 'candidate' },
+          headers: {
+            'idempotency-key': `place-enrichment-${digest.slice(0, 40)}`,
+          },
+        },
+      );
+      return placeEnrichmentProjection(response.data, candidate);
+    });
+  }
+
+  async getPlaceEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    candidate: EventSetupPlaceCandidate,
+    jobId: string,
+  ): Promise<EventSetupPlaceEnrichment> {
+    validatePlaceIntent(rawIntent, candidate);
+    if (!enrichmentJobPattern.test(jobId)) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#online(async subject => {
+      const response = await this.#request(subject, 'placeEnrichmentJobsGet', {
+        path: { jobId },
+      });
+      return placeEnrichmentProjection(response.data, candidate, jobId);
+    });
+  }
+
+  async retryPlaceEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    candidate: EventSetupPlaceCandidate,
+    current: EventSetupPlaceEnrichment,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceIntent(rawIntent, candidate);
+    const projection = placeEnrichmentProjection(current, candidate);
+    if (!projection.enrichment.retryAllowed) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#command(intent, async subject => {
+      const digest = await sha256Hex(
+        JSON.stringify([
+          this.#accountUserId,
+          intent.rootEventId,
+          projection.enrichment.id,
+          projection.enrichment.updatedAt,
+        ]),
+      );
+      const response = await this.#request(
+        subject,
+        'placeEnrichmentJobsRetry',
+        {
+          headers: {
+            'idempotency-key': `place-enrichment-${digest.slice(0, 40)}`,
+          },
+          path: { jobId: projection.enrichment.id },
+        },
+      );
+      return placeEnrichmentProjection(
+        response.data,
+        candidate,
+        projection.enrichment.id,
+      );
+    });
+  }
+
   async restoreCapability(
     rawIntent: EventSetupRecoveryIntent,
   ): Promise<EventSetupRecoverySnapshot> {
@@ -392,6 +495,9 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       if (!snapshot.blockerActive) throw new EventSetupRecoveryConflictError();
       const target = snapshot.target;
       if (!target?.capability) {
+        throw new EventSetupRecoveryUnavailableError();
+      }
+      if (candidate.kind !== searchKind(target.type)) {
         throw new EventSetupRecoveryUnavailableError();
       }
       if (primaryPlaceId(target.capability) !== null) {
@@ -740,6 +846,20 @@ function validateIntent(
     !eventPattern.test(intent.eventId) ||
     !intent.capabilityType ||
     !capabilityTypes.has(intent.capabilityType)
+  ) {
+    throw new EventSetupRecoveryUnavailableError();
+  }
+  return intent;
+}
+
+function validatePlaceIntent(
+  rawIntent: EventSetupRecoveryIntent,
+  candidate: EventSetupPlaceCandidate,
+): EventSetupRecoveryIntent {
+  const intent = validateIntent(rawIntent);
+  if (
+    intent.code !== 'EVENT_CAPABILITY_PLACE_REQUIRED' ||
+    !validCandidate(candidate)
   ) {
     throw new EventSetupRecoveryUnavailableError();
   }
@@ -1297,6 +1417,9 @@ function validCandidate(value: EventSetupPlaceCandidate): boolean {
     typeof value.id === 'string' &&
     value.id.length >= 1 &&
     value.id.length <= 128 &&
+    Number.isSafeInteger(value.version) &&
+    value.version >= 1 &&
+    validTimestamp(value.retrievedAt) &&
     typeof value.name === 'string' &&
     value.name.trim().length >= 1 &&
     value.name.length <= 200 &&
@@ -1312,6 +1435,75 @@ function validCandidate(value: EventSetupPlaceCandidate): boolean {
       (Number.isFinite(value.longitude) &&
         value.longitude >= -180 &&
         value.longitude <= 180))
+  );
+}
+
+function placeEnrichmentProjection(
+  value: EventSetupPlaceEnrichment,
+  candidate: EventSetupPlaceCandidate,
+  expectedJobId?: string,
+): EventSetupPlaceEnrichment {
+  const { enrichment, place } = value;
+  const active =
+    enrichment.status === 'pending' ||
+    enrichment.status === 'processing' ||
+    enrichment.status === 'retry';
+  if (
+    !enrichmentJobPattern.test(enrichment.id) ||
+    (expectedJobId !== undefined && enrichment.id !== expectedJobId) ||
+    !validTimestamp(enrichment.createdAt) ||
+    !validTimestamp(enrichment.updatedAt) ||
+    (enrichment.completedAt !== null &&
+      !validTimestamp(enrichment.completedAt)) ||
+    (active
+      ? !Number.isSafeInteger(enrichment.pollAfterSeconds) ||
+        Number(enrichment.pollAfterSeconds) < 1 ||
+        Number(enrichment.pollAfterSeconds) > 30 ||
+        enrichment.completedAt !== null
+      : enrichment.pollAfterSeconds !== null ||
+        enrichment.completedAt === null) ||
+    enrichment.retryAllowed !== (enrichment.status === 'retry') ||
+    (place === null
+      ? enrichment.status === 'succeeded'
+      : !globalPlacePattern.test(place.id) ||
+        place.sourceCandidateId !== candidate.id ||
+        place.kind !== candidate.kind ||
+        !validPlaceFacts(place))
+  ) {
+    throw new EventSetupRecoveryEnrichmentUnavailableError();
+  }
+  return value;
+}
+
+function validPlaceFacts(value: {
+  countryCode: string;
+  latitude: number | null;
+  locality: string | null;
+  longitude: number | null;
+  name: string;
+}): boolean {
+  return (
+    value.name.trim().length >= 1 &&
+    value.name.length <= 200 &&
+    (value.locality === null || value.locality.length <= 200) &&
+    /^[A-Z]{2}$/.test(value.countryCode) &&
+    (value.latitude === null) === (value.longitude === null) &&
+    (value.latitude === null ||
+      (Number.isFinite(value.latitude) &&
+        value.latitude >= -90 &&
+        value.latitude <= 90)) &&
+    (value.longitude === null ||
+      (Number.isFinite(value.longitude) &&
+        value.longitude >= -180 &&
+        value.longitude <= 180))
+  );
+}
+
+function validTimestamp(value: string): boolean {
+  return (
+    value.length <= 64 &&
+    !Number.isNaN(Date.parse(value)) &&
+    new Date(value).toISOString() === value
   );
 }
 
@@ -1462,6 +1654,7 @@ function mapGatewayError(error: unknown): Error {
     error instanceof EventSetupRecoveryBusyError ||
     error instanceof EventSetupRecoveryConflictError ||
     error instanceof EventSetupRecoveryConnectionError ||
+    error instanceof EventSetupRecoveryEnrichmentUnavailableError ||
     error instanceof EventSetupRecoveryManagerRequiredError ||
     error instanceof EventSetupRecoveryOnlineRequiredError ||
     error instanceof EventSetupRecoveryUnavailableError ||
@@ -1476,6 +1669,14 @@ function mapGatewayError(error: unknown): Error {
     if (error.status === 403) return new EventSetupRecoveryManagerRequiredError();
     if (error.status === 404) return new EventSetupRecoveryUnavailableError();
     if (error.status === 409) return new EventSetupRecoveryConflictError();
+    if (
+      error.status === 503 &&
+      (error.operationId === 'placeEnrichmentJobsCreate' ||
+        error.operationId === 'placeEnrichmentJobsGet' ||
+        error.operationId === 'placeEnrichmentJobsRetry')
+    ) {
+      return new EventSetupRecoveryEnrichmentUnavailableError();
+    }
     if (error.retryable || error.status === null || error.status >= 500) {
       return new EventSetupRecoveryConnectionError();
     }

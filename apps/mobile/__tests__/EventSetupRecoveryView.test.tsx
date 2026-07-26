@@ -132,6 +132,67 @@ test('exposes exactly one place action while searching and while binding', async
   await ReactTestRenderer.act(() => binding.unmount());
 });
 
+test('explains enrichment progress, retry and provider fallback with a next action', async () => {
+  const pending = await render(
+    model({
+      placeEnrichment: enrichmentProjection('pending'),
+      placeQuery: 'Alpine',
+      placeResults: [candidate()],
+      selectedPlaceId: candidate().id,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+    }),
+  );
+  expect(textInside(pending)).toContain('Ortsdetails werden ergänzt.');
+  expect(textInside(pending)).toContain(
+    'Du kannst den Ort jetzt als Hauptort übernehmen.',
+  );
+
+  const retry = await render(
+    model({
+      placeEnrichment: enrichmentProjection('retry'),
+      placeQuery: 'Alpine',
+      placeResults: [candidate()],
+      selectedPlaceId: candidate().id,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+    }),
+  );
+  expect(textInside(retry)).toContain(
+    'Ortsdetails brauchen einen neuen Versuch.',
+  );
+  const retryAction = retry.root.findByProps({
+    testID: 'event-setup-enrichment-retry',
+  });
+  expect(retryAction.props).toMatchObject({
+    accessibilityHint:
+      'Startet einen neuen Versuch für die zusätzlichen Ortsdetails. Der gewählte Hauptort bleibt unverändert.',
+    label: 'Ortsdetails erneut laden',
+  });
+  await ReactTestRenderer.act(() => retryAction.props.onPress());
+  expect(onPrimaryAction).toHaveBeenCalledWith('retry_enrichment');
+
+  const unavailable = await render(
+    model({
+      placeEnrichmentUnavailable: true,
+      placeQuery: 'Alpine',
+      placeResults: [candidate()],
+      selectedPlaceId: candidate().id,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+    }),
+  );
+  const unavailableText = textInside(unavailable);
+  expect(unavailableText).toContain(
+    'Zusätzliche Ortsdetails sind gerade nicht verfügbar.',
+  );
+  expect(unavailableText).toContain(
+    'trotzdem mit den bereits angezeigten Angaben als Hauptort übernehmen.',
+  );
+  expect(unavailableText).not.toMatch(/\bpending\b|\bretry\b|\bdead\b/);
+
+  await ReactTestRenderer.act(() => pending.unmount());
+  await ReactTestRenderer.act(() => retry.unmount());
+  await ReactTestRenderer.act(() => unavailable.unmount());
+});
+
 test('renders the typed capability recovery with one restore action', async () => {
   const renderer = await render(
     model({ snapshot: snapshot('EVENT_CAPABILITY_REQUIRED', 'online') }),
@@ -372,6 +433,8 @@ function model(
     message: null,
     online: true,
     phase: 'ready',
+    placeEnrichment: null,
+    placeEnrichmentUnavailable: false,
     placeQuery: '',
     placeResults: [],
     selectedPlaceId: null,
@@ -462,6 +525,21 @@ function candidate() {
     sourceRecordUrl: null,
     status: 'enriched' as const,
     version: 1,
+  };
+}
+
+function enrichmentProjection(status: 'pending' | 'retry') {
+  return {
+    enrichment: {
+      completedAt: null,
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'b'.repeat(64)}`,
+      pollAfterSeconds: status === 'retry' ? 5 : 2,
+      retryAllowed: status === 'retry',
+      status,
+      updatedAt: '2026-07-19T10:00:00.000Z',
+    },
+    place: null,
   };
 }
 
