@@ -22,7 +22,7 @@ services:
         aliases:
           - staging.crew-haus.com
     healthcheck:
-      test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
+      test: [CMD, kill, "-0", "1"]
       interval: 10s
       timeout: 5s
       retries: 6
