@@ -12,7 +12,7 @@
       "digest": "sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": "972cbe35fe2e1f86068b32fb95fe1e913a93eeec",
+      "sourceCommit": "62400e93ba28da60fbba249535025ed14a43369b",
       "sourceState": "committed"
     }
   }
