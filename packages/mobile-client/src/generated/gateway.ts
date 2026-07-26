@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:5825c1058fb4c36d6349ba8dc8516fbcb5704d7f9ce2785353aaa4fe06a9ba87
+ * Pin: sha256:a6fe5a8689c3c46f7a8801a0347752d04148b595824153eb10e3388ac3ddc086
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
