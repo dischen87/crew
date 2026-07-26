@@ -28,7 +28,11 @@ describe("OpenStreetMap golf-candidate source", () => {
 				const url = new URL(input instanceof Request ? input.url : input);
 				if (url.hostname === "overpass.test") {
 					overpassCalls += 1;
-					expect(new Headers(init?.headers).has("authorization")).toBe(false);
+					const headers = new Headers(init?.headers);
+					expect(headers.has("authorization")).toBe(false);
+					expect(headers.get("user-agent")).toBe(
+						"CrewPlaceCatalog/1.0 (+https://crew-haus.com)",
+					);
 					const query = new URLSearchParams(String(init?.body)).get("data");
 					expect(query).toContain(
 						'nwr["leisure"="golf_course"]["name"](36.78,30.9,36.95,31.3)',

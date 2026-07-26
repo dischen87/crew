@@ -12,6 +12,7 @@ const DEVELOPMENT_EVENT_SERVICE_URL = "http://localhost:3002";
 const DEVELOPMENT_SERVICE_AUTH_KEY =
 	"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg";
 const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const OVERPASS_USER_AGENT = "CrewPlaceCatalog/1.0 (+https://crew-haus.com)";
 const MAX_OVERPASS_RESPONSE_BYTES = 2_097_152;
 const MAX_EVENT_RESPONSE_BYTES = 2_097_152;
 const MAX_GOLF_CANDIDATES = 100;
@@ -170,6 +171,7 @@ export async function importOsmGolfCandidates(
 			headers: {
 				Accept: "application/json",
 				"Content-Type": "application/x-www-form-urlencoded",
+				"User-Agent": OVERPASS_USER_AGENT,
 			},
 			body: new URLSearchParams({
 				data: osmGolfCandidateQuery(config.bounds),
