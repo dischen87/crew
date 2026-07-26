@@ -40,4 +40,5 @@ test('registers and forwards the Crew Next custom URL scheme', () => {
   expect(androidManifest).toContain('android:path="/auth/redeem"');
   expect(androidManifest).toContain('android:pathPrefix="/join/"');
   expect(project.match(/CODE_SIGN_ENTITLEMENTS/g)).toHaveLength(2);
+  expect(project.match(/DEVELOPMENT_TEAM = WFSHGY54TA;/g)).toHaveLength(2);
 });

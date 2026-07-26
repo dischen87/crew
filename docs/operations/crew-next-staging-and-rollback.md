@@ -215,9 +215,10 @@ code release with the still-current database release.
 
 ## Public association files and optional providers
 
-Until real Apple Team ID and Android signing fingerprints are supplied,
-`/.well-known/apple-app-site-association` and
-`/.well-known/assetlinks.json` return `404`. Placeholder associations are never
+The Apple association publishes the verified Swiss Activities Team ID
+`WFSHGY54TA` for `app.crew.next` as JSON without redirects. The Android
+`/.well-known/assetlinks.json` route returns `404` until the real release
+signing fingerprints are supplied. Placeholder associations are never
 published.
 
 Provider-backed place enrichment remains disabled without a real provider

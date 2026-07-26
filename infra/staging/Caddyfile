@@ -15,8 +15,14 @@
 crew-haus.com, www.crew-haus.com {
 	import security_headers
 
-	@unverified_associations path /.well-known/apple-app-site-association /.well-known/assetlinks.json
-	handle @unverified_associations {
+	@apple_association path /.well-known/apple-app-site-association
+	handle @apple_association {
+		header Content-Type application/json
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	@unverified_android_association path /.well-known/assetlinks.json
+	handle @unverified_android_association {
 		respond 404
 	}
 

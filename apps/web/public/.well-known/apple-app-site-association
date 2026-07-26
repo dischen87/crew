@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["TEAM_ID.app.crew.next"],
+        "appIDs": ["WFSHGY54TA.app.crew.next"],
         "paths": ["/join/*", "/auth/redeem", "/events", "/events/*", "/feedback/*"],
         "components": [
           {

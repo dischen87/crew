@@ -31,6 +31,12 @@ const caddy = await Bun.file(new URL("infra/staging/Caddyfile", root)).text();
 const webDockerfile = await Bun.file(
 	new URL("apps/web/Dockerfile", root),
 ).text();
+const appleAssociation = await Bun.file(
+	new URL("apps/web/public/.well-known/apple-app-site-association", root),
+).json();
+const androidAssociationExists = await Bun.file(
+	new URL("apps/web/public/.well-known/assetlinks.json", root),
+).exists();
 
 const nativeSpawn = `
 const fs = require("node:fs");
@@ -1099,11 +1105,21 @@ test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 		"@gateway path /core/* /docs /docs/* /internal/live /internal/ready",
 	);
 	expect(caddy).toContain(
-		"@unverified_associations path /.well-known/apple-app-site-association /.well-known/assetlinks.json",
+		"@apple_association path /.well-known/apple-app-site-association",
 	);
 	expect(caddy).toContain(
-		"handle @unverified_associations {\n\t\trespond 404\n\t}",
+		"handle @apple_association {\n\t\theader Content-Type application/json\n\t\treverse_proxy 127.0.0.1:8080\n\t}",
 	);
+	expect(caddy).toContain(
+		"@unverified_android_association path /.well-known/assetlinks.json",
+	);
+	expect(caddy).toContain(
+		"handle @unverified_android_association {\n\t\trespond 404\n\t}",
+	);
+	expect(appleAssociation.applinks.details[0]?.appIDs).toEqual([
+		"WFSHGY54TA.app.crew.next",
+	]);
+	expect(androidAssociationExists).toBe(false);
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:8080");
 	expect(caddy).toContain("Strict-Transport-Security");
