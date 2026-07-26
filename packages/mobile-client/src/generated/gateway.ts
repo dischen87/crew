@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:1614fb982a39a7ff7ee19d810f2f673064b8746eb045486d70a9f4418b833a54
+ * Pin: sha256:5825c1058fb4c36d6349ba8dc8516fbcb5704d7f9ce2785353aaa4fe06a9ba87
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -1054,7 +1054,7 @@ export type paths = {
         put?: never;
         /**
          * Select a candidate or request bounded no-match enrichment
-         * @description Persists an idempotent background job and returns immediately without provider work in the request path.
+         * @description Persists an idempotent background job and returns immediately without provider work in the request path. Returns 503 unless an operator has enabled the provider-backed worker.
          */
         post: operations["placeEnrichmentJobsCreate"];
         delete?: never;
@@ -15678,15 +15678,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Required service unavailable */
+            /** @description Service unavailable */
             503: {
                 headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
                     /** @description Crew request correlation identifier */
                     "X-Request-ID"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
                 };
             };
             /** @description Required service timeout */
@@ -15955,15 +15957,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Required service unavailable */
+            /** @description Service unavailable */
             503: {
                 headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
                     /** @description Crew request correlation identifier */
                     "X-Request-ID"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
                 };
             };
             /** @description Required service timeout */

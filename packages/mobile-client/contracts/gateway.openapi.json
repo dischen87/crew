@@ -12639,7 +12639,7 @@
           "places"
         ],
         "summary": "Select a candidate or request bounded no-match enrichment",
-        "description": "Persists an idempotent background job and returns immediately without provider work in the request path.",
+        "description": "Persists an idempotent background job and returns immediately without provider work in the request path. Returns 503 unless an operator has enabled the provider-backed worker.",
         "security": [
           {
             "userBearer": []
@@ -12949,10 +12949,16 @@
             }
           },
           "503": {
-            "description": "Required service unavailable",
+            "description": "Service unavailable",
             "headers": {
               "X-Request-ID": {
                 "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
                 "schema": {
                   "type": "string"
                 }
@@ -12961,7 +12967,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/EventServiceErrorEnvelope"
                 }
               }
             }
@@ -13457,10 +13463,16 @@
             }
           },
           "503": {
-            "description": "Required service unavailable",
+            "description": "Service unavailable",
             "headers": {
               "X-Request-ID": {
                 "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
                 "schema": {
                   "type": "string"
                 }
@@ -13469,7 +13481,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/EventServiceErrorEnvelope"
                 }
               }
             }
@@ -40612,10 +40624,10 @@
       "sourceState": "committed"
     },
     "event-service": {
-      "digest": "sha256:f3e30aee684056f2fd228483535c859fd36fe9ec053391d334658551b5acde68",
+      "digest": "sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": "333fd702ec5574560181d546d52d5c00e438c7a6",
+      "sourceCommit": "972cbe35fe2e1f86068b32fb95fe1e913a93eeec",
       "sourceState": "committed"
     }
   }
