@@ -242,6 +242,19 @@ describe("Crew Next GitHub Actions workflow", () => {
 		expect(
 			Object.keys(object(fixture.environment, "fixture environment")),
 		).not.toContainEqual(expect.stringMatching(/DATABASE|POSTGRES|SQL/));
+		const golfImport = object(
+			services["place-golf-import"],
+			"golf import service",
+		);
+		expect(
+			object(golfImport.environment, "golf import environment")
+				.PLACE_GOLF_IMPORT_OVERPASS_URL,
+		).toBe("http://provider-sink:3010/internal/fixtures/overpass/golf");
+		expect(
+			object(golfImport.depends_on, "golf import dependencies")[
+				"provider-sink"
+			],
+		).toEqual({ condition: "service_healthy" });
 	});
 
 	test("grants each runtime worker the database operations it executes", () => {

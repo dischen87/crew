@@ -147,12 +147,20 @@ services:
   place-golf-import:
     image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
     environment:
+      NODE_ENV: production
+      PLACE_GOLF_IMPORT_EVENT_SERVICE_URL: https://staging.crew-haus.com:8447
+      PLACE_GOLF_IMPORT_OVERPASS_URL: https://overpass-api.de/api/interpreter
       PLACE_GOLF_IMPORT_SERVICE_KEY_ID: staging-place-catalog-v1
       PLACE_GOLF_IMPORT_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:?PLACE_CANDIDATE_SERVICE_CURRENT_KEY is required}
+    depends_on:
+      internal-tls:
+        condition: service_healthy
 
   place-search-reindex:
     image: crew-next-event-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
     environment:
+      NODE_ENV: production
+      PLACE_SEARCH_REINDEX_EVENT_SERVICE_URL: https://staging.crew-haus.com:8447
       PLACE_SEARCH_REINDEX_TYPESENSE_URL: https://staging.crew-haus.com:8445
       PLACE_SEARCH_REINDEX_TYPESENSE_ADMIN_API_KEY: ${TYPESENSE_API_KEY:?TYPESENSE_API_KEY is required}
       PLACE_SEARCH_REINDEX_SERVICE_KEY_ID: staging-place-catalog-v1

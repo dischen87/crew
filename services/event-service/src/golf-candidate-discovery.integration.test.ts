@@ -7,6 +7,7 @@ import {
 	test,
 } from "bun:test";
 import postgres, { type Sql } from "postgres";
+import { BELEK_OVERPASS_FIXTURE } from "../../../infra/provider-sink";
 import { migrate } from "../scripts/migrate";
 import { createApp } from "./app";
 import { EventNotificationPayloadCodec } from "./event-notification-payload";
@@ -338,39 +339,3 @@ function policy(): PlaceEnrichmentPolicy {
 		maxResponseBytes: 32_768,
 	};
 }
-
-const BELEK_OVERPASS_FIXTURE = {
-	version: 0.6,
-	elements: [
-		{
-			type: "way",
-			id: 169451380,
-			center: { lat: 36.8483584, lon: 31.0950659 },
-			tags: { name: "Gloria Golf Club" },
-		},
-		{
-			type: "way",
-			id: 169450196,
-			center: { lat: 36.8665457, lon: 31.0116798 },
-			tags: { name: "Carya Golf Club" },
-		},
-		{
-			type: "way",
-			id: 169451379,
-			center: { lat: 36.8549985, lon: 31.0650442 },
-			tags: { name: "The Montgomerie Maxx Royal Golf Club" },
-		},
-		{
-			type: "relation",
-			id: 3872398,
-			center: { lat: 36.8620925, lon: 31.0347405 },
-			tags: { name: "Sueno Hotels Golf Belek" },
-		},
-		{
-			type: "way",
-			id: 126258746,
-			center: { lat: 36.8694094, lon: 30.9831748 },
-			tags: { name: "National Golf Club" },
-		},
-	],
-};

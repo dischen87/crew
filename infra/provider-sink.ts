@@ -13,6 +13,43 @@ type StoredMagicLink = {
 const MAX_BODY_BYTES = 65_536;
 const MAX_MAGIC_LINKS = 64;
 const MAGIC_LINK_TOKEN = /^ml_[A-Za-z0-9_-]{43}$/;
+const OVERPASS_USER_AGENT = "CrewPlaceCatalog/1.0 (+https://crew-haus.com)";
+const OVERPASS_GOLF_QUERY = 'nwr["leisure"="golf_course"]["name"]';
+export const BELEK_OVERPASS_FIXTURE = {
+	version: 0.6,
+	elements: [
+		{
+			type: "way",
+			id: 169451380,
+			center: { lat: 36.8483584, lon: 31.0950659 },
+			tags: { name: "Gloria Golf Club" },
+		},
+		{
+			type: "way",
+			id: 169450196,
+			center: { lat: 36.8665457, lon: 31.0116798 },
+			tags: { name: "Carya Golf Club" },
+		},
+		{
+			type: "way",
+			id: 169451379,
+			center: { lat: 36.8549985, lon: 31.0650442 },
+			tags: { name: "The Montgomerie Maxx Royal Golf Club" },
+		},
+		{
+			type: "relation",
+			id: 3872398,
+			center: { lat: 36.8620925, lon: 31.0347405 },
+			tags: { name: "Sueno Hotels Golf Belek" },
+		},
+		{
+			type: "way",
+			id: 126258746,
+			center: { lat: 36.8694094, lon: 30.9831748 },
+			tags: { name: "National Golf Club" },
+		},
+	],
+};
 
 export function createProviderSinkHandler(options: ProviderSinkOptions) {
 	if (options.deliveryBearer.length < 16 || options.fixtureBearer.length < 16) {
@@ -37,6 +74,23 @@ export function createProviderSinkHandler(options: ProviderSinkOptions) {
 				service: "local-provider-sink",
 				status: "ready",
 			});
+		}
+		if (
+			request.method === "POST" &&
+			url.pathname === "/internal/fixtures/overpass/golf"
+		) {
+			const body = await readBoundedBody(request, 4_096);
+			if (body === null) {
+				return Response.json({ error: "payload_too_large" }, { status: 413 });
+			}
+			if (
+				request.headers.has("authorization") ||
+				request.headers.get("user-agent") !== OVERPASS_USER_AGENT ||
+				!new URLSearchParams(body).get("data")?.includes(OVERPASS_GOLF_QUERY)
+			) {
+				return Response.json({ error: "invalid_request" }, { status: 400 });
+			}
+			return Response.json(BELEK_OVERPASS_FIXTURE);
 		}
 		if (
 			request.method === "POST" &&

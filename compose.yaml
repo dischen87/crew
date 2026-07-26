@@ -362,7 +362,7 @@ services:
     environment:
       NODE_ENV: development
       PLACE_GOLF_IMPORT_EVENT_SERVICE_URL: http://event-api:3002
-      PLACE_GOLF_IMPORT_OVERPASS_URL: https://overpass-api.de/api/interpreter
+      PLACE_GOLF_IMPORT_OVERPASS_URL: http://provider-sink:3010/internal/fixtures/overpass/golf
       PLACE_GOLF_IMPORT_BOUNDS: ${PLACE_GOLF_IMPORT_BOUNDS:-36.78,30.90,36.95,31.30}
       PLACE_GOLF_IMPORT_COUNTRY_CODE: ${PLACE_GOLF_IMPORT_COUNTRY_CODE:-TR}
       PLACE_GOLF_IMPORT_LOCALITY: ${PLACE_GOLF_IMPORT_LOCALITY:-Belek}
@@ -373,6 +373,8 @@ services:
       PLACE_GOLF_IMPORT_SERVICE_KEY: ${PLACE_CANDIDATE_SERVICE_CURRENT_KEY:-CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg}
     depends_on:
       event-api:
+        condition: service_healthy
+      provider-sink:
         condition: service_healthy
 
   place-search-reindex:

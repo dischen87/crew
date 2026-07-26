@@ -118,4 +118,60 @@ describe("local provider sink", () => {
 			}),
 		).toThrow("must be different");
 	});
+
+	test("serves the bounded local Overpass fixture without credentials", async () => {
+		const handler = createProviderSinkHandler({
+			deliveryBearer,
+			fixtureBearer,
+			log: () => {},
+		});
+		const response = await handler(
+			new Request("http://provider.test/internal/fixtures/overpass/golf", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+					"User-Agent": "CrewPlaceCatalog/1.0 (+https://crew-haus.com)",
+				},
+				body: new URLSearchParams({
+					data: '[out:json];nwr["leisure"="golf_course"]["name"];out;',
+				}),
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(
+			(await response.json()).elements.map(
+				(element: { id: number }) => element.id,
+			),
+		).toEqual([169451380, 169450196, 169451379, 3872398, 126258746]);
+		for (const request of [
+			new Request("http://provider.test/internal/fixtures/overpass/golf", {
+				method: "POST",
+				headers: { "User-Agent": "unknown" },
+				body: "data=wrong",
+			}),
+			new Request("http://provider.test/internal/fixtures/overpass/golf", {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer leaked",
+					"User-Agent": "CrewPlaceCatalog/1.0 (+https://crew-haus.com)",
+				},
+				body: 'data=nwr["leisure"="golf_course"]["name"]',
+			}),
+		]) {
+			expect((await handler(request)).status).toBe(400);
+		}
+		expect(
+			(
+				await handler(
+					new Request("http://provider.test/internal/fixtures/overpass/golf", {
+						method: "POST",
+						headers: {
+							"User-Agent": "CrewPlaceCatalog/1.0 (+https://crew-haus.com)",
+						},
+						body: "x".repeat(4_097),
+					}),
+				)
+			).status,
+		).toBe(413);
+	});
 });

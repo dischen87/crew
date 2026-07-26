@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 const root = new URL("../", import.meta.url);
+const composeSource = await Bun.file(new URL("compose.yaml", root)).text();
 const overlaySource = await Bun.file(
 	new URL("infra/staging/compose.staging.yaml", root),
 ).text();
@@ -49,6 +50,8 @@ test("staging overlay fails closed on immutable release inputs", () => {
 		"attachment-worker",
 		"notification-worker",
 		"recap-retention-worker",
+		"place-golf-import",
+		"place-search-reindex",
 	]) {
 		expect(
 			(services[service]?.environment as Record<string, unknown>)?.NODE_ENV,
@@ -60,6 +63,21 @@ test("staging overlay fails closed on immutable release inputs", () => {
 		(services["event-api"]?.environment as Record<string, unknown>)
 			?.EVENT_ENRICHMENT_ENABLED,
 	).toBe("false");
+	expect(composeSource).toContain(
+		"PLACE_GOLF_IMPORT_OVERPASS_URL: http://provider-sink:3010/internal/fixtures/overpass/golf",
+	);
+	expect(
+		(services["place-golf-import"]?.environment as Record<string, unknown>)
+			?.PLACE_GOLF_IMPORT_OVERPASS_URL,
+	).toBe("https://overpass-api.de/api/interpreter");
+	expect(
+		(services["place-golf-import"]?.environment as Record<string, unknown>)
+			?.PLACE_GOLF_IMPORT_EVENT_SERVICE_URL,
+	).toBe("https://staging.crew-haus.com:8447");
+	expect(
+		(services["place-search-reindex"]?.environment as Record<string, unknown>)
+			?.PLACE_SEARCH_REINDEX_EVENT_SERVICE_URL,
+	).toBe("https://staging.crew-haus.com:8447");
 	expect(overlaySource).not.toContain("staging-fixture-model");
 });
 
@@ -68,9 +86,10 @@ test("private production dependencies terminate TLS at the isolated proxy", () =
 		"haproxy:3.4.2-alpine@sha256:0878b11eb64c433be1b0f578a584b8aca12f6caaa64c8f239b8b556c0dd5eeeb",
 	);
 	expect(services["internal-tls"]?.ports).toEqual(["0.0.0.0:8444:8444"]);
-	for (const port of ["6379", "8443", "8444", "8445", "8446"]) {
+	for (const port of ["6379", "8443", "8444", "8445", "8446", "8447"]) {
 		expect(haproxy).toContain(`bind :${port} ssl crt`);
 	}
+	expect(haproxy).toContain("server event event-api:3002");
 	expect(overlaySource).toContain(
 		"rediss://crew_gateway:${REDIS_GATEWAY_PASSWORD:",
 	);
