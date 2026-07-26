@@ -32,6 +32,9 @@ describe("rate-limit Redis image", () => {
 	test("pins the official image and drops root", () => {
 		expect(dockerfile).toContain(`FROM ${redisImage}`);
 		expect(dockerfile).not.toMatch(/latest/i);
+		expect(dockerfile).not.toContain("COPY --chmod");
+		expect(dockerfile).toContain("chown redis:redis /usr/local/bin/crew-redis");
+		expect(dockerfile).toContain("chmod 0555 /usr/local/bin/crew-redis");
 		expect(dockerfile).toContain("USER redis");
 		expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/crew-redis"]');
 	});
