@@ -221,6 +221,12 @@ The Apple association publishes the verified Swiss Activities Team ID
 signing fingerprints are supplied. Placeholder associations are never
 published.
 
+Android Release signing accepts only the complete external Gradle-property set
+`crewReleaseStoreFile`, `crewReleaseStorePassword`, `crewReleaseKeyAlias`, and
+`crewReleaseKeyPassword`; a partial set fails configuration. Supply them via
+`ORG_GRADLE_PROJECT_*` environment variables and keep the keystore outside Git.
+The `releaseEvidence` variant explicitly carries no production signing config.
+
 Provider-backed place enrichment remains disabled without a real provider
 worker. Create/retry requests fail with the documented retryable `503`; exact
 completed idempotency replays remain available. E-mail and push delivery stay

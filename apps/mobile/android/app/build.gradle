@@ -8,6 +8,26 @@ def crewGatewayBaseUrl = providers.gradleProperty("crewGatewayBaseUrl").orElse("
 def crewNativeE2ERequestId = providers.gradleProperty("crewNativeE2ERequestId").orElse("").get()
 def crewVersionName = providers.gradleProperty("crewVersionName").orElse("1.0").get()
 def crewVersionCodeText = providers.gradleProperty("crewVersionCode").orElse("1").get()
+def crewReleaseSigning = [
+    storeFile: providers.gradleProperty("crewReleaseStoreFile").orElse("").get(),
+    storePassword: providers.gradleProperty("crewReleaseStorePassword").orElse("").get(),
+    keyAlias: providers.gradleProperty("crewReleaseKeyAlias").orElse("").get(),
+    keyPassword: providers.gradleProperty("crewReleaseKeyPassword").orElse("").get(),
+]
+def crewReleaseSigningValueCount = crewReleaseSigning.values().count { !it.isEmpty() }
+if (crewReleaseSigningValueCount != 0 && crewReleaseSigningValueCount != crewReleaseSigning.size()) {
+    throw new GradleException("Crew release signing requires all four external Gradle properties")
+}
+def crewReleaseSigningConfigured = crewReleaseSigningValueCount == crewReleaseSigning.size()
+def crewReleaseStoreFile = crewReleaseSigningConfigured
+    ? file(crewReleaseSigning.storeFile).canonicalFile
+    : null
+if (crewReleaseSigningConfigured && crewReleaseSigning.keyAlias.equalsIgnoreCase("androiddebugkey")) {
+    throw new GradleException("Crew release signing cannot use the Android debug key alias")
+}
+if (crewReleaseSigningConfigured && crewReleaseStoreFile == file("debug.keystore").canonicalFile) {
+    throw new GradleException("Crew release signing cannot use the repository debug keystore")
+}
 if (!(crewVersionName ==~ /\d+(?:\.\d+){0,3}(?:[-+][A-Za-z0-9.-]{1,32}){0,2}/)) {
     throw new GradleException("crewVersionName must be a bounded structured version")
 }
@@ -121,6 +141,14 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (crewReleaseSigningConfigured) {
+                storeFile crewReleaseStoreFile
+                storePassword crewReleaseSigning.storePassword
+                keyAlias crewReleaseSigning.keyAlias
+                keyPassword crewReleaseSigning.keyPassword
+            }
+        }
     }
     buildTypes {
         debug {
@@ -134,11 +162,13 @@ android {
             manifestPlaceholders.usesCleartextTraffic = "false"
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.release
         }
         releaseEvidence {
             initWith release
             applicationIdSuffix ".evidence"
             matchingFallbacks = ["release"]
+            signingConfig null
         }
     }
 }
