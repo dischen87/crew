@@ -5,7 +5,7 @@ export type RootStackParamList = {
     rootEventId: string;
     focusField?: 'description' | 'endsAt' | 'startsAt' | 'timeZone' | 'title';
   };
-  EventInbound: { rootEventId: string };
+  EventInbound: { rootEventId: string; focusItemId?: string };
   EventPublish: { rootEventId: string };
   EventSetupRecovery: {
     blocker:
@@ -30,7 +30,11 @@ export type RootStackParamList = {
   CommunityFeedbackItem: { rootEventId: string; feedbackId: string };
   RecapInbound: { rootEventId: string; version?: string };
   GolfScorecard: { rootEventId: string; eventId: string };
-  TeamFeed: { rootEventId: string; eventId?: string | null };
+  TeamFeed: {
+    rootEventId: string;
+    eventId?: string | null;
+    focusEntryId?: string;
+  };
   NativeE2EEvidence: { rootEventId: string };
   TeamSetup: { rootEventId: string; eventId: string };
   Decision: { rootEventId: string; decisionId: string };

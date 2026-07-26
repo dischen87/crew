@@ -705,12 +705,7 @@ test('makes route, date, sync and available-tab callbacks safe', async () => {
 });
 
 test('routes the Crew tab to the latest role-correct synchronized team surface', async () => {
-  const participantRead = snapshot(
-    accountA,
-    rootA,
-    'Teamtag',
-    'participant',
-  );
+  const participantRead = snapshot(accountA, rootA, 'Teamtag', 'participant');
   participantRead.feed = [
     systemFeed(accountA, rootA, {
       decisionId: 'tdc_lunch',
@@ -802,25 +797,107 @@ test('opens a synced golf itinerary on the production scorecard route with its r
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('renders and focuses an exact inbound itinerary even beyond the former two-row preview', async () => {
+  const readModels = snapshot(accountA, rootA, 'Teamtag');
+  const base = readModels.timeline[0]!;
+  readModels.timeline = [
+    { ...base, id: 'iti_first', sortKey: '1', title: 'Ankommen' },
+    {
+      ...base,
+      id: 'iti_second',
+      sortKey: '2',
+      startsAt: '2026-09-20T17:00:00.000Z',
+      title: 'Workshop',
+    },
+    {
+      ...base,
+      id: 'iti_target',
+      sortKey: '3',
+      startsAt: null,
+      title: 'Team Challenge',
+    },
+  ];
+  mockPrivateDatabase = {
+    accountId: accountA,
+    database: {
+      store: storeFor(readModels),
+      sync: { syncRoot: jest.fn(async () => syncStatus()) },
+    },
+  };
+
+  const renderer = await renderScreen(rootA, true, jest.fn(), 'iti_target');
+
+  expect(
+    new Set(
+      renderer.root
+        .findAll(node =>
+          String(node.props.testID).startsWith('event-hub-timeline-'),
+        )
+        .map(node => node.props.testID),
+    ),
+  ).toEqual(
+    new Set([
+      'event-hub-timeline-iti_first',
+      'event-hub-timeline-iti_second',
+      'event-hub-timeline-iti_target',
+    ]),
+  );
+  expect(
+    renderer.root
+      .findAllByProps({ testID: 'event-hub-timeline-iti_target' })
+      .some(node => node.props.accessibilityState?.selected === true),
+  ).toBe(true);
+  expect(textInside(renderer)).toContain('Team Challenge');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-hub-date-2026-09-21' })
+      .props.onPress(),
+  );
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-hub-timeline-iti_target',
+    }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({ testID: 'event-hub-date-2026-09-21' }).props
+      .accessibilityState,
+  ).toMatchObject({ selected: true });
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 async function renderScreen(
   rootEventId: string,
   settle = true,
   navigate = jest.fn(),
+  focusItemId?: string,
 ) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
-    renderer = ReactTestRenderer.create(screen(rootEventId, navigate));
+    renderer = ReactTestRenderer.create(
+      screen(rootEventId, navigate, focusItemId),
+    );
     if (settle) await flush();
   });
   return renderer;
 }
 
-function screen(rootEventId: string, navigate = jest.fn()) {
+function screen(
+  rootEventId: string,
+  navigate = jest.fn(),
+  focusItemId?: string,
+) {
   return (
     <SafeAreaProvider initialMetrics={metrics}>
       <EventHubScreen
         navigation={{ navigate } as never}
-        route={{ name: 'EventInbound', params: { rootEventId } } as never}
+        route={
+          {
+            name: 'EventInbound',
+            params: { focusItemId, rootEventId },
+          } as never
+        }
       />
     </SafeAreaProvider>
   );
@@ -1006,8 +1083,7 @@ function systemFeed(
     payloadSchemaVersion: 1,
     revisionOrdinal: 1,
     rootEventId,
-    rootRevision:
-      payload.type === 'team.assignments.published' ? '3' : '4',
+    rootRevision: payload.type === 'team.assignments.published' ? '3' : '4',
     updatedAt: '2026-07-18T12:00:00.000Z',
     version: 1,
   };

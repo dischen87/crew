@@ -41,7 +41,7 @@
           "apps/mobile/src/assets/participants/sara-avatar.png"
         ]
       },
-      "status": "current"
+      "status": "stale"
     },
     {
       "directory": "apps/mobile/evidence/recap-option-2",
@@ -111,7 +111,7 @@
           "apps/mobile/src/assets/icons/crew.png"
         ]
       },
-      "status": "current"
+      "status": "stale"
     }
   ]
 }

@@ -30,6 +30,9 @@ import {
   typography,
 } from '../design/theme';
 import type { RootStackParamList } from '../navigation/types';
+import NativeCrewInviteExpiry, {
+  type NativeInviteExpirySelection,
+} from '../specs/NativeCrewInviteExpiry';
 import { secureUuidV4 } from '../storage/secureRandom';
 import {
   InviteManagerAccessError,
@@ -54,6 +57,7 @@ export type InviteEditorForm = {
   expiresAt: string;
   maxUses: string;
   role: InviteRole;
+  timeZone: string;
 };
 type InviteField = keyof InviteEditorForm;
 
@@ -103,8 +107,7 @@ export function InviteEditorScreen({ navigation, route }: Props) {
   const draftWriteRef = useRef<Promise<void>>(Promise.resolve());
   const [authorityRequest, setAuthorityRequest] = useState(0);
   const draftStore = useMemo(
-    () =>
-      scopeKey ? new MobileDataStore(privateDatabase.database) : null,
+    () => (scopeKey ? new MobileDataStore(privateDatabase.database) : null),
     [privateDatabase.database, scopeKey],
   );
   const [state, setState] = useState<State>({
@@ -131,7 +134,10 @@ export function InviteEditorScreen({ navigation, route }: Props) {
   useEffect(() => {
     attemptRef.current = null;
     draftWriteRef.current = Promise.resolve();
-    setState({ key: scopeKey ?? '', phase: scopeKey ? 'loading' : 'concealed' });
+    setState({
+      key: scopeKey ?? '',
+      phase: scopeKey ? 'loading' : 'concealed',
+    });
   }, [scopeKey]);
 
   useEffect(() => {
@@ -246,7 +252,8 @@ export function InviteEditorScreen({ navigation, route }: Props) {
           expiresAt: form.expiresAt,
           maxUses: form.maxUses,
           role: form.role,
-          schemaVersion: 1,
+          schemaVersion: 2,
+          timeZone: form.timeZone,
         }),
         createdAt: now,
         entityType: INVITE_EDITOR_DRAFT_TYPE,
@@ -273,13 +280,7 @@ export function InviteEditorScreen({ navigation, route }: Props) {
           }
         });
     },
-    [
-      draftStore,
-      privateDatabase.accountId,
-      publish,
-      rootEventId,
-      scopeKey,
-    ],
+    [draftStore, privateDatabase.accountId, publish, rootEventId, scopeKey],
   );
 
   const change = useCallback(
@@ -423,12 +424,11 @@ export function InviteEditorScreen({ navigation, route }: Props) {
         publish({
           ...latest,
           busy: false,
-          message:
-            inProgress
-              ? 'Die Einladung wird noch verarbeitet. Versuche es gleich mit denselben Eingaben erneut.'
-              : terminalConflict
-              ? 'Dieser Versuch kann nicht fortgesetzt werden. Beim nächsten Erstellen beginnt Crew sicher neu.'
-              : 'Es wurde keine Einladung bestätigt. Deine Eingaben bleiben erhalten.',
+          message: inProgress
+            ? 'Die Einladung wird noch verarbeitet. Versuche es gleich mit denselben Eingaben erneut.'
+            : terminalConflict
+            ? 'Dieser Versuch kann nicht fortgesetzt werden. Beim nächsten Erstellen beginnt Crew sicher neu.'
+            : 'Es wurde keine Einladung bestätigt. Deine Eingaben bleiben erhalten.',
         });
       }
     }
@@ -440,6 +440,84 @@ export function InviteEditorScreen({ navigation, route }: Props) {
     rootEventId,
     scopeKey,
   ]);
+
+  const chooseExpiry = useCallback(async () => {
+    const current = stateRef.current;
+    if (
+      !scopeKey ||
+      current.key !== scopeKey ||
+      current.phase !== 'ready' ||
+      current.busy ||
+      current.token
+    ) {
+      return;
+    }
+    if (!NativeCrewInviteExpiry) {
+      publish({
+        ...current,
+        message:
+          'Die Datumsauswahl ist gerade nicht verfügbar. Deine Eingabe bleibt erhalten.',
+      });
+      return;
+    }
+    const minimum = new Date(Math.ceil((Date.now() + 1_000) / 60_000) * 60_000);
+    try {
+      const result = await NativeCrewInviteExpiry.pickExpiry(
+        current.form.expiresAt,
+        minimum.toISOString(),
+      );
+      const latest = stateRef.current;
+      if (
+        !result ||
+        scopeRef.current !== scopeKey ||
+        latest.key !== scopeKey ||
+        latest.phase !== 'ready' ||
+        latest.busy ||
+        latest.token
+      ) {
+        return;
+      }
+      const selection = validNativeInviteExpirySelection(
+        result,
+        minimum.getTime(),
+      );
+      if (!selection) {
+        publish({
+          ...latest,
+          message:
+            'Die Datumsauswahl war ungültig. Der bisherige Zeitpunkt bleibt erhalten.',
+        });
+        return;
+      }
+      const form = {
+        ...latest.form,
+        expiresAt: selection.expiresAt,
+        timeZone: selection.timeZone,
+      };
+      attemptRef.current = null;
+      publish({
+        ...latest,
+        errors: validateInviteForm(form, latest.role).errors,
+        form,
+        message: null,
+        restored: false,
+      });
+      persistDraft(form);
+    } catch {
+      const latest = stateRef.current;
+      if (
+        scopeRef.current === scopeKey &&
+        latest.key === scopeKey &&
+        latest.phase === 'ready'
+      ) {
+        publish({
+          ...latest,
+          message:
+            'Die Datumsauswahl ist gerade nicht verfügbar. Deine Eingabe bleibt erhalten.',
+        });
+      }
+    }
+  }, [persistDraft, publish, scopeKey]);
 
   const share = useCallback(async () => {
     const current = stateRef.current;
@@ -532,6 +610,7 @@ export function InviteEditorScreen({ navigation, route }: Props) {
       onChange={change}
       onClearDraft={clearDraft}
       onCreate={create}
+      onPickExpiry={chooseExpiry}
       onRetryAuthority={() => setAuthorityRequest(value => value + 1)}
       onShare={share}
       state={visibleState}
@@ -545,6 +624,7 @@ export function InviteEditorView({
   onChange,
   onClearDraft,
   onCreate,
+  onPickExpiry,
   onRetryAuthority,
   onShare,
   state,
@@ -554,6 +634,7 @@ export function InviteEditorView({
   onChange(field: InviteField, value: string): void;
   onClearDraft(): void;
   onCreate(): void;
+  onPickExpiry(): Promise<void>;
   onRetryAuthority(): void;
   onShare(): void;
   state: State;
@@ -695,9 +776,7 @@ export function InviteEditorView({
     >
       <View style={styles.meta}>
         <StatusChip
-          label={
-            state.role === 'owner' ? 'Eigentümer:in' : 'Organisator:in'
-          }
+          label={state.role === 'owner' ? 'Eigentümer:in' : 'Organisator:in'}
           tone="lavender"
         />
         <StatusChip label="Link nur einmal sichtbar" tone="surface" />
@@ -740,18 +819,12 @@ export function InviteEditorView({
           testID="invite-editor-email"
           value={state.form.email}
         />
-        <TextField
-          autoCapitalize="none"
-          autoCorrect={false}
+        <InviteExpiryField
           disabled={locked}
-          error={state.errors.expiresAt}
-          helpText="Lokale Zeit im Format JJJJ-MM-TT HH:MM"
-          label="Gültig bis"
-          maxLength={16}
-          onChangeText={value => onChange('expiresAt', value)}
-          placeholder="2026-09-20 18:00"
-          testID="invite-editor-expires-at"
-          value={state.form.expiresAt}
+          error={state.errors.expiresAt ?? state.errors.timeZone}
+          expiresAt={state.form.expiresAt}
+          onPress={onPickExpiry}
+          timeZone={state.form.timeZone}
         />
         <TextField
           disabled={locked}
@@ -815,6 +888,69 @@ export function InviteEditorView({
   );
 }
 
+function InviteExpiryField({
+  disabled,
+  error,
+  expiresAt,
+  onPress,
+  timeZone,
+}: {
+  disabled: boolean;
+  error?: string;
+  expiresAt: string;
+  onPress(): Promise<void>;
+  timeZone: string;
+}) {
+  const triggerRef = useRef<View | null>(null);
+  const label = formatInviteExpiry(expiresAt, timeZone);
+  const press = async () => {
+    await onPress();
+    setTimeout(() => {
+      setInviteAccessibilityFocus(findNodeHandle(triggerRef.current));
+    }, 0);
+  };
+
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>Gültig bis</Text>
+      <Pressable
+        accessibilityHint="Öffnet die systemeigene Auswahl für Datum und Uhrzeit. Abbrechen behält den bisherigen Zeitpunkt."
+        accessibilityLabel="Gültig bis"
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
+        accessibilityValue={{
+          text: `${label}. Lokale Zeitzone ${timeZone}.`,
+        }}
+        disabled={disabled}
+        onPress={press}
+        ref={triggerRef}
+        style={({ pressed }) => [
+          styles.expiryChoice,
+          pressed && styles.roleChoicePressed,
+          disabled && styles.roleChoiceDisabled,
+        ]}
+        testID="invite-editor-expires-at"
+      >
+        <Text style={styles.expiryValue}>{label}</Text>
+        <Text style={styles.expiryTimeZone}>Lokale Zeitzone · {timeZone}</Text>
+      </Pressable>
+      {error ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+          style={styles.error}
+        >
+          Fehler: {error}
+        </Text>
+      ) : (
+        <Text style={styles.help}>
+          Datum und Uhrzeit werden systemseitig gewählt.
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function InviteRolePicker({
   disabled,
   onChange,
@@ -828,9 +964,8 @@ function InviteRolePicker({
 }) {
   const selectedRef = useRef<View | null>(null);
   useEffect(() => {
-    const node = findNodeHandle(selectedRef.current);
-    if (node) AccessibilityInfo.setAccessibilityFocus(node);
-  }, []);
+    setInviteAccessibilityFocus(findNodeHandle(selectedRef.current));
+  }, [selectedRole]);
 
   return (
     <View
@@ -843,9 +978,7 @@ function InviteRolePicker({
         const selected = selectedRole === role;
         return (
           <Pressable
-            accessibilityHint={`${roleHint(
-              role,
-            )} Doppeltippen zum Auswählen.`}
+            accessibilityHint={`${roleHint(role)} Doppeltippen zum Auswählen.`}
             accessibilityLabel={`${roleLabel(role)}, ${
               selected ? 'ausgewählt' : 'nicht ausgewählt'
             }`}
@@ -888,7 +1021,8 @@ export function validateInviteForm(
 } {
   const errors: Partial<Record<InviteField, string>> = {};
   if (managerRole === 'organizer' && form.role === 'organizer') {
-    errors.role = 'Nur Eigentümer:innen können weitere Organisator:innen einladen.';
+    errors.role =
+      'Nur Eigentümer:innen können weitere Organisator:innen einladen.';
   }
   const normalizedEmailHint = form.email.trim().toLowerCase();
   if (
@@ -898,9 +1032,12 @@ export function validateInviteForm(
   ) {
     errors.email = 'Verwende eine gültige E-Mail-Adresse.';
   }
-  const expiry = localExpiry(form.expiresAt);
+  const expiry = exactInviteExpiry(form.expiresAt);
   if (!expiry || expiry.getTime() <= Date.now()) {
     errors.expiresAt = 'Wähle einen zukünftigen Zeitpunkt.';
+  }
+  if (!validInviteTimeZone(form.timeZone)) {
+    errors.timeZone = 'Die lokale Zeitzone ist nicht verfügbar.';
   }
   const maxUses = Number(form.maxUses);
   if (
@@ -927,16 +1064,13 @@ export function validateInviteForm(
 
 function initialInviteForm(): InviteEditorForm {
   const expiresAt = new Date(Date.now() + 7 * 86_400_000);
-  const part = (value: number) => String(value).padStart(2, '0');
+  expiresAt.setSeconds(0, 0);
   return {
     email: '',
-    expiresAt: `${expiresAt.getFullYear()}-${part(
-      expiresAt.getMonth() + 1,
-    )}-${part(expiresAt.getDate())} ${part(expiresAt.getHours())}:${part(
-      expiresAt.getMinutes(),
-    )}`,
+    expiresAt: expiresAt.toISOString(),
     maxUses: '1',
     role: 'participant',
+    timeZone: localInviteTimeZone(),
   };
 }
 
@@ -976,10 +1110,13 @@ function inviteFormFromDraft(draft: DraftRecord): InviteEditorForm | null {
   try {
     const value = JSON.parse(draft.contentJson) as Record<string, unknown>;
     if (
-      value.schemaVersion !== 1 ||
+      value.schemaVersion !== 2 ||
       typeof value.email !== 'string' ||
       typeof value.expiresAt !== 'string' ||
       typeof value.maxUses !== 'string' ||
+      typeof value.timeZone !== 'string' ||
+      !exactInviteExpiry(value.expiresAt) ||
+      !validInviteTimeZone(value.timeZone) ||
       (value.role !== 'organizer' &&
         value.role !== 'participant' &&
         value.role !== 'viewer')
@@ -991,25 +1128,70 @@ function inviteFormFromDraft(draft: DraftRecord): InviteEditorForm | null {
       expiresAt: value.expiresAt,
       maxUses: value.maxUses,
       role: value.role,
+      timeZone: value.timeZone,
     };
   } catch {
     return null;
   }
 }
 
-function localExpiry(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(value)) return null;
-  const date = new Date(`${value.replace(' ', 'T')}:00`);
-  if (!Number.isFinite(date.getTime())) return null;
-  const normalized = [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-');
-  const time = `${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`;
-  return `${normalized} ${time}` === value ? date : null;
+function exactInviteExpiry(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.toISOString() === value
+    ? date
+    : null;
+}
+
+function validInviteTimeZone(value: string) {
+  if (!value || value.length > 128) return false;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function localInviteTimeZone() {
+  const timeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return validInviteTimeZone(timeZone) ? timeZone : 'UTC';
+}
+
+function formatInviteExpiry(expiresAt: string, timeZone: string) {
+  const expiry = exactInviteExpiry(expiresAt);
+  if (!expiry || !validInviteTimeZone(timeZone)) {
+    return 'Zeitpunkt nicht verfügbar';
+  }
+  return new Intl.DateTimeFormat('de-CH', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone,
+  }).format(expiry);
+}
+
+export function validNativeInviteExpirySelection(
+  selection: NativeInviteExpirySelection,
+  minimumTime: number,
+) {
+  if (
+    typeof selection?.expiresAt !== 'string' ||
+    typeof selection.timeZone !== 'string'
+  ) {
+    return null;
+  }
+  const expiry = exactInviteExpiry(selection.expiresAt);
+  if (
+    !expiry ||
+    expiry.getTime() < minimumTime ||
+    !validInviteTimeZone(selection.timeZone)
+  ) {
+    return null;
+  }
+  return selection;
+}
+
+export function setInviteAccessibilityFocus(node: number | null) {
+  if (node) AccessibilityInfo.setAccessibilityFocus(node);
 }
 
 function roleLabel(role: InviteRole) {
@@ -1054,6 +1236,26 @@ const styles = StyleSheet.create({
     color: colors.error,
     marginTop: spacing.sm,
   },
+  expiryChoice: {
+    ...elevations.control,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    borderWidth: borders.strong,
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: componentMetrics.control.minimumTouchSize,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  expiryTimeZone: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  expiryValue: {
+    ...typography.bodyStrong,
+    color: colors.text,
+  },
   fieldLabel: {
     ...typography.label,
     color: colors.text,
@@ -1061,6 +1263,11 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.lg,
+  },
+  help: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   meta: {
     alignItems: 'center',

@@ -697,7 +697,7 @@ test('conceals an unauthorized event root after the generated Gateway check', as
   client.clear();
 });
 
-test('retries an item route and resolves its real itinerary ID from the private projection', async () => {
+test('retries an item route and replaces it with the exact account/root-scoped Event Hub target', async () => {
   mockLifecycle.accountId = accountId;
   mockLifecycle.status = 'ready';
   let projectedRows: ReturnType<typeof itineraryRow>[] = [];
@@ -722,13 +722,14 @@ test('retries an item route and resolves its real itinerary ID from the private 
     defaultOptions: { queries: { retry: false } },
   });
   const navigate = jest.fn();
+  const replace = jest.fn();
 
   let renderer: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     renderer = ReactTestRenderer.create(
       <QueryClientProvider client={client}>
         <InboundGateScreen
-          navigation={{ navigate } as never}
+          navigation={{ navigate, replace } as never}
           route={
             {
               name: 'ItemInbound',
@@ -777,15 +778,199 @@ test('retries an item route and resolves its real itinerary ID from the private 
   expect(mockSyncRoot.mock.invocationCallOrder[0]).toBeLessThan(
     mockPrivateDatabase.database.all.mock.invocationCallOrder[0]!,
   );
-  expect(textInside(renderer!)).toContain('Workshop');
+  expect(
+    mockPrivateDatabase.database.all.mock.invocationCallOrder[0],
+  ).toBeLessThan(replace.mock.invocationCallOrder[0]!);
+  expect(replace).toHaveBeenCalledWith('EventInbound', {
+    focusItemId: 'iti_private_item',
+    rootEventId: 'evt_private_root',
+  });
+  expect(textInside(renderer!)).toContain('Event wird geprüft');
   expect(textInside(renderer!)).not.toContain('Andere Session');
   expect(textInside(renderer!)).not.toMatch(
-    /evt_private_root|iti_private_item|request-recovered-root/,
+    /Workshop|evt_private_root|iti_private_item|request-recovered-root/,
   );
 
   await ReactTestRenderer.act(async () => renderer!.unmount());
   client.clear();
 });
+
+test('routes a feed deep link only after exact root-scoped synchronization and lookup', async () => {
+  mockLifecycle.accountId = accountId;
+  mockLifecycle.status = 'ready';
+  let projectedRows: ReturnType<typeof feedRow>[] = [];
+  mockPrivateDatabase.database.all.mockImplementation(
+    async () => projectedRows,
+  );
+  mockSyncRoot.mockImplementation(async () => {
+    projectedRows = [
+      feedRow('fed_other', 'evt_other_session'),
+      feedRow('fed_private_entry', 'evt_private_session'),
+    ];
+    return {} as never;
+  });
+  mockGatewayClient.request.mockResolvedValue({
+    data: { event: { id: 'evt_private_root', title: 'Sommerfest' } },
+    requestId: 'request-authorized-root',
+    status: 200,
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const replace = jest.fn();
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <QueryClientProvider client={client}>
+        <InboundGateScreen
+          navigation={{ navigate: jest.fn(), replace } as never}
+          route={
+            {
+              name: 'FeedInbound',
+              params: {
+                entryId: 'fed_private_entry',
+                rootEventId: 'evt_private_root',
+              },
+            } as never
+          }
+        />
+      </QueryClientProvider>,
+    );
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+
+  expect(mockGatewayClient.request).toHaveBeenCalledWith('eventsGet', {
+    path: {
+      eventId: 'evt_private_root',
+      rootEventId: 'evt_private_root',
+    },
+  });
+  expect(mockSyncRoot).toHaveBeenCalledWith(accountId, 'evt_private_root');
+  expect(mockGatewayClient.request.mock.invocationCallOrder[0]).toBeLessThan(
+    mockSyncRoot.mock.invocationCallOrder[0]!,
+  );
+  expect(mockSyncRoot.mock.invocationCallOrder[0]).toBeLessThan(
+    mockPrivateDatabase.database.all.mock.invocationCallOrder[0]!,
+  );
+  expect(replace).toHaveBeenCalledWith('TeamFeed', {
+    eventId: 'evt_private_session',
+    focusEntryId: 'fed_private_entry',
+    rootEventId: 'evt_private_root',
+  });
+  expect(textInside(renderer!)).not.toMatch(
+    /Sommerfest|evt_private_root|fed_private_entry|request-authorized-root/,
+  );
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+  client.clear();
+});
+
+test('conceals a missing feed target without confirming its ID or cross-root projection', async () => {
+  mockLifecycle.accountId = accountId;
+  mockLifecycle.status = 'ready';
+  mockPrivateDatabase.database.all.mockResolvedValue([
+    feedRow('fed_missing', 'evt_other_session', 'evt_other_root'),
+  ]);
+  mockGatewayClient.request.mockResolvedValue({
+    data: { event: { id: 'evt_private_root', title: 'Sommerfest' } },
+    requestId: 'request-authorized-root',
+    status: 200,
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const replace = jest.fn();
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <QueryClientProvider client={client}>
+        <InboundGateScreen
+          navigation={{ navigate: jest.fn(), replace } as never}
+          route={
+            {
+              name: 'FeedInbound',
+              params: {
+                entryId: 'fed_missing',
+                rootEventId: 'evt_private_root',
+              },
+            } as never
+          }
+        />
+      </QueryClientProvider>,
+    );
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+
+  expect(textInside(renderer!)).toContain('Dieser Inhalt ist nicht verfügbar.');
+  expect(textInside(renderer!)).not.toMatch(
+    /Sommerfest|evt_private_root|evt_other_root|fed_missing/,
+  );
+  expect(mockSyncRoot).toHaveBeenCalledWith(accountId, 'evt_private_root');
+  expect(replace).not.toHaveBeenCalled();
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+  client.clear();
+});
+
+test.each([
+  {
+    name: 'ItemInbound',
+    params: { itemId: 'not-an-item', rootEventId: 'evt_private_root' },
+  },
+  {
+    name: 'FeedInbound',
+    params: { entryId: 'not-a-feed', rootEventId: 'evt_private_root' },
+  },
+  {
+    name: 'FeedInbound',
+    params: { entryId: 'fed_private', rootEventId: 'not-a-root' },
+  },
+] as const)(
+  'rejects malformed $name identifiers before any private read',
+  async route => {
+    mockLifecycle.accountId = accountId;
+    mockLifecycle.status = 'ready';
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <QueryClientProvider client={client}>
+          <InboundGateScreen
+            navigation={{ navigate: jest.fn(), replace: jest.fn() } as never}
+            route={route as never}
+          />
+        </QueryClientProvider>,
+      );
+      await flush();
+    });
+
+    expect(textInside(renderer!)).toContain(
+      'Dieser Inhalt ist nicht verfügbar.',
+    );
+    expect(textInside(renderer!)).not.toMatch(
+      /not-an-item|not-a-feed|not-a-root/,
+    );
+    expect(mockGatewayClient.request).not.toHaveBeenCalled();
+    expect(mockSyncRoot).not.toHaveBeenCalled();
+    expect(mockPrivateDatabase.database.all).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    client.clear();
+  },
+);
 
 test('conceals an item when the active account changes during root sync', async () => {
   mockLifecycle.accountId = accountId;
@@ -858,6 +1043,31 @@ function itineraryRow(id: string, title: string) {
     status: 'active',
     time_zone: 'Europe/Zurich',
     title,
+    updated_at: '2026-07-18T12:00:00.000Z',
+    version: 1,
+  };
+}
+
+function feedRow(
+  id: string,
+  eventId: string | null,
+  rootEventId = 'evt_private_root',
+) {
+  return {
+    account_user_id: accountId,
+    actor_user_id: accountId,
+    created_at: '2026-07-18T12:00:00.000Z',
+    created_root_revision: '1',
+    deleted_at: null,
+    event_id: eventId,
+    id,
+    kind: 'message',
+    parent_entry_id: null,
+    payload_json: '{"text":"Privat"}',
+    payload_schema_version: 1,
+    revision_ordinal: 1,
+    root_event_id: rootEventId,
+    root_revision: '1',
     updated_at: '2026-07-18T12:00:00.000Z',
     version: 1,
   };

@@ -7,6 +7,7 @@ import {
   type FeedPhotoLifecycle,
   type FeedPhotoLifecycleState,
   LocalAttachmentStore,
+  MobileDataStore,
   type RetainedLocalAttachment,
   type SqlDatabase,
 } from '@crew/mobile-data';
@@ -21,6 +22,7 @@ import {
   uploadRetainedAttachment,
 } from '../media/attachmentMedia';
 import { secureUuidV4 } from '../storage/secureRandom';
+import type { TeamFeedPhotoViewModel } from '../team/TeamProductionRuntime';
 
 type PreparedUpload = GatewayResponseData<'eventAttachmentUploadsPrepare'>;
 type CommittedAttachment = Extract<
@@ -29,11 +31,24 @@ type CommittedAttachment = Extract<
 >['attachment'];
 
 export type TeamFeedPhotoSelection = {
+  eventId: string | null;
   feedEntryId: string;
   lifecycleState: FeedPhotoLifecycleState;
   prepared: PreparedAttachmentMedia;
   uploadGeneration: number;
   uploadId: string | null;
+};
+
+export const TEAM_FEED_PHOTO_CAPTION_MAX_LENGTH = 1_000;
+
+export type TeamFeedPhotoDescription =
+  | { kind: 'decorative' }
+  | { caption: string; kind: 'informative' };
+
+export type TeamFeedPhotoSource = {
+  expiresAt: string;
+  headers: Readonly<Record<string, string>>;
+  uri: string;
 };
 
 export async function pickTeamFeedPhoto(
@@ -63,6 +78,7 @@ export async function pickTeamFeedPhoto(
   );
   return prepared
     ? {
+        eventId,
         feedEntryId,
         lifecycleState: 'selected',
         prepared,
@@ -89,6 +105,7 @@ export function recoveredTeamFeedPhoto(
 ): TeamFeedPhotoSelection {
   const { attachment } = lifecycle;
   return {
+    eventId: lifecycle.eventId,
     feedEntryId: attachment.targetEntryId,
     lifecycleState: lifecycle.state,
     prepared: {
@@ -128,19 +145,79 @@ export function discardTeamFeedPhoto(
   selection: TeamFeedPhotoSelection,
 ): Promise<void> {
   const attachment = selection.prepared.attachment;
-  return runAttachmentMediaOperation(attachment.accountUserId, () =>
-    discardFeedPhotoAttachment(
+  return runAttachmentMediaOperation(attachment.accountUserId, async () => {
+    await discardFeedPhotoAttachment(
       new LocalAttachmentStore(database),
       attachment.accountUserId,
       attachment.attachmentId,
-    ),
+    );
+    await writeTeamFeedPhotoDescription(database, selection, null);
+  });
+}
+
+export function saveTeamFeedPhotoDescription(
+  database: SqlDatabase,
+  selection: TeamFeedPhotoSelection,
+  description: TeamFeedPhotoDescription,
+): Promise<TeamFeedPhotoDescription> {
+  const attachment = selection.prepared.attachment;
+  const normalized = normalizeTeamFeedPhotoDescription(description);
+  return runAttachmentMediaOperation(attachment.accountUserId, async () => {
+    await writeTeamFeedPhotoDescription(database, selection, normalized);
+    return normalized;
+  });
+}
+
+export function recoverTeamFeedPhotoDescription(
+  database: SqlDatabase,
+  selection: TeamFeedPhotoSelection,
+): Promise<TeamFeedPhotoDescription | null> {
+  const attachment = selection.prepared.attachment;
+  return runAttachmentMediaOperation(attachment.accountUserId, () =>
+    readTeamFeedPhotoDescription(database, selection),
   );
+}
+
+export function loadTeamFeedPhotoSource(input: {
+  activeAccountUserId(): string | null;
+  accountUserId: string;
+  client: MobileGatewayClient;
+  photo: TeamFeedPhotoViewModel;
+  rootEventId: string;
+}): Promise<TeamFeedPhotoSource> {
+  return runAttachmentMediaOperation(input.accountUserId, async () => {
+    assertActive(input.activeAccountUserId, input.accountUserId);
+    const subject = await input.client.sessionSubject();
+    assertActive(input.activeAccountUserId, input.accountUserId);
+    if (!subject || subject.userId !== input.accountUserId) {
+      throw new Error('team_feed_photo_auth_required');
+    }
+    await input.client.assertSessionSubject(subject);
+    assertActive(input.activeAccountUserId, input.accountUserId);
+    const response = await input.client.requestAsUser(
+      subject,
+      'eventAttachmentsDownload',
+      {
+        path: {
+          attachmentId: input.photo.id,
+          rootEventId: input.rootEventId,
+        },
+      },
+    );
+    await input.client.assertSessionSubject(subject);
+    assertActive(input.activeAccountUserId, input.accountUserId);
+    if (response.status !== 200) {
+      throw new Error('team_feed_photo_invalid_response');
+    }
+    return validPhotoSource(response.data, input.photo, input.rootEventId);
+  });
 }
 
 export async function prepareAndUploadTeamFeedPhoto(input: {
   activeAccountUserId(): string | null;
   client: MobileGatewayClient;
   database: SqlDatabase;
+  description: TeamFeedPhotoDescription;
   selection: TeamFeedPhotoSelection;
 }): Promise<string> {
   const attachment = input.selection.prepared.attachment;
@@ -148,6 +225,14 @@ export async function prepareAndUploadTeamFeedPhoto(input: {
     throw new Error('team_feed_photo_invalid_binding');
   }
   return runAttachmentMediaOperation(attachment.accountUserId, async () => {
+    const description = normalizeTeamFeedPhotoDescription(input.description);
+    const persistedDescription = await readTeamFeedPhotoDescription(
+      input.database,
+      input.selection,
+    );
+    if (!sameDescription(description, persistedDescription)) {
+      throw new Error('team_feed_photo_description_changed');
+    }
     assertActive(input.activeAccountUserId, attachment.accountUserId);
     const subject = await input.client.sessionSubject();
     assertActive(input.activeAccountUserId, attachment.accountUserId);
@@ -172,6 +257,14 @@ export async function prepareAndUploadTeamFeedPhoto(input: {
         const outcome = await finalizeUpload(input, subject, lifecycle);
         if (outcome === 'committed') {
           await cleanupConfirmedPhoto(input, subject, store, lifecycle);
+          await writeTeamFeedPhotoDescription(
+            input.database,
+            input.selection,
+            null,
+          ).catch(() => {
+            // The authoritative attachment is committed. Local caption
+            // minimization must not turn that success into an unsafe replay.
+          });
           return lifecycle.uploadId;
         }
         if (outcome === 'pending') {
@@ -271,6 +364,7 @@ async function finalizeUpload(
   input: {
     activeAccountUserId(): string | null;
     client: MobileGatewayClient;
+    description: TeamFeedPhotoDescription;
     selection: TeamFeedPhotoSelection;
   },
   subject: GatewaySessionSubject,
@@ -291,7 +385,7 @@ async function finalizeUpload(
             lifecycle.uploadGeneration,
           ),
         },
-        body: { caption: null },
+        body: { caption: descriptionCaption(input.description) },
       },
     );
     await assertSessionActive(input, subject, attachment.accountUserId);
@@ -326,6 +420,7 @@ async function finalizeUpload(
       committed.contentType !== attachment.contentType ||
       committed.byteCount !== attachment.byteCount ||
       committed.sha256 !== attachment.sha256 ||
+      committed.caption !== descriptionCaption(input.description) ||
       committed.integrityStatus !== 'integrity_verified'
     ) {
       throw new Error('team_feed_photo_invalid_response');
@@ -377,6 +472,226 @@ async function cleanupConfirmedPhoto(
   } catch {
     // cleanup_pending remains durable for the next scoped reconciliation
   }
+}
+
+async function readTeamFeedPhotoDescription(
+  database: SqlDatabase,
+  selection: TeamFeedPhotoSelection,
+): Promise<TeamFeedPhotoDescription | null> {
+  assertDescriptionBinding(selection);
+  const attachment = selection.prepared.attachment;
+  const drafts = await new MobileDataStore(database).listDrafts(
+    attachment.accountUserId,
+    attachment.rootEventId,
+  );
+  const draft = drafts.find(
+    candidate =>
+      candidate.id === descriptionDraftId(attachment.attachmentId) &&
+      candidate.entityType === 'team_feed_photo_description' &&
+      candidate.eventId === selection.eventId,
+  );
+  if (!draft) return null;
+  try {
+    const value = JSON.parse(draft.contentJson) as {
+      description?: unknown;
+      schemaVersion?: unknown;
+      state?: unknown;
+    };
+    if (value.schemaVersion !== 1 || value.state !== 'active') return null;
+    return normalizeTeamFeedPhotoDescription(value.description);
+  } catch {
+    return null;
+  }
+}
+
+async function writeTeamFeedPhotoDescription(
+  database: SqlDatabase,
+  selection: TeamFeedPhotoSelection,
+  description: TeamFeedPhotoDescription | null,
+): Promise<void> {
+  assertDescriptionBinding(selection);
+  const attachment = selection.prepared.attachment;
+  const store = new MobileDataStore(database);
+  const id = descriptionDraftId(attachment.attachmentId);
+  const existing = (
+    await store.listDrafts(attachment.accountUserId, attachment.rootEventId)
+  ).find(
+    candidate =>
+      candidate.id === id &&
+      candidate.entityType === 'team_feed_photo_description' &&
+      candidate.eventId === selection.eventId,
+  );
+  const now = new Date().toISOString();
+  await store.putDraft({
+    accountUserId: attachment.accountUserId,
+    contentJson: JSON.stringify(
+      description
+        ? {
+            description: normalizeTeamFeedPhotoDescription(description),
+            schemaVersion: 1,
+            state: 'active',
+          }
+        : { schemaVersion: 1, state: 'cleared' },
+    ),
+    createdAt: existing?.createdAt ?? now,
+    entityType: 'team_feed_photo_description',
+    eventId: selection.eventId,
+    id,
+    rootEventId: attachment.rootEventId,
+    updatedAt: now,
+  });
+}
+
+function normalizeTeamFeedPhotoDescription(
+  value: unknown,
+): TeamFeedPhotoDescription {
+  if (!value || typeof value !== 'object' || !('kind' in value)) {
+    throw new Error('team_feed_photo_description_required');
+  }
+  if (value.kind === 'decorative') return { kind: 'decorative' };
+  if (
+    value.kind !== 'informative' ||
+    !('caption' in value) ||
+    typeof value.caption !== 'string'
+  ) {
+    throw new Error('team_feed_photo_description_invalid');
+  }
+  const caption = value.caption.trim();
+  if (
+    caption.length < 1 ||
+    caption.length > TEAM_FEED_PHOTO_CAPTION_MAX_LENGTH
+  ) {
+    throw new Error('team_feed_photo_description_invalid');
+  }
+  return { caption, kind: 'informative' };
+}
+
+function descriptionCaption(
+  description: TeamFeedPhotoDescription,
+): string | null {
+  const normalized = normalizeTeamFeedPhotoDescription(description);
+  return normalized.kind === 'informative' ? normalized.caption : null;
+}
+
+function sameDescription(
+  left: TeamFeedPhotoDescription,
+  right: TeamFeedPhotoDescription | null,
+): boolean {
+  if (!right || left.kind !== right.kind) return false;
+  return (
+    left.kind === 'decorative' ||
+    (right.kind === 'informative' &&
+      left.caption.trim() === right.caption.trim())
+  );
+}
+
+function assertDescriptionBinding(selection: TeamFeedPhotoSelection): void {
+  const attachment = selection.prepared.attachment;
+  if (
+    selection.feedEntryId !== attachment.targetEntryId ||
+    !/^att_[A-Za-z0-9._:-]{1,96}$/.test(attachment.attachmentId) ||
+    (selection.eventId !== null &&
+      !/^evt_[A-Za-z0-9._:-]{1,96}$/.test(selection.eventId))
+  ) {
+    throw new Error('team_feed_photo_invalid_binding');
+  }
+}
+
+function descriptionDraftId(attachmentId: string): string {
+  return `team-feed-photo-description:${attachmentId}`;
+}
+
+function validPhotoSource(
+  value: GatewayResponseData<'eventAttachmentsDownload'>,
+  photo: TeamFeedPhotoViewModel,
+  rootEventId: string,
+): TeamFeedPhotoSource {
+  const { attachment, download } = value;
+  if (
+    attachment.id !== photo.id ||
+    attachment.rootEventId !== rootEventId ||
+    attachment.target.kind !== 'feedEntry' ||
+    attachment.target.entryId !== photo.targetEntryId ||
+    attachment.targetEntryId !== photo.targetEntryId ||
+    attachment.contentType !== photo.contentType ||
+    attachment.byteCount !== photo.byteCount ||
+    attachment.sha256 !== photo.sha256 ||
+    attachment.caption !== photo.caption ||
+    attachment.version !== photo.version ||
+    attachment.integrityStatus !== 'integrity_verified' ||
+    download.method !== 'GET' ||
+    !Number.isFinite(Date.parse(download.expiresAt)) ||
+    Date.parse(download.expiresAt) <= Date.now() ||
+    download.url.length > 8_192
+  ) {
+    throw new Error('team_feed_photo_invalid_response');
+  }
+  let url: URL;
+  try {
+    url = new URL(download.url);
+  } catch {
+    throw new Error('team_feed_photo_invalid_response');
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.hash !== ''
+  ) {
+    throw new Error('team_feed_photo_invalid_response');
+  }
+  const headers: Record<string, string> = {};
+  let headerBytes = 0;
+  let hasNoCachePragma = false;
+  let hasNoStoreCacheControl = false;
+  for (const [name, headerValue] of Object.entries(download.headers)) {
+    if (
+      !/^[A-Za-z0-9-]{1,128}$/.test(name) ||
+      typeof headerValue !== 'string' ||
+      headerValue.length > 16_384 ||
+      hasUnsafeHeaderValue(headerValue)
+    ) {
+      throw new Error('team_feed_photo_invalid_response');
+    }
+    headerBytes += name.length + headerValue.length;
+    headers[name] = headerValue;
+    if (name.toLowerCase() === 'cache-control') {
+      if (
+        !headerValue
+          .toLowerCase()
+          .split(',')
+          .map(directive => directive.trim())
+          .includes('no-store')
+      ) {
+        throw new Error('team_feed_photo_invalid_response');
+      }
+      hasNoStoreCacheControl = true;
+    }
+    if (name.toLowerCase() === 'pragma') {
+      if (headerValue.trim().toLowerCase() !== 'no-cache') {
+        throw new Error('team_feed_photo_invalid_response');
+      }
+      hasNoCachePragma = true;
+    }
+  }
+  if (headerBytes > 65_536) {
+    throw new Error('team_feed_photo_invalid_response');
+  }
+  if (!hasNoStoreCacheControl) headers['Cache-Control'] = 'no-store';
+  if (!hasNoCachePragma) headers.Pragma = 'no-cache';
+  return {
+    expiresAt: download.expiresAt,
+    headers,
+    uri: download.url,
+  };
+}
+
+function hasUnsafeHeaderValue(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if ((code < 32 && code !== 9) || code === 127) return true;
+  }
+  return false;
 }
 
 async function assertSessionActive(

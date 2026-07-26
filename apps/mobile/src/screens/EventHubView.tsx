@@ -1,5 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import {
+  AccessibilityInfo,
+  findNodeHandle,
   Image,
   ImageBackground,
   Pressable,
@@ -9,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useEffect, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AvatarStack,
@@ -99,6 +102,7 @@ export type EventHubDate = {
 
 export type EventHubTimelineItem = {
   eventId: string;
+  focused?: boolean;
   icon: 'bus' | 'calendar' | 'golf';
   id: string;
   location: string;
@@ -284,11 +288,19 @@ function AssetIcon({
 
 function EventTimelineRow({
   item,
+  onFocusedLayout,
   onPress,
 }: {
   item: EventHubTimelineItem;
+  onFocusedLayout?(itemId: string, y: number): void;
   onPress?: () => void;
 }) {
+  const rowRef = useRef<View>(null);
+  useEffect(() => {
+    if (!item.focused || !rowRef.current) return;
+    const node = findNodeHandle(rowRef.current);
+    if (node !== null) AccessibilityInfo.setAccessibilityFocus(node);
+  }, [item.focused]);
   const accessibilityLabel = `${item.time}, ${item.title}, ${item.location}`;
   const content = (
     <>
@@ -321,9 +333,17 @@ function EventTimelineRow({
     return (
       <View
         accessible
+        accessibilityState={item.focused ? { selected: true } : undefined}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="text"
-        style={styles.timelineRow}
+        onLayout={
+          item.focused
+            ? event => onFocusedLayout?.(item.id, event.nativeEvent.layout.y)
+            : undefined
+        }
+        ref={rowRef}
+        style={[styles.timelineRow, item.focused && styles.timelineFocused]}
+        testID={`event-hub-timeline-${item.id}`}
       >
         {content}
       </View>
@@ -335,11 +355,20 @@ function EventTimelineRow({
       accessibilityHint="Öffnet die Aktivitätsdetails."
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
+      accessibilityState={item.focused ? { selected: true } : undefined}
+      onLayout={
+        item.focused
+          ? event => onFocusedLayout?.(item.id, event.nativeEvent.layout.y)
+          : undefined
+      }
       onPress={onPress}
+      ref={rowRef}
       style={({ pressed }) => [
         styles.timelineRow,
+        item.focused && styles.timelineFocused,
         pressed && styles.timelinePressed,
       ]}
+      testID={`event-hub-timeline-${item.id}`}
     >
       {content}
     </Pressable>
@@ -358,7 +387,31 @@ export function EventHubView({
 }: EventHubViewProps) {
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const timelineYRef = useRef<number | null>(null);
+  const focusedRowYRef = useRef<number | null>(null);
+  const scrolledFocusRef = useRef<string | null>(null);
   const usesLargeTextLayout = fontScale >= 2;
+  const focusedItemId = model.timeline.find(item => item.focused)?.id ?? null;
+  useEffect(() => {
+    focusedRowYRef.current = null;
+    scrolledFocusRef.current = null;
+  }, [focusedItemId]);
+  const scrollToFocusedItem = () => {
+    if (
+      !focusedItemId ||
+      scrolledFocusRef.current === focusedItemId ||
+      timelineYRef.current === null ||
+      focusedRowYRef.current === null
+    ) {
+      return;
+    }
+    scrolledFocusRef.current = focusedItemId;
+    scrollRef.current?.scrollTo({
+      animated: false,
+      y: focusedTimelineScrollY(timelineYRef.current, focusedRowYRef.current),
+    });
+  };
   const primaryAction = model.primaryAction;
   const organizerDraft =
     model.status === 'draft' &&
@@ -384,8 +437,10 @@ export function EventHubView({
           },
         ]}
         contentInsetAdjustmentBehavior="never"
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         style={[styles.scroll, { marginTop: insets.top }]}
+        testID="event-hub-scroll"
       >
         <View style={styles.brandRow}>
           <View style={styles.wordmark}>
@@ -584,21 +639,31 @@ export function EventHubView({
           </Card>
         )}
 
-        <View style={styles.timeline}>
+        <View
+          onLayout={event => {
+            timelineYRef.current = event.nativeEvent.layout.y;
+            scrollToFocusedItem();
+          }}
+          style={styles.timeline}
+          testID="event-hub-timeline"
+        >
           {model.timeline.length > 0 ? (
-            model.timeline
-              .slice(0, 2)
-              .map(item => (
-                <EventTimelineRow
-                  item={item}
-                  key={item.id}
-                  onPress={
-                    item.icon === 'golf'
-                      ? () => onTimelineSelect(item.id)
-                      : undefined
-                  }
-                />
-              ))
+            model.timeline.map(item => (
+              <EventTimelineRow
+                item={item}
+                key={item.id}
+                onFocusedLayout={(itemId, y) => {
+                  if (itemId !== focusedItemId) return;
+                  focusedRowYRef.current = y;
+                  scrollToFocusedItem();
+                }}
+                onPress={
+                  item.icon === 'golf'
+                    ? () => onTimelineSelect(item.id)
+                    : undefined
+                }
+              />
+            ))
           ) : (
             <Text accessibilityLiveRegion="polite" style={styles.emptyTimeline}>
               Für diesen Tag ist noch nichts geplant.
@@ -681,6 +746,10 @@ export function EventHubView({
       </BottomNavigationShell>
     </ImageBackground>
   );
+}
+
+export function focusedTimelineScrollY(timelineY: number, rowY: number) {
+  return Math.max(0, timelineY + rowY - spacing.lg);
 }
 
 const styles = StyleSheet.create({
@@ -945,6 +1014,11 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     backgroundColor: colors.divider,
     width: borders.subtle,
+  },
+  timelineFocused: {
+    backgroundColor: colors.surfaceAccent,
+    borderColor: colors.focus,
+    borderWidth: borders.chip,
   },
   timelineIcon: {
     alignItems: 'center',

@@ -28,6 +28,9 @@ import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 const arrowRight = require('../assets/icons/arrow-right.png');
 const check = require('../assets/icons/check.png');
 const cloudOffline = require('../assets/icons/cloud-offline.png');
+const EVENT_ID = /^evt_[A-Za-z0-9._:-]{1,96}$/;
+const FEED_ID = /^fed_[A-Za-z0-9._:-]{1,96}$/;
+const ITEM_ID = /^iti_[A-Za-z0-9._:-]{1,96}$/;
 
 type PrivateInboundRoute =
   | 'EventInbound'
@@ -60,7 +63,7 @@ export function InboundGateScreen({ navigation, route }: Props) {
   const target = eventTarget(route);
   const syncEngine = useMemo(
     () =>
-      client && route.name === 'ItemInbound'
+      client && (route.name === 'ItemInbound' || route.name === 'FeedInbound')
         ? new MobileSyncEngine(privateDatabase.database, client, {
             activeAccountUserId: () => activeAccountRef.current,
             randomUUID: secureUuidV4,
@@ -87,10 +90,7 @@ export function InboundGateScreen({ navigation, route }: Props) {
   );
   const event = useQuery({
     enabled: Boolean(
-      client &&
-        accountId &&
-        accountId === privateDatabase.accountId &&
-        target,
+      client && accountId && accountId === privateDatabase.accountId && target,
     ),
     queryKey: [
       'private',
@@ -98,7 +98,11 @@ export function InboundGateScreen({ navigation, route }: Props) {
       'inbound',
       route.name,
       target?.rootEventId,
-      route.name === 'ItemInbound' ? route.params.itemId : target?.eventId,
+      route.name === 'ItemInbound'
+        ? route.params.itemId
+        : route.name === 'FeedInbound'
+        ? route.params.entryId
+        : target?.eventId,
     ],
     queryFn: async () => {
       if (!client || !target || !accountId) {
@@ -109,20 +113,73 @@ export function InboundGateScreen({ navigation, route }: Props) {
           path: target,
         })
       ).data.event;
-      if (route.name !== 'ItemInbound') return authorizedEvent;
+      if (route.name !== 'ItemInbound' && route.name !== 'FeedInbound') {
+        return {
+          eventId: authorizedEvent.id,
+          id: authorizedEvent.id,
+          title: authorizedEvent.title,
+        };
+      }
       if (!syncEngine) throw new Error('Event unavailable');
       await syncEngine.syncRoot(accountId, route.params.rootEventId);
       if (activeAccountRef.current !== accountId) {
         throw new MobileSyncAccountChangedError();
       }
-      return (
-        await new MobileDataStore(privateDatabase.database).listTimeline(
-          accountId,
-          route.params.rootEventId,
-        )
-      ).find(item => item.id === route.params.itemId);
+      const store = new MobileDataStore(privateDatabase.database);
+      if (route.name === 'ItemInbound') {
+        const record = (
+          await store.listTimeline(accountId, route.params.rootEventId)
+        ).find(item => item.id === route.params.itemId);
+        if (activeAccountRef.current !== accountId) {
+          throw new MobileSyncAccountChangedError();
+        }
+        return record &&
+          record.accountUserId === accountId &&
+          record.rootEventId === route.params.rootEventId &&
+          record.deletedAt === null &&
+          record.status === 'active'
+          ? {
+              eventId: record.eventId,
+              id: record.id,
+              title: authorizedEvent.title,
+            }
+          : null;
+      }
+      const record = (
+        await store.listFeed(accountId, route.params.rootEventId)
+      ).find(entry => entry.id === route.params.entryId);
+      if (activeAccountRef.current !== accountId) {
+        throw new MobileSyncAccountChangedError();
+      }
+      return record &&
+        record.accountUserId === accountId &&
+        record.rootEventId === route.params.rootEventId &&
+        record.deletedAt === null &&
+        (record.eventId === null || matches(EVENT_ID, record.eventId))
+        ? {
+            eventId: record.eventId,
+            id: record.id,
+            title: authorizedEvent.title,
+          }
+        : null;
     },
   });
+
+  useEffect(() => {
+    if (!event.data) return;
+    if (route.name === 'ItemInbound') {
+      navigation.replace('EventInbound', {
+        focusItemId: event.data.id,
+        rootEventId: route.params.rootEventId,
+      });
+    } else if (route.name === 'FeedInbound') {
+      navigation.replace('TeamFeed', {
+        eventId: event.data.eventId,
+        focusEntryId: event.data.id,
+        rootEventId: route.params.rootEventId,
+      });
+    }
+  }, [event.data, navigation, route]);
 
   useEffect(() => {
     if (isSessionFailure(event.error)) {
@@ -146,6 +203,8 @@ export function InboundGateScreen({ navigation, route }: Props) {
       : { kind: 'unavailable' };
   } else if (!event.data) {
     state = { kind: 'unavailable' };
+  } else if (route.name === 'ItemInbound' || route.name === 'FeedInbound') {
+    state = { kind: 'loading' };
   } else {
     state = { kind: 'ready', title: event.data.title };
   }
@@ -280,20 +339,36 @@ function isRetryable(error: unknown) {
 function eventTarget(route: PrivateInboundRouteProp) {
   switch (route.name) {
     case 'EventInbound':
-    case 'FeedInbound':
     case 'RecapInbound':
-      return {
-        rootEventId: route.params.rootEventId,
-        eventId: route.params.rootEventId,
-      };
+      return matches(EVENT_ID, route.params.rootEventId)
+        ? {
+            rootEventId: route.params.rootEventId,
+            eventId: route.params.rootEventId,
+          }
+        : null;
     case 'ItemInbound':
-      return {
-        rootEventId: route.params.rootEventId,
-        eventId: route.params.rootEventId,
-      };
+      return matches(EVENT_ID, route.params.rootEventId) &&
+        matches(ITEM_ID, route.params.itemId)
+        ? {
+            rootEventId: route.params.rootEventId,
+            eventId: route.params.rootEventId,
+          }
+        : null;
+    case 'FeedInbound':
+      return matches(EVENT_ID, route.params.rootEventId) &&
+        matches(FEED_ID, route.params.entryId)
+        ? {
+            rootEventId: route.params.rootEventId,
+            eventId: route.params.rootEventId,
+          }
+        : null;
     case 'FeedbackInbound':
       return null;
   }
+}
+
+function matches(pattern: RegExp, value: unknown): value is string {
+  return typeof value === 'string' && pattern.test(value);
 }
 
 const styles = StyleSheet.create({

@@ -7,6 +7,7 @@ import { Button } from '../src/design/primitives';
 import { colors, typography } from '../src/design/theme';
 import {
   EventHubView,
+  focusedTimelineScrollY,
   turkeyGolfEventHubModel,
   type EventHubModel,
   type EventHubTab,
@@ -245,6 +246,44 @@ test('keeps scaled timeline times on one readable line', async () => {
     minWidth: 60,
   });
   expect(StyleSheet.flatten(time.props.style).width).toBeUndefined();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('scrolls a focused inbound itinerary into the visible viewport', async () => {
+  const scrollTo = jest
+    .spyOn(ScrollView.prototype, 'scrollTo')
+    .mockImplementation(() => undefined);
+  const focused = {
+    ...turkeyGolfEventHubModel.timeline[0]!,
+    focused: true,
+    id: 'iti_linked_target',
+    title: 'Verlinkte Team Challenge',
+  };
+  const model: EventHubModel = {
+    ...turkeyGolfEventHubModel,
+    timeline: [...turkeyGolfEventHubModel.timeline, focused],
+  };
+  const { renderer } = await renderHub(model);
+
+  await ReactTestRenderer.act(() => {
+    renderer.root
+      .findByProps({ testID: 'event-hub-timeline-iti_linked_target' })
+      .props.onLayout({ nativeEvent: { layout: { y: 180 } } });
+    renderer.root
+      .findByProps({ testID: 'event-hub-timeline' })
+      .props.onLayout({ nativeEvent: { layout: { y: 720 } } });
+  });
+
+  expect(scrollTo).toHaveBeenCalledWith({
+    animated: false,
+    y: focusedTimelineScrollY(720, 180),
+  });
+  expect(
+    renderer.root.findByProps({
+      testID: 'event-hub-timeline-iti_linked_target',
+    }).props.accessibilityState,
+  ).toEqual({ selected: true });
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });

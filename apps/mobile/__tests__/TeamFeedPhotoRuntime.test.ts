@@ -5,6 +5,7 @@ import {
 import {
   type FeedPhotoLifecycle,
   LocalAttachmentStore,
+  MobileDataStore,
   type RetainedLocalAttachment,
   type SqlDatabase,
 } from '@crew/mobile-data';
@@ -19,13 +20,18 @@ import {
 } from '../src/media/attachmentMedia';
 import {
   discardTeamFeedPhoto,
+  loadTeamFeedPhotoSource,
   markTeamFeedPhotoQueued,
   pickTeamFeedPhoto,
   prepareAndUploadTeamFeedPhoto,
   previewTeamFeedPhoto,
+  recoverTeamFeedPhotoDescription,
+  saveTeamFeedPhotoDescription,
+  type TeamFeedPhotoDescription,
   type TeamFeedPhotoSelection,
 } from '../src/screens/TeamFeedPhotoRuntime';
 import { secureUuidV4 } from '../src/storage/secureRandom';
+import type { TeamFeedPhotoViewModel } from '../src/team/TeamProductionRuntime';
 
 jest.mock('../src/media/attachmentMedia', () => ({
   ...jest.requireActual('../src/media/attachmentMedia'),
@@ -72,6 +78,7 @@ const prepared = {
   },
 };
 const selection: TeamFeedPhotoSelection = {
+  eventId,
   feedEntryId,
   lifecycleState: 'feed_queued',
   prepared,
@@ -121,6 +128,10 @@ beforeEach(() => {
   jest
     .spyOn(LocalAttachmentStore.prototype, 'finalizeFeedPhotoCleanup')
     .mockResolvedValue();
+  jest
+    .spyOn(MobileDataStore.prototype, 'listDrafts')
+    .mockResolvedValue([descriptionDraft({ kind: 'decorative' })]);
+  jest.spyOn(MobileDataStore.prototype, 'putDraft').mockResolvedValue();
   jest.mocked(uploadRetainedAttachment).mockResolvedValue();
   jest.mocked(discardFeedPhotoAttachment).mockResolvedValue();
   jest
@@ -159,6 +170,81 @@ test('bounded preview reads only the retained account key', async () => {
     accountUserId,
     retainedFileKey,
   );
+});
+
+test('caption draft is normalized and recovered inside the exact account, root and event scope', async () => {
+  const description = {
+    caption: '  Treffpunkt beim roten Eingang.  ',
+    kind: 'informative',
+  } as const;
+  jest
+    .mocked(MobileDataStore.prototype.listDrafts)
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([
+      descriptionDraft({
+        caption: 'Treffpunkt beim roten Eingang.',
+        kind: 'informative',
+      }),
+    ]);
+
+  await expect(
+    saveTeamFeedPhotoDescription(database, selection, description),
+  ).resolves.toEqual({
+    caption: 'Treffpunkt beim roten Eingang.',
+    kind: 'informative',
+  });
+  expect(MobileDataStore.prototype.putDraft).toHaveBeenCalledWith(
+    expect.objectContaining({
+      accountUserId,
+      entityType: 'team_feed_photo_description',
+      eventId,
+      id: `team-feed-photo-description:${attachmentId}`,
+      rootEventId,
+    }),
+  );
+  expect(
+    JSON.parse(
+      jest.mocked(MobileDataStore.prototype.putDraft).mock.calls[0]?.[0]
+        .contentJson ?? '',
+    ),
+  ).toEqual({
+    description: {
+      caption: 'Treffpunkt beim roten Eingang.',
+      kind: 'informative',
+    },
+    schemaVersion: 1,
+    state: 'active',
+  });
+  await expect(
+    recoverTeamFeedPhotoDescription(database, selection),
+  ).resolves.toEqual({
+    caption: 'Treffpunkt beim roten Eingang.',
+    kind: 'informative',
+  });
+  expect(MobileDataStore.prototype.listDrafts).toHaveBeenLastCalledWith(
+    accountUserId,
+    rootEventId,
+  );
+});
+
+test('discard removes retained media before replacing its caption with a content-free tombstone', async () => {
+  const order: string[] = [];
+  jest.mocked(discardFeedPhotoAttachment).mockImplementationOnce(async () => {
+    order.push('media');
+  });
+  jest
+    .mocked(MobileDataStore.prototype.putDraft)
+    .mockImplementationOnce(async draft => {
+      order.push('caption');
+      expect(JSON.parse(draft.contentJson)).toEqual({
+        schemaVersion: 1,
+        state: 'cleared',
+      });
+    });
+
+  await discardTeamFeedPhoto(database, selection);
+
+  expect(order).toEqual(['media', 'caption']);
 });
 
 test('logout quiescence waits for a deferred retained preview before close', async () => {
@@ -316,6 +402,192 @@ test('orders generated prepare, native upload and authoritative finalize before 
   expect(
     LocalAttachmentStore.prototype.finalizeFeedPhotoCleanup,
   ).toHaveBeenCalledWith(accountUserId, [attachmentId]);
+});
+
+test('finalize sends the normalized informative caption and requires its authoritative echo', async () => {
+  const description = {
+    caption: '  Treffpunkt beim roten Eingang.  ',
+    kind: 'informative',
+  } as const;
+  jest.mocked(MobileDataStore.prototype.listDrafts).mockResolvedValue([
+    descriptionDraft({
+      caption: 'Treffpunkt beim roten Eingang.',
+      kind: 'informative',
+    }),
+  ]);
+  const client = clientWith(async operationId =>
+    operationId === 'eventAttachmentUploadsPrepare'
+      ? preparedResponse('upl_caption', '2099-07-20T12:00:00.000Z')
+      : committedResponse('Treffpunkt beim roten Eingang.'),
+  );
+
+  await expect(run(client, description)).resolves.toBe('upl_caption');
+
+  expect(client.requestAsUser.mock.calls[1]?.[2]).toMatchObject({
+    body: { caption: 'Treffpunkt beim roten Eingang.' },
+  });
+});
+
+test('finalize rejects an authoritative caption that differs from the persisted contract', async () => {
+  const description = {
+    caption: 'Treffpunkt beim roten Eingang.',
+    kind: 'informative',
+  } as const;
+  jest
+    .mocked(MobileDataStore.prototype.listDrafts)
+    .mockResolvedValue([descriptionDraft(description)]);
+  const client = clientWith(async operationId =>
+    operationId === 'eventAttachmentUploadsPrepare'
+      ? preparedResponse('upl_caption', '2099-07-20T12:00:00.000Z')
+      : committedResponse('Andere Beschreibung.'),
+  );
+
+  await expect(run(client, description)).rejects.toThrow(
+    'team_feed_photo_invalid_response',
+  );
+  expect(
+    LocalAttachmentStore.prototype.planConfirmedFeedPhotoCleanup,
+  ).not.toHaveBeenCalled();
+});
+
+test('a failed local caption tombstone never converts an authoritative commit into a replay', async () => {
+  jest
+    .mocked(MobileDataStore.prototype.putDraft)
+    .mockRejectedValueOnce(new Error('local caption cleanup unavailable'));
+  const client = clientWith(async operationId =>
+    operationId === 'eventAttachmentUploadsPrepare'
+      ? preparedResponse('upl_photo', '2099-07-20T12:00:00.000Z')
+      : committedResponse(),
+  );
+
+  await expect(run(client)).resolves.toBe('upl_photo');
+  expect(client.requestAsUser).toHaveBeenCalledTimes(2);
+});
+
+test('changed caption fails before session or upload work can start', async () => {
+  const client = clientWith(async () =>
+    preparedResponse('upl_photo', '2099-07-20T12:00:00.000Z'),
+  );
+
+  await expect(
+    run(client, {
+      caption: 'Nicht die gespeicherte Beschreibung',
+      kind: 'informative',
+    }),
+  ).rejects.toThrow('team_feed_photo_description_changed');
+  expect(client.sessionSubject).not.toHaveBeenCalled();
+  expect(uploadRetainedAttachment).not.toHaveBeenCalled();
+});
+
+test('download grant stays ephemeral and is accepted only for the exact synchronized photo', async () => {
+  const client = clientWith(async operationId => {
+    expect(operationId).toBe('eventAttachmentsDownload');
+    return downloadResponse();
+  });
+  jest.mocked(MobileDataStore.prototype.putDraft).mockClear();
+
+  await expect(
+    loadTeamFeedPhotoSource({
+      accountUserId,
+      activeAccountUserId: () => accountUserId,
+      client: client as never,
+      photo: synchronizedPhoto(),
+      rootEventId,
+    }),
+  ).resolves.toEqual({
+    expiresAt: '2099-07-20T12:00:00.000Z',
+    headers: {
+      Authorization: 'Bearer short-lived',
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    uri: 'https://private.example.test/photo?grant=short-lived',
+  });
+  expect(client.requestAsUser).toHaveBeenCalledWith(
+    subject,
+    'eventAttachmentsDownload',
+    {
+      path: { attachmentId, rootEventId },
+    },
+  );
+  expect(MobileDataStore.prototype.putDraft).not.toHaveBeenCalled();
+});
+
+test('download grant rejects a metadata mismatch and a late account switch', async () => {
+  const mismatched = clientWith(async () =>
+    downloadResponse({ caption: 'Andere Beschreibung' }),
+  );
+  await expect(
+    loadTeamFeedPhotoSource({
+      accountUserId,
+      activeAccountUserId: () => accountUserId,
+      client: mismatched as never,
+      photo: synchronizedPhoto(),
+      rootEventId,
+    }),
+  ).rejects.toThrow('team_feed_photo_invalid_response');
+
+  const unsafeHeader = clientWith(async () => {
+    const response = downloadResponse();
+    response.data.download.headers.Authorization =
+      'Bearer short-lived\nX-Injected: true';
+    return response;
+  });
+  await expect(
+    loadTeamFeedPhotoSource({
+      accountUserId,
+      activeAccountUserId: () => accountUserId,
+      client: unsafeHeader as never,
+      photo: synchronizedPhoto(),
+      rootEventId,
+    }),
+  ).rejects.toThrow('team_feed_photo_invalid_response');
+
+  let active: string | null = accountUserId;
+  const switched = clientWith(async () => {
+    active = `usr_${'c'.repeat(32)}`;
+    return downloadResponse();
+  });
+  await expect(
+    loadTeamFeedPhotoSource({
+      accountUserId,
+      activeAccountUserId: () => active,
+      client: switched as never,
+      photo: synchronizedPhoto(),
+      rootEventId,
+    }),
+  ).rejects.toThrow('team_feed_photo_account_changed');
+});
+
+test('logout quiescence drains a deferred synchronized photo grant request', async () => {
+  let releaseDownload!: (value: ReturnType<typeof downloadResponse>) => void;
+  const deferred = new Promise<ReturnType<typeof downloadResponse>>(resolve => {
+    releaseDownload = resolve;
+  });
+  const client = clientWith(async () => deferred);
+  const operation = loadTeamFeedPhotoSource({
+    accountUserId,
+    activeAccountUserId: () => accountUserId,
+    client: client as never,
+    photo: synchronizedPhoto(),
+    rootEventId,
+  });
+  let closed = false;
+  const close = quiesceAttachmentMedia(accountUserId, {
+    nativeModule: { cancelPending: async () => undefined },
+  }).then(() => {
+    closed = true;
+  });
+
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  releaseDownload(downloadResponse());
+  await expect(operation).resolves.toMatchObject({
+    uri: 'https://private.example.test/photo?grant=short-lived',
+  });
+  await close;
+  expect(closed).toBe(true);
+  resumeAttachmentMedia(accountUserId);
 });
 
 test('logout quiescence drains upload, finalize, purge and final DB cleanup before close', async () => {
@@ -484,6 +756,7 @@ test('an account switch after prepare prevents native upload and finalize', asyn
       activeAccountUserId: () => active,
       client: client as never,
       database,
+      description: { kind: 'decorative' },
       selection,
     }),
   ).rejects.toThrow('team_feed_photo_account_changed');
@@ -501,6 +774,7 @@ test('a mismatched prebound feed identity fails before session work', async () =
       activeAccountUserId: () => accountUserId,
       client: client as never,
       database,
+      description: { kind: 'decorative' },
       selection: { ...selection, feedEntryId: 'fed_different' },
     }),
   ).rejects.toThrow('team_feed_photo_invalid_binding');
@@ -545,11 +819,15 @@ function clientWith(
   };
 }
 
-function run(client: ReturnType<typeof clientWith>) {
+function run(
+  client: ReturnType<typeof clientWith>,
+  description: TeamFeedPhotoDescription = { kind: 'decorative' },
+) {
   return prepareAndUploadTeamFeedPhoto({
     activeAccountUserId: () => accountUserId,
     client: client as never,
     database,
+    description,
     selection,
   });
 }
@@ -593,14 +871,14 @@ function pendingResponse(uploadId: string) {
   };
 }
 
-function committedResponse() {
+function committedResponse(caption: string | null = null) {
   return {
     status: 200,
     requestId: 'req_finalize',
     data: {
       attachment: {
         byteCount: attachment.byteCount,
-        caption: null,
+        caption,
         contentType: attachment.contentType,
         createdAt: attachment.retainedAt,
         id: attachmentId,
@@ -611,6 +889,72 @@ function committedResponse() {
         target: { kind: 'feedEntry', entryId: feedEntryId },
         targetEntryId: feedEntryId,
         version: 1,
+      },
+    },
+  };
+}
+
+function descriptionDraft(description: TeamFeedPhotoDescription) {
+  return {
+    accountUserId,
+    contentJson: JSON.stringify({
+      description,
+      schemaVersion: 1,
+      state: 'active',
+    }),
+    createdAt: '2026-07-20T12:00:00.000Z',
+    entityType: 'team_feed_photo_description',
+    eventId,
+    id: `team-feed-photo-description:${attachmentId}`,
+    rootEventId,
+    updatedAt: '2026-07-20T12:00:00.000Z',
+  };
+}
+
+function synchronizedPhoto(): TeamFeedPhotoViewModel {
+  return {
+    byteCount: attachment.byteCount,
+    caption: 'Treffpunkt beim roten Eingang.',
+    contentType: attachment.contentType,
+    id: attachmentId,
+    sha256,
+    targetEntryId: feedEntryId,
+    version: 1,
+  };
+}
+
+function downloadResponse(
+  attachmentOverrides: Partial<{
+    caption: string | null;
+    id: string;
+    rootEventId: string;
+    targetEntryId: string | null;
+  }> = {},
+) {
+  return {
+    status: 200 as const,
+    requestId: 'req_download',
+    data: {
+      attachment: {
+        byteCount: attachment.byteCount,
+        caption: 'Treffpunkt beim roten Eingang.',
+        contentType: attachment.contentType,
+        createdAt: attachment.retainedAt,
+        id: attachmentId,
+        integrityStatus: 'integrity_verified' as const,
+        rootEventId,
+        rootRevision: '1',
+        sha256,
+        target: { kind: 'feedEntry' as const, entryId: feedEntryId },
+        targetEntryId: feedEntryId,
+        version: 1,
+        ...attachmentOverrides,
+      },
+      download: {
+        expiresAt: '2099-07-20T12:00:00.000Z',
+        headers: { Authorization: 'Bearer short-lived' },
+        method: 'GET' as const,
+        url: 'https://private.example.test/photo?grant=short-lived',
       },
     },
   };

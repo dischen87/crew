@@ -14,6 +14,7 @@
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A741BF122F22000100A77ACE /* CrewAttachmentMedia.mm in Sources */ = {isa = PBXBuildFile; fileRef = A741BF112F22000100A77ACE /* CrewAttachmentMedia.mm */; };
 		A741BF142F22000100A77ACE /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A741BF132F22000100A77ACE /* PhotosUI.framework */; };
+		B852C0032F24000100E9B712 /* CrewInviteExpiry.mm in Sources */ = {isa = PBXBuildFile; fileRef = B852C0022F24000100E9B712 /* CrewInviteExpiry.mm */; };
 		D4C3A1012F23000100D5A451 /* DM Sans.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D4C3A1002F23000100D5A451 /* DM Sans.ttf */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,8 @@
 		A741BF102F22000100A77ACE /* CrewAttachmentMedia.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CrewAttachmentMedia.h; path = CrewNext/CrewAttachmentMedia.h; sourceTree = "<group>"; };
 		A741BF112F22000100A77ACE /* CrewAttachmentMedia.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CrewAttachmentMedia.mm; path = CrewNext/CrewAttachmentMedia.mm; sourceTree = "<group>"; };
 		A741BF132F22000100A77ACE /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
+		B852C0012F24000100E9B712 /* CrewInviteExpiry.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CrewInviteExpiry.h; path = CrewNext/CrewInviteExpiry.h; sourceTree = "<group>"; };
+		B852C0022F24000100E9B712 /* CrewInviteExpiry.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CrewInviteExpiry.mm; path = CrewNext/CrewInviteExpiry.mm; sourceTree = "<group>"; };
 		D4C3A1002F23000100D5A451 /* DM Sans.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "DM Sans.ttf"; path = "../assets/fonts/DM Sans.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -56,6 +59,8 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				A741BF102F22000100A77ACE /* CrewAttachmentMedia.h */,
 				A741BF112F22000100A77ACE /* CrewAttachmentMedia.mm */,
+				B852C0012F24000100E9B712 /* CrewInviteExpiry.h */,
+				B852C0022F24000100E9B712 /* CrewInviteExpiry.mm */,
 				2E66357B2F1B220100C0FFEE /* CrewNext.entitlements */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -263,6 +268,7 @@
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				A741BF122F22000100A77ACE /* CrewAttachmentMedia.mm in Sources */,
+				B852C0032F24000100E9B712 /* CrewInviteExpiry.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

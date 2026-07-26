@@ -61,7 +61,8 @@
     "jsSrcsDir": "src/specs",
     "ios": {
       "modulesProvider": {
-        "CrewAttachmentMedia": "CrewAttachmentMedia"
+        "CrewAttachmentMedia": "CrewAttachmentMedia",
+        "CrewInviteExpiry": "CrewInviteExpiry"
       }
     }
   }

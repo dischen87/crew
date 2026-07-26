@@ -43,6 +43,8 @@ import {
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
 const cloudOfflineIcon = require('../assets/icons/cloud-offline.png');
+const EVENT_ID = /^evt_[A-Za-z0-9._:-]{1,96}$/;
+const ITEM_ID = /^iti_[A-Za-z0-9._:-]{1,96}$/;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EventInbound'>;
 
@@ -125,6 +127,7 @@ export async function readEventHubSnapshot(
 }
 
 export function eventHubModelFromReadModels(input: {
+  focusedItemId?: string | null;
   now: Date;
   phase: SyncPhase;
   selectedDateId: string | null;
@@ -137,7 +140,14 @@ export function eventHubModelFromReadModels(input: {
   );
   const dateIds = eventDateIds(snapshot.root, activeTimeline);
   const today = dateKey(now.toISOString(), snapshot.root.timeZone);
-  const selectedDateId = dateIds.includes(input.selectedDateId ?? '')
+  const focusedDateId = dateKey(
+    activeTimeline.find(item => item.id === input.focusedItemId)?.startsAt ??
+      null,
+    snapshot.root.timeZone,
+  );
+  const selectedDateId = dateIds.includes(focusedDateId ?? '')
+    ? focusedDateId
+    : dateIds.includes(input.selectedDateId ?? '')
     ? input.selectedDateId
     : dateIds.includes(today ?? '')
     ? today
@@ -168,11 +178,13 @@ export function eventHubModelFromReadModels(input: {
   const visibleTimeline = activeTimeline
     .filter(
       item =>
+        item.id === input.focusedItemId ||
         selectedDateId === null ||
         dateKey(item.startsAt, snapshot.root.timeZone) === selectedDateId,
     )
     .map<EventHubTimelineItem>(item => ({
       eventId: item.eventId,
+      focused: item.id === input.focusedItemId,
       icon: itineraryIcon(item),
       id: item.id,
       location: itineraryPlace(item)?.label ?? 'Ort offen',
@@ -282,12 +294,20 @@ export function EventHubScreen({ navigation, route }: Props) {
   const activeAccountRef = useRef(lifecycle.accountId);
   activeAccountRef.current = lifecycle.accountId;
   const rootEventId = route.params.rootEventId;
+  const inboundFocusedItemId =
+    typeof route.params.focusItemId === 'string' &&
+    ITEM_ID.test(route.params.focusItemId)
+      ? route.params.focusItemId
+      : null;
   const scopeKey =
     lifecycle.status === 'ready' &&
-    lifecycle.accountId === privateDatabase.accountId
+    lifecycle.accountId === privateDatabase.accountId &&
+    typeof rootEventId === 'string' &&
+    EVENT_ID.test(rootEventId)
       ? `${privateDatabase.accountId}:${rootEventId}`
       : null;
   const [refreshRequest, setRefreshRequest] = useState(0);
+  const [focusedItemId, setFocusedItemId] = useState(inboundFocusedItemId);
   const [selectedDateId, setSelectedDateId] = useState<string | null>(null);
   const [state, setState] = useState<LoadState>({
     key: scopeKey ?? '',
@@ -321,7 +341,10 @@ export function EventHubScreen({ navigation, route }: Props) {
     [client, privateDatabase.database, scopeKey],
   );
 
-  useEffect(() => setSelectedDateId(null), [scopeKey]);
+  useEffect(() => {
+    setFocusedItemId(inboundFocusedItemId);
+    setSelectedDateId(null);
+  }, [inboundFocusedItemId, scopeKey]);
 
   useEffect(() => {
     if (!scopeKey) {
@@ -519,6 +542,7 @@ export function EventHubScreen({ navigation, route }: Props) {
   }
 
   const model = eventHubModelFromReadModels({
+    focusedItemId,
     now: new Date(),
     phase: state.phase,
     selectedDateId,
@@ -531,6 +555,7 @@ export function EventHubScreen({ navigation, route }: Props) {
       model={model}
       onDateSelect={dateId => {
         if (model.dates.some(date => date.id === dateId)) {
+          setFocusedItemId(null);
           setSelectedDateId(dateId);
         }
       }}

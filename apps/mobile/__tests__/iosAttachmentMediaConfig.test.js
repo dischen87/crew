@@ -16,7 +16,7 @@ test('registers bounded native iOS attachment processing', () => {
     readFileSync(resolve(appRoot, 'package.json'), 'utf8'),
   );
 
-  expect(packageJson.codegenConfig.ios.modulesProvider).toEqual({
+  expect(packageJson.codegenConfig.ios.modulesProvider).toMatchObject({
     CrewAttachmentMedia: 'CrewAttachmentMedia',
   });
   expect(project).toContain('CrewAttachmentMedia.mm in Sources');

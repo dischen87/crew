@@ -4,11 +4,13 @@ import {
   type GatewayErrorCode,
   type OperationId,
 } from '@crew/mobile-client';
-import { Alert, Share, Text } from 'react-native';
+import { AccessibilityInfo, Alert, Share, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import {
   InviteEditorScreen,
+  setInviteAccessibilityFocus,
+  validNativeInviteExpirySelection,
   validateInviteForm,
 } from '../src/screens/InviteEditorScreen';
 import {
@@ -23,6 +25,7 @@ const subject = { userId: mockAccountId };
 const mockRequestAsUser = jest.fn();
 const mockSessionSubject = jest.fn();
 const mockSecureUuidV4 = jest.fn();
+const mockPickExpiry = jest.fn();
 const mockUsePreventRemove = jest.fn();
 const mockGatewayClient = {
   requestAsUser: mockRequestAsUser,
@@ -68,6 +71,13 @@ jest.mock('../src/storage/secureRandom', () => ({
   secureUuidV4: () => mockSecureUuidV4(),
 }));
 
+jest.mock('../src/specs/NativeCrewInviteExpiry', () => ({
+  __esModule: true,
+  default: {
+    pickExpiry: (...args: unknown[]) => mockPickExpiry(...args),
+  },
+}));
+
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   usePreventRemove: (...args: unknown[]) => mockUsePreventRemove(...args),
@@ -89,6 +99,7 @@ const metrics = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockSecureUuidV4.mockReset();
+  mockPickExpiry.mockReset();
   mockOnline = true;
   mockGatewayClientValue = mockGatewayClient;
   mockLocalStore = {
@@ -215,40 +226,43 @@ test('caps membership pagination at 25 pages', async () => {
 test.each([
   ['missing cursor', { hasMore: true, nextCursor: null }],
   ['cursor despite completed page', { hasMore: false, nextCursor: 'extra' }],
-] as const)('rejects invitation pagination with %s', async (_label, pageInfo) => {
-  mockRequestAsUser.mockImplementation(
-    async (_subject: unknown, operation: string) => {
-      if (operation === 'eventMembershipsList') {
-        return {
-          data: {
-            items: [membership(mockAccountId, 'owner')],
-            pageInfo: { hasMore: false, nextCursor: null },
-          },
-        };
-      }
-      if (operation === 'eventInvitationsList') {
-        return {
-          data: {
-            items: [invitation('inv_partial', 'active', 1)],
-            pageInfo,
-          },
-        };
-      }
-      throw new Error(`Unexpected operation ${operation}`);
-    },
-  );
+] as const)(
+  'rejects invitation pagination with %s',
+  async (_label, pageInfo) => {
+    mockRequestAsUser.mockImplementation(
+      async (_subject: unknown, operation: string) => {
+        if (operation === 'eventMembershipsList') {
+          return {
+            data: {
+              items: [membership(mockAccountId, 'owner')],
+              pageInfo: { hasMore: false, nextCursor: null },
+            },
+          };
+        }
+        if (operation === 'eventInvitationsList') {
+          return {
+            data: {
+              items: [invitation('inv_partial', 'active', 1)],
+              pageInfo,
+            },
+          };
+        }
+        throw new Error(`Unexpected operation ${operation}`);
+      },
+    );
 
-  await expect(
-    listInvitations(
-      {
-        requestAsUser: mockRequestAsUser,
-        sessionSubject: mockSessionSubject,
-      } as never,
-      mockAccountId,
-      rootEventId,
-    ),
-  ).rejects.toThrow('Invite pagination incomplete');
-});
+    await expect(
+      listInvitations(
+        {
+          requestAsUser: mockRequestAsUser,
+          sessionSubject: mockSessionSubject,
+        } as never,
+        mockAccountId,
+        rootEventId,
+      ),
+    ).rejects.toThrow('Invite pagination incomplete');
+  },
+);
 
 test('conceals participant access before any invitation summary is requested', async () => {
   mockRequestAsUser.mockResolvedValue({
@@ -612,12 +626,7 @@ test('clears the server-confirmed fallback after revoke authority is denied', as
           };
         }
         if (membershipAttempt === 2) {
-          throw gatewayError(
-            'eventMembershipsList',
-            403,
-            'FORBIDDEN',
-            false,
-          );
+          throw gatewayError('eventMembershipsList', 403, 'FORBIDDEN', false);
         }
         throw new Error('authority refresh unavailable');
       }
@@ -860,13 +869,120 @@ test('hides organizer delegation from organizers and validates it defensively', 
     validateInviteForm(
       {
         email: '',
-        expiresAt: '2030-07-25 18:00',
+        expiresAt: '2030-07-25T18:00:00.000Z',
         maxUses: '1',
         role: 'organizer',
+        timeZone: 'Europe/Zurich',
       },
       'organizer',
     ).errors.role,
   ).toContain('Nur Eigentümer:innen');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('keeps an exact ISO instant through a DST overlap and rejects malformed native results', () => {
+  const overlap = {
+    expiresAt: '2030-10-27T01:30:00.000Z',
+    timeZone: 'Europe/Zurich',
+  };
+  expect(
+    validNativeInviteExpirySelection(
+      overlap,
+      Date.parse('2030-10-01T00:00:00.000Z'),
+    ),
+  ).toEqual(overlap);
+  expect(
+    validNativeInviteExpirySelection(
+      { ...overlap, expiresAt: '2030-10-27T01:30:00Z' },
+      Date.parse('2030-10-01T00:00:00.000Z'),
+    ),
+  ).toBeNull();
+  expect(
+    validNativeInviteExpirySelection(
+      { ...overlap, timeZone: 'Not/A_Real_Zone' },
+      Date.parse('2030-10-01T00:00:00.000Z'),
+    ),
+  ).toBeNull();
+});
+
+test('uses the native expiry picker, persists its timezone and leaves cancel unchanged', async () => {
+  mockRequestAsUser.mockResolvedValue({
+    data: {
+      items: [membership(mockAccountId, 'owner')],
+      pageInfo: { hasMore: false, nextCursor: null },
+    },
+  });
+  const selection = {
+    expiresAt: '2030-10-27T01:30:00.000Z',
+    timeZone: 'Europe/Zurich',
+  };
+  mockPickExpiry.mockResolvedValueOnce(selection).mockResolvedValueOnce(null);
+  const renderer = await renderEditor();
+
+  const expiry = () =>
+    renderer.root.findByProps({ testID: 'invite-editor-expires-at' });
+  expect(expiry().props).toMatchObject({
+    accessibilityLabel: 'Gültig bis',
+    accessibilityRole: 'button',
+    accessibilityState: { disabled: false },
+  });
+  expect(expiry().props.accessibilityHint).toContain('systemeigene Auswahl');
+  await ReactTestRenderer.act(async () => {
+    await expiry().props.onPress();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+
+  const [initialExpiresAt, minimumExpiresAt] =
+    mockPickExpiry.mock.calls[0] ?? [];
+  expect(new Date(initialExpiresAt).toISOString()).toBe(initialExpiresAt);
+  expect(new Date(minimumExpiresAt).toISOString()).toBe(minimumExpiresAt);
+  expect(
+    JSON.parse(mockLocalStore.putDraft.mock.calls.at(-1)?.[0].contentJson),
+  ).toEqual({
+    email: '',
+    expiresAt: selection.expiresAt,
+    maxUses: '1',
+    role: 'participant',
+    schemaVersion: 2,
+    timeZone: selection.timeZone,
+  });
+  expect(expiry().props.accessibilityValue.text).toContain('Europe/Zurich');
+
+  const writesBeforeCancel = mockLocalStore.putDraft.mock.calls.length;
+  await ReactTestRenderer.act(async () => {
+    await expiry().props.onPress();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+  expect(mockLocalStore.putDraft).toHaveBeenCalledTimes(writesBeforeCancel);
+  expect(expiry().props.accessibilityValue.text).toContain('Europe/Zurich');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('keeps the newly intended role selected and exposes deterministic native focus', async () => {
+  mockRequestAsUser.mockResolvedValue({
+    data: {
+      items: [membership(mockAccountId, 'owner')],
+      pageInfo: { hasMore: false, nextCursor: null },
+    },
+  });
+  const focus = jest.spyOn(AccessibilityInfo, 'setAccessibilityFocus');
+  const renderer = await renderEditor();
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'invite-editor-role-viewer' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(
+    renderer.root.findByProps({ testID: 'invite-editor-role-viewer' }).props
+      .accessibilityState,
+  ).toMatchObject({ checked: true, disabled: false });
+  setInviteAccessibilityFocus(51);
+  expect(focus).toHaveBeenLastCalledWith(51);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
@@ -876,10 +992,11 @@ test('preserves an organizer role from an owner draft after an organizer signs i
       accountUserId: mockAccountId,
       contentJson: JSON.stringify({
         email: '',
-        expiresAt: '2030-07-25 18:00',
+        expiresAt: '2030-07-25T18:00:00.000Z',
         maxUses: '1',
         role: 'organizer',
-        schemaVersion: 1,
+        schemaVersion: 2,
+        timeZone: 'Europe/Zurich',
       }),
       createdAt: '2026-07-18T09:00:00.000Z',
       entityType: 'invite-editor',
@@ -1013,10 +1130,11 @@ test('restores and deliberately clears only allow-listed invite draft fields', a
       accountUserId: mockAccountId,
       contentJson: JSON.stringify({
         email: 'saved@example.com',
-        expiresAt: '2030-07-25 18:00',
+        expiresAt: '2030-07-25T18:00:00.000Z',
         maxUses: '8',
         role: 'viewer',
-        schemaVersion: 1,
+        schemaVersion: 2,
+        timeZone: 'Europe/Zurich',
       }),
       createdAt: '2026-07-18T09:00:00.000Z',
       entityType: 'invite-editor',
@@ -1058,10 +1176,11 @@ test('restores and deliberately clears only allow-listed invite draft fields', a
   });
   expect(JSON.parse(savedChange.contentJson)).toEqual({
     email: 'changed@example.com',
-    expiresAt: '2030-07-25 18:00',
+    expiresAt: '2030-07-25T18:00:00.000Z',
     maxUses: '8',
     role: 'viewer',
-    schemaVersion: 1,
+    schemaVersion: 2,
+    timeZone: 'Europe/Zurich',
   });
   expect(savedChange.contentJson).not.toMatch(
     /token|idempotency|invitationId/i,
@@ -1080,7 +1199,7 @@ test('restores and deliberately clears only allow-listed invite draft fields', a
     email: '',
     maxUses: '1',
     role: 'participant',
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -1105,7 +1224,9 @@ test('blocks back and route removal while create is pending, then releases after
         };
       }
       if (operation === 'eventInvitationsCreate') return delayedCreate;
-      throw new Error(`Unexpected operation ${operation} for ${request.body.id}`);
+      throw new Error(
+        `Unexpected operation ${operation} for ${request.body.id}`,
+      );
     },
   );
   const navigation = {
@@ -1220,9 +1341,7 @@ test('reuses one id and idempotency key after an uncertain create response, then
     createButton().props.onPress();
     await flush();
   });
-  expect(textInside(renderer)).toContain(
-    'Deine Eingaben bleiben erhalten.',
-  );
+  expect(textInside(renderer)).toContain('Deine Eingaben bleiben erhalten.');
   await ReactTestRenderer.act(async () => {
     createButton().props.onPress();
     await flush();
@@ -1288,14 +1407,18 @@ test('reuses one id and idempotency key after an uncertain create response, then
     email: '',
     maxUses: '1',
     role: 'participant',
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
 test('keeps the once-only token shareable across connectivity and client changes', async () => {
   mockRequestAsUser.mockImplementation(
-    async (_subject: unknown, operation: string, request: { body: { id: string } }) => {
+    async (
+      _subject: unknown,
+      operation: string,
+      request: { body: { id: string } },
+    ) => {
       if (operation === 'eventMembershipsList') {
         return {
           data: {
@@ -1452,12 +1575,7 @@ test.each([
         createRequests.push(request);
         createAttempt += 1;
         if (createAttempt === 1) {
-          throw gatewayError(
-            'eventInvitationsCreate',
-            409,
-            code,
-            false,
-          );
+          throw gatewayError('eventInvitationsCreate', 409, code, false);
         }
         return {
           data: {
@@ -1533,9 +1651,7 @@ test('shows token-free synced summaries to a locally confirmed manager after an 
 test('renders an invalid cached expiry neutrally without crashing', async () => {
   mockOnline = false;
   mockGatewayClientValue = null;
-  mockLocalStore.listMemberships.mockResolvedValue([
-    cachedMembership('owner'),
-  ]);
+  mockLocalStore.listMemberships.mockResolvedValue([cachedMembership('owner')]);
   mockLocalStore.listInvitations.mockResolvedValue([
     {
       ...invitation('inv_invalid_expiry', 'active', 2),
@@ -1556,18 +1672,17 @@ test('renders an invalid cached expiry neutrally without crashing', async () => 
 });
 
 test('keeps a cached editor form disabled after transient authority failure and explicitly retries', async () => {
-  mockLocalStore.listMemberships.mockResolvedValue([
-    cachedMembership('owner'),
-  ]);
+  mockLocalStore.listMemberships.mockResolvedValue([cachedMembership('owner')]);
   mockLocalStore.listDrafts.mockResolvedValue([
     {
       accountUserId: mockAccountId,
       contentJson: JSON.stringify({
         email: 'retry@example.com',
-        expiresAt: '2030-07-25 18:00',
+        expiresAt: '2030-07-25T18:00:00.000Z',
         maxUses: '3',
         role: 'viewer',
-        schemaVersion: 1,
+        schemaVersion: 2,
+        timeZone: 'Europe/Zurich',
       }),
       createdAt: '2026-07-18T09:00:00.000Z',
       entityType: 'invite-editor',
@@ -1597,7 +1712,8 @@ test('keeps a cached editor form disabled after transient authority failure and 
     renderer.root.findByProps({ testID: 'invite-editor-email' }).props.value,
   ).toBe('retry@example.com');
   expect(
-    renderer.root.findByProps({ testID: 'invite-editor-create' }).props.disabled,
+    renderer.root.findByProps({ testID: 'invite-editor-create' }).props
+      .disabled,
   ).toBe(true);
   expect(
     renderer.root.findByProps({
@@ -1612,7 +1728,8 @@ test('keeps a cached editor form disabled after transient authority failure and 
     await flush();
   });
   expect(
-    renderer.root.findByProps({ testID: 'invite-editor-create' }).props.disabled,
+    renderer.root.findByProps({ testID: 'invite-editor-create' }).props
+      .disabled,
   ).toBe(false);
   expect(
     renderer.root.findAllByProps({
@@ -1626,17 +1743,16 @@ test('keeps a cached editor form disabled after transient authority failure and 
 });
 
 test('waits for a pending draft write before authority retry reloads SQLite', async () => {
-  mockLocalStore.listMemberships.mockResolvedValue([
-    cachedMembership('owner'),
-  ]);
+  mockLocalStore.listMemberships.mockResolvedValue([cachedMembership('owner')]);
   let storedDraft = {
     accountUserId: mockAccountId,
     contentJson: JSON.stringify({
       email: 'old@example.com',
-      expiresAt: '2030-07-25 18:00',
+      expiresAt: '2030-07-25T18:00:00.000Z',
       maxUses: '3',
       role: 'viewer',
-      schemaVersion: 1,
+      schemaVersion: 2,
+      timeZone: 'Europe/Zurich',
     }),
     createdAt: '2026-07-18T09:00:00.000Z',
     entityType: 'invite-editor',
@@ -1695,7 +1811,8 @@ test('waits for a pending draft write before authority retry reloads SQLite', as
   ).toBe('new@example.com');
   expect(mockLocalStore.listDrafts).toHaveBeenCalledTimes(2);
   expect(
-    renderer.root.findByProps({ testID: 'invite-editor-create' }).props.disabled,
+    renderer.root.findByProps({ testID: 'invite-editor-create' }).props
+      .disabled,
   ).toBe(false);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -1728,7 +1845,8 @@ test('offers an authority retry even without a local manager role', async () => 
     await flush();
   });
   expect(
-    renderer.root.findByProps({ testID: 'invite-editor-create' }).props.disabled,
+    renderer.root.findByProps({ testID: 'invite-editor-create' }).props
+      .disabled,
   ).toBe(false);
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -1737,7 +1855,9 @@ test('never starts role or mutation requests while the editor opens offline', as
   mockOnline = false;
   const renderer = await renderEditor();
 
-  expect(textInside(renderer)).toContain('Neue Zugriffslinks werden nie offline');
+  expect(textInside(renderer)).toContain(
+    'Neue Zugriffslinks werden nie offline',
+  );
   expect(mockRequestAsUser).not.toHaveBeenCalled();
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -1761,10 +1881,11 @@ test('restores an offline editor draft for a locally confirmed manager without e
       accountUserId: mockAccountId,
       contentJson: JSON.stringify({
         email: 'offline@example.com',
-        expiresAt: '2030-07-25 18:00',
+        expiresAt: '2030-07-25T18:00:00.000Z',
         maxUses: '4',
         role: 'participant',
-        schemaVersion: 1,
+        schemaVersion: 2,
+        timeZone: 'Europe/Zurich',
       }),
       createdAt: '2026-07-18T09:00:00.000Z',
       entityType: 'invite-editor',
@@ -1848,10 +1969,12 @@ function managerElement(navigation: unknown) {
     <SafeAreaProvider initialMetrics={metrics}>
       <InviteManagerScreen
         navigation={navigation as never}
-        route={{
-          name: 'Invites',
-          params: { rootEventId },
-        } as never}
+        route={
+          {
+            name: 'Invites',
+            params: { rootEventId },
+          } as never
+        }
       />
     </SafeAreaProvider>
   );
@@ -1862,10 +1985,12 @@ function editorElement(navigation: unknown) {
     <SafeAreaProvider initialMetrics={metrics}>
       <InviteEditorScreen
         navigation={navigation as never}
-        route={{
-          name: 'InviteEditor',
-          params: { rootEventId },
-        } as never}
+        route={
+          {
+            name: 'InviteEditor',
+            params: { rootEventId },
+          } as never
+        }
       />
     </SafeAreaProvider>
   );
@@ -1900,9 +2025,7 @@ function cachedMembership(role: 'organizer' | 'owner') {
 }
 
 function setStaleManagerCache() {
-  mockLocalStore.listMemberships.mockResolvedValue([
-    cachedMembership('owner'),
-  ]);
+  mockLocalStore.listMemberships.mockResolvedValue([cachedMembership('owner')]);
   mockLocalStore.listInvitations.mockResolvedValue([
     {
       ...invitation('inv_stale_private', 'active', 2),
@@ -1911,11 +2034,7 @@ function setStaleManagerCache() {
   ]);
 }
 
-function invitation(
-  id: string,
-  status: 'active' | 'revoked',
-  version: number,
-) {
+function invitation(id: string, status: 'active' | 'revoked', version: number) {
   return {
     createdAt: '2026-07-18T09:00:00.000Z',
     emailBound: false,
