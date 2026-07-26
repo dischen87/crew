@@ -78,6 +78,16 @@ test("staging overlay fails closed on immutable release inputs", () => {
 		(services["place-search-reindex"]?.environment as Record<string, unknown>)
 			?.PLACE_SEARCH_REINDEX_EVENT_SERVICE_URL,
 	).toBe("https://staging.crew-haus.com:8447");
+	expect(
+		(services["notification-worker"]?.environment as Record<string, unknown>)
+			?.EVENT_NOTIFICATION_WORKER_PAYLOAD_CURRENT_KEY_ID,
+	).toBe("staging-notification-v1");
+	expect(
+		(services["notification-worker"]?.environment as Record<string, unknown>)
+			?.EVENT_NOTIFICATION_WORKER_PAYLOAD_CURRENT_KEY,
+	).toBe(
+		`\${EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY:?EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY is required}`,
+	);
 	expect(overlaySource).not.toContain("staging-fixture-model");
 });
 
@@ -207,6 +217,7 @@ test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:8080");
 	expect(caddy).toContain("Strict-Transport-Security");
 	expect(webDockerfile).toContain("WORKDIR /app/apps/web\nRUN bun run build");
+	expect(services.web?.cap_add).toEqual(["NET_BIND_SERVICE"]);
 	expect(hostDeploy).toContain("https://crew-haus.com/");
 });
 
