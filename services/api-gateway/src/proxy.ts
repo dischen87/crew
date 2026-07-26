@@ -35,6 +35,7 @@ export async function proxyRequest(
 	context: Context<GatewayEnv>,
 	route: ProxyRoute,
 	config: Config,
+	clientIp: string,
 	fetcher: Fetch = fetch,
 ): Promise<Response> {
 	const requestId = context.get("requestId");
@@ -83,6 +84,9 @@ export async function proxyRequest(
 		Accept: "application/json",
 		"X-Request-ID": requestId,
 	});
+	if (route.service === "user-service" && route.auth === "public") {
+		headers.set("X-Forwarded-For", clientIp);
+	}
 	if (route.auth === "user") {
 		const authorization = context.get("userAuthorization");
 		if (!authorization) {

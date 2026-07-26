@@ -92,6 +92,7 @@ services:
     image: crew-next-user-service:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
     environment:
       NODE_ENV: production
+      TRUSTED_GATEWAY_IP: 172.30.0.10
       DATABASE_URL: postgres://crew_user_api:${USER_DB_API_PASSWORD:?USER_DB_API_PASSWORD is required}@postgres:5432/crew_user
       JWT_KEY_ID: staging-user-jwt-v1
       REFRESH_TOKEN_KEY: ${REFRESH_TOKEN_KEY:?REFRESH_TOKEN_KEY is required}
@@ -227,6 +228,7 @@ services:
     image: crew-next-api-gateway:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
     environment:
       NODE_ENV: production
+      TRUSTED_PROXY_IPS: 172.30.0.1
       RATE_LIMIT_REDIS_URL: rediss://crew_gateway:${REDIS_GATEWAY_PASSWORD:?REDIS_GATEWAY_PASSWORD is required}@staging.crew-haus.com:6379/0
       RATE_LIMIT_KEY: ${GATEWAY_RATE_LIMIT_KEY:?GATEWAY_RATE_LIMIT_KEY is required}
       MEMBER_DIRECTORY_SERVICE_CURRENT_KEY_ID: staging-member-directory-v1
@@ -234,6 +236,9 @@ services:
     depends_on:
       internal-tls:
         condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
 
   fixture-bootstrap:
     image: crew-next-infra:${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}
@@ -258,3 +263,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+          gateway: 172.30.0.1

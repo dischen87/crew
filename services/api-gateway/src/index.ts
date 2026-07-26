@@ -16,6 +16,14 @@ try {
 }
 const app = createApp({
 	config,
+	authenticationRateLimiter: new RedisRateLimiter(
+		redis,
+		config.authenticationRateLimitMax,
+		config.rateLimitWindowMs,
+		config.rateLimitMaxEntries,
+		config.rateLimitKey,
+		config.rateLimitCommandTimeoutMs,
+	),
 	rateLimiter: new RedisRateLimiter(
 		redis,
 		config.rateLimitMax,

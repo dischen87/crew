@@ -1,6 +1,6 @@
 import { RedisClient } from "bun";
 import postgres from "postgres";
-import { createApp } from "./app";
+import { createApp, createClientKey } from "./app";
 import { createTokenServiceFromPem } from "./auth";
 import { loadConfig } from "./config";
 import { createDeliveryPayloadKeyring } from "./delivery-payload";
@@ -106,6 +106,7 @@ const app = createApp(
 			config.rateLimitKey,
 			config.rateLimitCommandTimeoutMs,
 		),
+		clientKey: createClientKey(config.trustedGatewayIp),
 		magicLinkTtlSeconds: config.magicLinkTtlSeconds,
 		refreshTokenTtlSeconds: config.refreshTokenTtlSeconds,
 		refreshTokenKey: config.refreshTokenKey,

@@ -7,6 +7,7 @@ const overlaySource = await Bun.file(
 const overlay = Bun.YAML.parse(overlaySource) as {
 	name?: unknown;
 	services?: Record<string, Record<string, unknown>>;
+	networks?: Record<string, Record<string, unknown>>;
 };
 const services = overlay.services ?? {};
 const hostDeploy = await Bun.file(
@@ -184,4 +185,30 @@ test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(caddy).toContain("Strict-Transport-Security");
 	expect(webDockerfile).toContain("WORKDIR /app/apps/web\nRUN bun run build");
 	expect(hostDeploy).toContain("https://crew-haus.com/");
+});
+
+test("public Gateway trusts only the fixed host-side Caddy peer", () => {
+	expect(overlay.networks?.default).toEqual({
+		ipam: {
+			config: [
+				{
+					subnet: "172.30.0.0/24",
+					ip_range: "172.30.0.128/25",
+					gateway: "172.30.0.1",
+				},
+			],
+		},
+	});
+	expect(
+		(services["api-gateway"]?.environment as Record<string, unknown>)
+			?.TRUSTED_PROXY_IPS,
+	).toBe("172.30.0.1");
+	expect(services["api-gateway"]?.networks).toEqual({
+		default: { ipv4_address: "172.30.0.10" },
+	});
+	expect(
+		(services["user-api"]?.environment as Record<string, unknown>)
+			?.TRUSTED_GATEWAY_IP,
+	).toBe("172.30.0.10");
+	expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
 });

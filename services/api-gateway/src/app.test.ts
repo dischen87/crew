@@ -2,7 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
-import { MemoryRateLimiter, type RateLimiter } from "./security";
+import {
+	MemoryRateLimiter,
+	type RateLimiter,
+	resolveClientIp,
+} from "./security";
 
 const ISSUER = "https://identity.crew.test";
 const AUDIENCE = "crew-mobile";
@@ -33,7 +37,10 @@ beforeAll(async () => {
 
 afterAll(() => jwksServer.stop(true));
 
-function app(rateLimiter?: RateLimiter) {
+function app(
+	rateLimiter?: RateLimiter,
+	authenticationRateLimiter?: RateLimiter,
+) {
 	return createApp({
 		config: loadConfig({
 			USER_SERVICE_JWKS_URL: `http://127.0.0.1:${jwksServer.port}/.well-known/jwks.json`,
@@ -44,6 +51,7 @@ function app(rateLimiter?: RateLimiter) {
 		}),
 		clientIp: () => "198.51.100.7",
 		rateLimiter: rateLimiter ?? new MemoryRateLimiter(10_000, 60_000, 10_000),
+		...(authenticationRateLimiter ? { authenticationRateLimiter } : {}),
 	});
 }
 
@@ -139,7 +147,8 @@ describe("api-gateway identity edge", () => {
 		const gateway = createApp({
 			config: loadConfig(),
 			clientIp: () => "198.51.100.7",
-			rateLimiter: new MemoryRateLimiter(1, 60_000, 10),
+			rateLimiter: new MemoryRateLimiter(100, 60_000, 10),
+			authenticationRateLimiter: new MemoryRateLimiter(1, 60_000, 10),
 			verifyUserToken: async () => {
 				verificationCalls += 1;
 				throw new Error("invalid");
@@ -189,6 +198,49 @@ describe("api-gateway identity edge", () => {
 		]);
 	});
 
+	test("keeps the shared-IP authentication budget separate from each principal", async () => {
+		const gateway = app(
+			new MemoryRateLimiter(1, 60_000, 10),
+			new MemoryRateLimiter(10, 60_000, 10),
+		);
+		const actorA = { Authorization: `Bearer ${await token()}` };
+		const actorB = {
+			Authorization: `Bearer ${await token({
+				subject: "usr_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			})}`,
+		};
+		expect(
+			(await gateway.request("/core/v1/session", { headers: actorA })).status,
+		).toBe(200);
+		expect(
+			(await gateway.request("/core/v1/session", { headers: actorB })).status,
+		).toBe(200);
+		expect(
+			(await gateway.request("/core/v1/session", { headers: actorA })).status,
+		).toBe(429);
+	});
+
+	test("trusts one valid forwarded address only from the configured proxy", () => {
+		const trusted = ["172.30.0.1"];
+		expect(resolveClientIp("203.0.113.8", "198.51.100.9", trusted)).toBe(
+			"203.0.113.8",
+		);
+		expect(resolveClientIp("172.30.0.1", "198.51.100.9", trusted)).toBe(
+			"198.51.100.9",
+		);
+		for (const forwarded of [
+			undefined,
+			"",
+			"198.51.100.9, 203.0.113.8",
+			"198.51.100.9:443",
+			"not-an-ip",
+		]) {
+			expect(resolveClientIp("172.30.0.1", forwarded, trusted)).toBe(
+				"172.30.0.1",
+			);
+		}
+	});
+
 	test("fails closed when the rate-limit store is unavailable without inspecting its error", async () => {
 		const inspected: string[] = [];
 		const failure = new Error();
@@ -222,6 +274,15 @@ describe("api-gateway contract and platform routes", () => {
 	test("validates bounded security configuration", () => {
 		expect(() => loadConfig({ JWKS_CACHE_MS: "999" })).toThrow();
 		expect(() => loadConfig({ RATE_LIMIT_COMMAND_TIMEOUT_MS: "9" })).toThrow();
+		expect(loadConfig().authenticationRateLimitMax).toBe(1000);
+		expect(() =>
+			loadConfig({ AUTHENTICATION_RATE_LIMIT_MAX: "100001" }),
+		).toThrow();
+		expect(
+			loadConfig({ TRUSTED_PROXY_IPS: "172.30.0.1, 2001:db8::1" })
+				.trustedProxyIps,
+		).toEqual(["172.30.0.1", "2001:db8::1"]);
+		expect(() => loadConfig({ TRUSTED_PROXY_IPS: "not-an-ip" })).toThrow();
 		expect(
 			loadConfig({ DOWNSTREAM_TIMEOUT_MS: "3100" }).downstreamTimeoutMs,
 		).toBe(3100);

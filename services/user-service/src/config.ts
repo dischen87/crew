@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 import { isDeliveryPayloadKey } from "./delivery-payload";
 
@@ -23,6 +24,7 @@ const PUSH_DELIVERY_ACK_BUFFER_MS = 250;
 const Environment = z.enum(["development", "test", "production"]);
 const KeyId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const PayloadKey = z.string().refine(isDeliveryPayloadKey);
+const IpAddress = z.string().refine((value) => isIP(value) !== 0, "Invalid IP");
 const RedisUrl = z
 	.string()
 	.url()
@@ -52,6 +54,7 @@ const ConfigSchema = z
 		rateLimitMaxEntries: z.coerce.number().int().min(2).max(1_000_000),
 		rateLimitConnectionTimeoutMs: z.coerce.number().int().min(100).max(10_000),
 		rateLimitCommandTimeoutMs: z.coerce.number().int().min(10).max(5_000),
+		trustedGatewayIp: IpAddress.optional(),
 		idempotencyPayloadCurrentKeyId: KeyId,
 		idempotencyPayloadCurrentKey: z.string().min(32).max(512),
 		idempotencyPayloadPreviousKeyId: KeyId.optional(),
@@ -547,6 +550,7 @@ export function loadConfig(
 		rateLimitConnectionTimeoutMs:
 			env.RATE_LIMIT_CONNECTION_TIMEOUT_MS ?? "1000",
 		rateLimitCommandTimeoutMs: env.RATE_LIMIT_COMMAND_TIMEOUT_MS ?? "250",
+		trustedGatewayIp: emptyToUndefined(env.TRUSTED_GATEWAY_IP),
 		idempotencyPayloadCurrentKeyId:
 			env.IDEMPOTENCY_PAYLOAD_CURRENT_KEY_ID ?? "development-v1",
 		idempotencyPayloadCurrentKey:

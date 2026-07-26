@@ -432,6 +432,7 @@ describe("generated gateway proxy", () => {
 			expect(headers.get("Authorization")).toBeNull();
 			expect(headers.get("Idempotency-Key")).toBe("idem.auth.123");
 			expect(headers.get("X-Request-ID")).toBe(requestId);
+			expect(headers.get("X-Forwarded-For")).toBe("198.51.100.7");
 			expect(new TextDecoder().decode(init?.body as ArrayBuffer)).toBe(body);
 			return new Response(responseBody, {
 				status: 202,
@@ -452,6 +453,7 @@ describe("generated gateway proxy", () => {
 				"Content-Type": "application/json; charset=utf-8",
 				"Idempotency-Key": "idem.auth.123",
 				"X-Request-ID": requestId,
+				"X-Forwarded-For": "203.0.113.99",
 			},
 			body,
 		});
@@ -578,6 +580,7 @@ describe("generated gateway proxy", () => {
 			expect(headers.get("Authorization")).toBe("Bearer good-a");
 			expect(headers.get("Idempotency-Key")).toBe("idem.event.123");
 			expect(headers.get("X-Request-ID")).toBe(requestId);
+			expect(headers.get("X-Forwarded-For")).toBeNull();
 			expect(new TextDecoder().decode(init?.body as ArrayBuffer)).toBe(body);
 			return upstreamJson({ event }, 201, {
 				Location: "https://event.test/v1/event-roots/evt_root?view=tree",

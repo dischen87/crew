@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import type { Context } from "hono";
@@ -1570,6 +1571,29 @@ function bunClientKey(context: Context<UserServiceEnv>) {
 	} catch {
 		return "unknown";
 	}
+}
+
+export function resolveClientKey(
+	peer: string,
+	forwardedFor: string | undefined,
+	trustedGatewayIp: string | undefined,
+): string {
+	if (peer !== trustedGatewayIp) return peer;
+	const forwarded = forwardedFor?.trim();
+	return forwarded && !forwarded.includes(",") && isIP(forwarded) !== 0
+		? forwarded
+		: peer;
+}
+
+export function createClientKey(
+	trustedGatewayIp: string | undefined,
+): ClientKey {
+	return (context) =>
+		resolveClientKey(
+			bunClientKey(context),
+			context.req.header("x-forwarded-for"),
+			trustedGatewayIp,
+		);
 }
 
 function boundedBody(maxSize: number) {

@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { Context } from "hono";
 import { getConnInfo } from "hono/bun";
 import { createMiddleware } from "hono/factory";
@@ -132,6 +133,27 @@ function bunClientIp(context: Context<GatewayEnv>): string {
 	} catch {
 		return "unknown";
 	}
+}
+
+export function resolveClientIp(
+	peer: string,
+	forwardedFor: string | undefined,
+	trustedProxyIps: readonly string[],
+): string {
+	if (!trustedProxyIps.includes(peer)) return peer;
+	const forwarded = forwardedFor?.trim();
+	return forwarded && !forwarded.includes(",") && isIP(forwarded) !== 0
+		? forwarded
+		: peer;
+}
+
+export function createClientIp(trustedProxyIps: readonly string[]): ClientIp {
+	return (context) =>
+		resolveClientIp(
+			bunClientIp(context),
+			context.req.header("x-forwarded-for"),
+			trustedProxyIps,
+		);
 }
 
 export function rateLimitMiddleware(

@@ -15,6 +15,7 @@ import { memberDirectoryRequest } from "./member-directory";
 import { type Fetch, proxyRequest } from "./proxy";
 import type { ClientIp, RateLimiter, VerifyUserToken } from "./security";
 import {
+	createClientIp,
 	createJwtVerifier,
 	enforceRateLimit,
 	rateLimitMiddleware,
@@ -159,6 +160,7 @@ function edgeErrorResponse(description: string, retryAfter = false) {
 
 export type AppOptions = {
 	rateLimiter: RateLimiter;
+	authenticationRateLimiter?: RateLimiter;
 	config?: Config;
 	readiness?: () => boolean | Promise<boolean>;
 	verifyUserToken?: VerifyUserToken;
@@ -179,6 +181,8 @@ export function createApp(options: AppOptions) {
 			timeoutDuration: config.jwksTimeoutMs,
 		});
 	const limiter = options.rateLimiter;
+	const authenticationLimiter = options.authenticationRateLimiter ?? limiter;
+	const clientIp = options.clientIp ?? createClientIp(config.trustedProxyIps);
 	const readiness = options.readiness ?? (() => true);
 
 	const app = new OpenAPIHono<GatewayEnv>({
@@ -227,12 +231,12 @@ export function createApp(options: AppOptions) {
 	const authenticate = userAuthMiddleware(verifyUserToken, (context) =>
 		enforceRateLimit(
 			context,
-			limiter,
-			options.clientIp,
+			authenticationLimiter,
+			clientIp,
 			"authentication-attempt",
 		),
 	);
-	const rateLimit = rateLimitMiddleware(limiter, options.clientIp);
+	const rateLimit = rateLimitMiddleware(limiter, clientIp);
 	app.use("/core/v1/session", authenticate);
 	app.use("/core/v1/session", rateLimit);
 	app.openapi(sessionRoute, (c) => {
@@ -288,7 +292,7 @@ export function createApp(options: AppOptions) {
 	app.all("/core/v1/*", async (c) => {
 		const route = findProxyRoute(c.req.method, c.req.path);
 		if (!route) return c.notFound();
-		return proxyRequest(c, route, config, options.fetch ?? fetch);
+		return proxyRequest(c, route, config, clientIp(c), options.fetch ?? fetch);
 	});
 
 	app.openAPIRegistry.registerComponent("securitySchemes", "userBearer", {

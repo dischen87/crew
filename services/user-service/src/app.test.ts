@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPair } from "jose";
-import { type AppDependencies, createApp } from "./app";
+import { type AppDependencies, createApp, resolveClientKey } from "./app";
 import { createTokenService, type TokenService } from "./auth";
 import {
 	loadConfig,
@@ -509,6 +509,30 @@ describe("first-party identity and sessions", () => {
 		});
 		expect(inspected).toEqual([]);
 	});
+
+	test("trusts one valid client address only from the configured Gateway", () => {
+		const trusted = "172.30.0.10";
+		expect(resolveClientKey("172.30.0.10", "198.51.100.9", trusted)).toBe(
+			"198.51.100.9",
+		);
+		expect(resolveClientKey("172.30.0.10", "2001:db8::1", trusted)).toBe(
+			"2001:db8::1",
+		);
+		expect(resolveClientKey("172.30.0.11", "198.51.100.9", trusted)).toBe(
+			"172.30.0.11",
+		);
+		for (const forwarded of [
+			undefined,
+			"",
+			"198.51.100.9, 203.0.113.8",
+			"198.51.100.9:443",
+			"not-an-ip",
+		]) {
+			expect(resolveClientKey("172.30.0.10", forwarded, trusted)).toBe(
+				"172.30.0.10",
+			);
+		}
+	});
 });
 
 describe("profile and device isolation", () => {
@@ -760,6 +784,10 @@ describe("configuration and contract", () => {
 		expect(apiDevelopment).not.toHaveProperty("magicLinkDeliveryUrl");
 		expect(apiDevelopment).not.toHaveProperty("deliveryWorkerLeaseMs");
 		expect(() => loadConfig({ ACCESS_TOKEN_TTL_SECONDS: "59" })).toThrow();
+		expect(
+			loadConfig({ TRUSTED_GATEWAY_IP: "172.30.0.10" }).trustedGatewayIp,
+		).toBe("172.30.0.10");
+		expect(() => loadConfig({ TRUSTED_GATEWAY_IP: "not-an-ip" })).toThrow();
 		expect(() => loadConfig({ NODE_ENV: "production" })).toThrow();
 		const apiProduction = {
 			NODE_ENV: "production",

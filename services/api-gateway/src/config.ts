@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 const DEVELOPMENT_RATE_LIMIT_REDIS_URL = "redis://localhost:6379";
@@ -5,6 +6,7 @@ const DEVELOPMENT_RATE_LIMIT_KEY =
 	"BAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg";
 const KeyId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const ServiceKey = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+const IpAddress = z.string().refine((value) => isIP(value) !== 0, "Invalid IP");
 const RedisUrl = z
 	.string()
 	.url()
@@ -28,12 +30,14 @@ const ConfigSchema = z
 		jwksTimeoutMs: z.coerce.number().int().min(100).max(30_000),
 		downstreamTimeoutMs: z.coerce.number().int().min(100).max(30_000),
 		rateLimitMax: z.coerce.number().int().min(1).max(100_000),
+		authenticationRateLimitMax: z.coerce.number().int().min(1).max(100_000),
 		rateLimitWindowMs: z.coerce.number().int().min(1_000).max(3_600_000),
 		rateLimitMaxEntries: z.coerce.number().int().min(1).max(1_000_000),
 		rateLimitRedisUrl: RedisUrl,
 		rateLimitKey: ServiceKey,
 		rateLimitConnectionTimeoutMs: z.coerce.number().int().min(100).max(10_000),
 		rateLimitCommandTimeoutMs: z.coerce.number().int().min(10).max(5_000),
+		trustedProxyIps: z.array(IpAddress).max(16),
 		memberDirectoryServiceIssuer: z.string().min(1).max(200),
 		memberDirectoryServiceAudience: z.string().min(1).max(200),
 		memberDirectoryServiceCurrentKeyId: KeyId,
@@ -92,6 +96,7 @@ export function loadConfig(
 		jwksTimeoutMs: env.JWKS_TIMEOUT_MS ?? "2000",
 		downstreamTimeoutMs: env.DOWNSTREAM_TIMEOUT_MS ?? "3000",
 		rateLimitMax: env.RATE_LIMIT_MAX ?? "120",
+		authenticationRateLimitMax: env.AUTHENTICATION_RATE_LIMIT_MAX ?? "1000",
 		rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? "60000",
 		rateLimitMaxEntries: env.RATE_LIMIT_MAX_ENTRIES ?? "10000",
 		rateLimitRedisUrl:
@@ -102,6 +107,10 @@ export function loadConfig(
 		rateLimitConnectionTimeoutMs:
 			env.RATE_LIMIT_CONNECTION_TIMEOUT_MS ?? "1000",
 		rateLimitCommandTimeoutMs: env.RATE_LIMIT_COMMAND_TIMEOUT_MS ?? "250",
+		trustedProxyIps: (env.TRUSTED_PROXY_IPS ?? "")
+			.split(",")
+			.map((value) => value.trim())
+			.filter(Boolean),
 		memberDirectoryServiceIssuer:
 			env.MEMBER_DIRECTORY_SERVICE_ISSUER ?? "crew-api-gateway",
 		memberDirectoryServiceAudience:
