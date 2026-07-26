@@ -34,6 +34,12 @@ import { EventService } from "./service";
 const databaseUrl = Bun.env.GOLF_DISCOVERY_TEST_DATABASE_URL;
 const SERVICE_KEY = "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg";
 const actorId = "usr_00000000000000000000000000000955";
+const rootEventId = "evt_golf_discovery";
+const enrichmentScope = {
+	rootEventId,
+	eventId: rootEventId,
+	capabilityType: "golf" as const,
+};
 
 if (!databaseUrl) {
 	test.skip("golf discovery PostgreSQL integration (set GOLF_DISCOVERY_TEST_DATABASE_URL)", () => {});
@@ -41,6 +47,7 @@ if (!databaseUrl) {
 	describe("worldwide golf discovery against PostgreSQL 17", () => {
 		let sql: Sql;
 		let app: ReturnType<typeof createApp>;
+		let service: EventService;
 
 		beforeAll(async () => {
 			sql = postgres(databaseUrl, { max: 12, onnotice: () => {} });
@@ -48,7 +55,7 @@ if (!databaseUrl) {
 			const placeCandidates = new PlaceCandidateService(
 				new PostgresPlaceCandidateRepository(sql),
 			);
-			const service = new EventService(
+			service = new EventService(
 				new PostgresEventRepository(
 					sql,
 					new EventNotificationPayloadCodec({
@@ -75,7 +82,37 @@ if (!databaseUrl) {
 		});
 
 		beforeEach(async () => {
-			await sql`TRUNCATE global_places, place_enrichment_jobs, place_candidates, event_idempotency_records CASCADE`;
+			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates CASCADE`;
+			await service.createRoot(
+				{ id: actorId },
+				{
+					id: rootEventId,
+					kind: "golf",
+					title: "Golf discovery",
+					description: "Golf candidate selection fixture.",
+					timeZone: "Europe/Zurich",
+					startsAt: null,
+					endsAt: null,
+					status: "draft",
+				},
+			);
+			await service.replaceCapability(
+				{ id: actorId },
+				rootEventId,
+				rootEventId,
+				0,
+				{
+					type: "golf",
+					schemaVersion: 1,
+					config: {
+						coursePlaceId: null,
+						teeFormat: "individual",
+						handicapMode: "optional",
+						scoringMode: "stableford",
+						roundState: "planned",
+					},
+				},
+			);
 		});
 
 		afterAll(async () => {
@@ -293,7 +330,11 @@ if (!databaseUrl) {
 					"Content-Type": "application/json",
 					"Idempotency-Key": `golf-select-${index}`,
 				},
-				body: JSON.stringify({ target: "candidate", candidateId }),
+				body: JSON.stringify({
+					...enrichmentScope,
+					target: "candidate",
+					candidateId,
+				}),
 			});
 		}
 
