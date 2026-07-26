@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/event-service.openapi.json.
- * Pin: sha256:f3e30aee684056f2fd228483535c859fd36fe9ec053391d334658551b5acde68
+ * Pin: sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -933,7 +933,7 @@ export type paths = {
         put?: never;
         /**
          * Select a candidate or request bounded no-match enrichment
-         * @description Persists an idempotent background job and returns immediately without provider work in the request path.
+         * @description Persists an idempotent background job and returns immediately without provider work in the request path. Returns 503 unless an operator has enabled the provider-backed worker.
          */
         post: operations["placeEnrichmentJobsCreate"];
         delete?: never;
@@ -10618,6 +10618,19 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     placeEnrichmentJobsGet: {
@@ -10751,6 +10764,19 @@ export interface operations {
             /** @description Unexpected failure */
             500: {
                 headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service unavailable */
+            503: {
+                headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
                     /** @description Crew request correlation identifier */
                     "X-Request-ID"?: string;
                     [name: string]: unknown;
