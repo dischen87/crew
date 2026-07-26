@@ -1147,6 +1147,13 @@ test('places a linked feed target before the composer with explicit visual and a
     ...entry('converged', 'Genau dieses ältere Update'),
     id: 'fed_linked_target',
   };
+  const expectedTimestamp = new Intl.DateTimeFormat('de-CH', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(focused.createdAt));
   const renderer = await render(
     <TeamFeedView
       draft=""
@@ -1171,8 +1178,7 @@ test('places a linked feed target before the composer with explicit visual and a
   expect(
     renderer.root.findByProps({ testID: 'team-feed-linked-entry-body' }).props,
   ).toMatchObject({
-    accessibilityLabel:
-      'Verlinktes Update. Du. Genau dieses ältere Update 19.07.2026, 10:00.',
+    accessibilityLabel: `Verlinktes Update. Du. Genau dieses ältere Update ${expectedTimestamp}.`,
     accessibilityState: { selected: true },
   });
   await ReactTestRenderer.act(() => renderer.unmount());
