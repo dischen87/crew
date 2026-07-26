@@ -102,6 +102,12 @@ import type {
 	TeamResponseRecord,
 } from "./team-domain";
 
+export type PlaceEnrichmentScope = {
+	rootEventId: string;
+	eventId: string;
+	capabilityType: CapabilityType;
+};
+
 export interface EventRepository {
 	ready(): Promise<boolean>;
 	findIdempotent<T extends Record<string, unknown>>(
@@ -713,17 +719,33 @@ export interface EventRepository {
 		followed: boolean,
 	): Promise<CommunityFeedbackFollow>;
 	requestPlaceEnrichmentCandidate(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
 		candidateId: string,
 		policy: PlaceEnrichmentPolicy,
 	): Promise<PlaceEnrichmentJob>;
 	requestPlaceEnrichmentSearchMiss(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
 		input: { query: string; kind: PlaceCandidateKind; countryCode: string },
 		policy: PlaceEnrichmentPolicy,
 	): Promise<PlaceEnrichmentJob>;
-	getPlaceEnrichment(id: string): Promise<{
+	assertPlaceEnrichmentCreateScope(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+	): Promise<void>;
+	getPlaceEnrichment(
+		actor: Actor,
+		rootEventId: string,
+		id: string,
+	): Promise<{
 		job: PlaceEnrichmentJob;
 		fields: PlaceEnrichmentField[];
 		globalPlaceId: string | null;
 	} | null>;
-	requestPlaceEnrichmentRetry(id: string): Promise<PlaceEnrichmentJob>;
+	requestPlaceEnrichmentRetry(
+		actor: Actor,
+		rootEventId: string,
+		id: string,
+	): Promise<PlaceEnrichmentJob>;
 }

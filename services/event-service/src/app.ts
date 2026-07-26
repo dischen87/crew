@@ -865,15 +865,22 @@ const PlaceSearchResponseSchema = z
 	.strict();
 
 const PlaceEnrichmentJobIdSchema = z.string().regex(PLACE_ENRICHMENT_JOB_ID);
+const PlaceEnrichmentScopeShape = {
+	rootEventId: EventIdSchema,
+	eventId: EventIdSchema,
+	capabilityType: CapabilityTypeSchema,
+};
 const PlaceEnrichmentRequestSchema = z.discriminatedUnion("target", [
 	z
 		.object({
+			...PlaceEnrichmentScopeShape,
 			target: z.literal("candidate"),
 			candidateId: PlaceCandidateIdSchema,
 		})
 		.strict(),
 	z
 		.object({
+			...PlaceEnrichmentScopeShape,
 			target: z.literal("search_miss"),
 			query: z.string().trim().min(2).max(200),
 			kind: z.enum(["golf_course", "venue"]),
@@ -5095,9 +5102,13 @@ const getPlaceEnrichmentRoute = createRoute({
 	security: [{ userBearer: [] }],
 	request: {
 		params: z.object({ jobId: PlaceEnrichmentJobIdSchema }).strict(),
+		query: z.object({ rootEventId: EventIdSchema }).strict(),
 	},
 	responses: {
-		200: readResponse(PlaceEnrichmentResponseSchema, "Enrichment status"),
+		200: {
+			...readResponse(PlaceEnrichmentResponseSchema, "Enrichment status"),
+			headers: { ...readHeaders, "Retry-After": RetryAfterHeader },
+		},
 		401: errors[401],
 		404: errors[404],
 		500: errors[500],
@@ -5115,6 +5126,7 @@ const retryPlaceEnrichmentRoute = createRoute({
 	security: [{ userBearer: [] }],
 	request: {
 		params: z.object({ jobId: PlaceEnrichmentJobIdSchema }).strict(),
+		query: z.object({ rootEventId: EventIdSchema }).strict(),
 		headers: IdempotencyHeadersSchema,
 	},
 	responses: {
@@ -5427,6 +5439,11 @@ export function createApp(options: AppOptions = {}) {
 	app.openapi(createPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
 		const body = c.req.valid("json");
+		const scope = {
+			rootEventId: body.rootEventId,
+			eventId: body.eventId,
+			capabilityType: body.capabilityType,
+		};
 		const result = await command(
 			c,
 			actor,
@@ -5435,26 +5452,33 @@ export function createApp(options: AppOptions = {}) {
 			async (service) => {
 				const job =
 					body.target === "candidate"
-						? await service.requestPlaceEnrichmentCandidate(body.candidateId)
-						: await service.requestPlaceEnrichmentSearchMiss({
+						? await service.requestPlaceEnrichmentCandidate(
+								actor,
+								scope,
+								body.candidateId,
+							)
+						: await service.requestPlaceEnrichmentSearchMiss(actor, scope, {
 								query: body.query,
 								kind: body.kind,
 								countryCode: body.countryCode,
 							});
 				const response = placeEnrichmentResponse(
-					await service.getPlaceEnrichment(job.id),
+					await service.getPlaceEnrichment(actor, body.rootEventId, job.id),
 				);
-				return enrichmentCommand(response);
+				return enrichmentCommand(response, body.rootEventId);
 			},
-			placeEnrichmentReplayGuard(),
+			placeEnrichmentCreateReplayGuard(actor, scope),
 			(service) => service.assertPlaceEnrichmentAvailable(),
 		);
 		applyCommandHeaders(c, result);
 		return c.json(result.body, 202);
 	});
 	app.openapi(getPlaceEnrichmentRoute, async (c) => {
+		const query = c.req.valid("query");
 		const response = placeEnrichmentResponse(
 			await requiredService(options).getPlaceEnrichment(
+				requiredActor(c),
+				query.rootEventId,
 				c.req.valid("param").jobId,
 			),
 		);
@@ -5466,18 +5490,24 @@ export function createApp(options: AppOptions = {}) {
 	app.openapi(retryPlaceEnrichmentRoute, async (c) => {
 		const actor = requiredActor(c);
 		const params = c.req.valid("param");
+		const query = c.req.valid("query");
 		const result = await command(
 			c,
 			actor,
 			"placeEnrichmentJobsRetry",
-			{ params },
+			{ params, query },
 			async (service) =>
 				enrichmentCommand(
 					placeEnrichmentResponse(
-						await service.requestPlaceEnrichmentRetry(params.jobId),
+						await service.requestPlaceEnrichmentRetry(
+							actor,
+							query.rootEventId,
+							params.jobId,
+						),
 					),
+					query.rootEventId,
 				),
-			placeEnrichmentReplayGuard(),
+			placeEnrichmentRetryReplayGuard(actor, query.rootEventId, params.jobId),
 			(service) => service.assertPlaceEnrichmentAvailable(),
 		);
 		applyCommandHeaders(c, result);
@@ -7389,6 +7419,7 @@ async function command<T extends Record<string, unknown>>(
 				return await work(scoped);
 			} catch (error) {
 				if (!(error instanceof DomainError)) throw error;
+				if (error.code === "PLACE_ENRICHMENT_CAPACITY") throw error;
 				return {
 					status: error.status,
 					body: storedErrorBody(
@@ -7751,34 +7782,68 @@ function feedbackReplayGuard(
 	};
 }
 
-function placeEnrichmentReplayGuard() {
+function placeEnrichmentCreateReplayGuard(
+	actor: Actor,
+	scope: {
+		rootEventId: string;
+		eventId: string;
+		capabilityType: z.infer<typeof CapabilityTypeSchema>;
+	},
+) {
 	return async (
 		service: EventService,
 		replay: { status: number; body: Record<string, unknown> },
 	) => {
-		if (replay.status >= 400) return;
-		const enrichment = replay.body.enrichment;
-		const id =
-			typeof enrichment === "object" &&
-			enrichment !== null &&
-			"id" in enrichment
-				? enrichment.id
-				: null;
-		const parsed = PlaceEnrichmentJobIdSchema.safeParse(id);
-		if (!parsed.success) replayNotFound();
-		await service.getPlaceEnrichment(parsed.data);
+		let jobId: string | null = null;
+		if (replay.status < 400) {
+			const enrichment = replay.body.enrichment;
+			const id =
+				typeof enrichment === "object" &&
+				enrichment !== null &&
+				"id" in enrichment
+					? enrichment.id
+					: null;
+			const parsed = PlaceEnrichmentJobIdSchema.safeParse(id);
+			if (!parsed.success) replayNotFound();
+			jobId = parsed.data;
+		}
+		await service.assertPlaceEnrichmentCreateReplaySafe(actor, scope, jobId);
+	};
+}
+
+function placeEnrichmentRetryReplayGuard(
+	actor: Actor,
+	rootEventId: string,
+	jobId: string,
+) {
+	return async (
+		service: EventService,
+		replay: { status: number; body: Record<string, unknown> },
+	) => {
+		if (replay.status < 400) {
+			const enrichment = replay.body.enrichment;
+			const id =
+				typeof enrichment === "object" &&
+				enrichment !== null &&
+				"id" in enrichment
+					? enrichment.id
+					: null;
+			if (id !== jobId) replayNotFound();
+		}
+		await service.getPlaceEnrichment(actor, rootEventId, jobId);
 	};
 }
 
 function enrichmentCommand(
 	body: z.infer<typeof PlaceEnrichmentResponseSchema>,
+	rootEventId: string,
 ) {
 	const retryAfter = body.enrichment.pollAfterSeconds;
 	return {
 		status: 202,
 		body,
 		headers: {
-			Location: `/v1/places/enrichment-jobs/${body.enrichment.id}`,
+			Location: `/v1/places/enrichment-jobs/${body.enrichment.id}?rootEventId=${encodeURIComponent(rootEventId)}`,
 			...(retryAfter === null ? {} : { "Retry-After": String(retryAfter) }),
 		},
 	};

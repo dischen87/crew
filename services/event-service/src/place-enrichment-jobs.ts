@@ -11,6 +11,7 @@ import {
 	type PlaceEnrichmentPolicy,
 	type PlaceEnrichmentStatus,
 	type PlaceEnrichmentTarget,
+	PlaceEnrichmentValidationError,
 	placeEnrichmentIdentity,
 	safeEnrichmentCode,
 } from "./place-enrichment";
@@ -71,6 +72,22 @@ type CandidateSeedRow = {
 	longitude: number | null;
 };
 
+type Admission = {
+	actorId: string;
+	rootEventId: string;
+	expectedKind: PlaceCandidateKind;
+};
+
+const ACTIVE_STATUSES: readonly PlaceEnrichmentStatus[] = [
+	"pending",
+	"processing",
+	"retry",
+];
+const ACTOR_OUTSTANDING_LIMIT = 3;
+const GLOBAL_OUTSTANDING_LIMIT = 100;
+const ACTOR_DAILY_COST_LIMIT = 250_000;
+const GLOBAL_DAILY_COST_LIMIT = 5_000_000;
+
 export type PlaceEnrichmentProvider = "exa" | "llm";
 
 export type PlaceEnrichmentProviderPermit = {
@@ -85,38 +102,6 @@ export type PlaceEnrichmentProviderPermit = {
 	maxResponseBytes: number;
 };
 
-export class PlaceEnrichmentService {
-	constructor(
-		private readonly jobs: PostgresPlaceEnrichmentJobs,
-		private readonly policy: PlaceEnrichmentPolicy,
-	) {}
-
-	requestCandidate(candidateId: string) {
-		return this.jobs.enqueueCandidate(candidateId, this.policy);
-	}
-
-	requestSearchMiss(input: {
-		query: string;
-		kind: PlaceCandidateKind;
-		countryCode: string;
-	}) {
-		return this.jobs.enqueueSearchMiss(input, this.policy);
-	}
-
-	async status(id: string) {
-		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw enrichmentNotFound();
-		const result = await this.jobs.get(id);
-		if (!result) throw enrichmentNotFound();
-		return result;
-	}
-
-	async requestRetry(id: string) {
-		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw enrichmentNotFound();
-		await this.jobs.requestRetry(id);
-		return this.status(id);
-	}
-}
-
 export class PostgresPlaceEnrichmentJobs {
 	constructor(
 		private readonly sql: Sql,
@@ -129,32 +114,21 @@ export class PostgresPlaceEnrichmentJobs {
 	): Promise<PlaceEnrichmentJob> {
 		validatePolicy(policy);
 		if (!/^pcd_[a-f0-9]{64}$/.test(candidateId)) throw candidateNotFound();
-		const [candidate] = await this.sql<CandidateSeedRow[]>`
-			SELECT id, snapshot_hash AS "snapshotHash", source,
-				source_record_url AS "sourceRecordUrl", kind, name, locality, region,
-				country_code AS "countryCode", latitude, longitude
-			FROM place_candidates
-			WHERE id = ${candidateId} AND retired_at IS NULL
-				AND (expires_at IS NULL OR expires_at > clock_timestamp())
-		`;
-		if (!candidate) throw candidateNotFound();
-		return this.enqueue(
-			{
-				type: "candidate",
-				candidateId: candidate.id,
-				candidateSnapshotHash: candidate.snapshotHash,
-				candidateSource: candidate.source,
-				candidateSourceUrl: candidate.sourceRecordUrl,
-				kind: candidate.kind,
-				name: candidate.name,
-				locality: candidate.locality,
-				region: candidate.region,
-				countryCode: candidate.countryCode,
-				latitude: candidate.latitude,
-				longitude: candidate.longitude,
-			},
-			policy,
-		);
+		return this.enqueue(await candidateTarget(this.sql, candidateId), policy);
+	}
+
+	admitCandidate(
+		candidateId: string,
+		policy: PlaceEnrichmentPolicy,
+		admission: Admission,
+	): Promise<PlaceEnrichmentJob> {
+		validatePolicy(policy);
+		if (!/^pcd_[a-f0-9]{64}$/.test(candidateId)) throw candidateNotFound();
+		return this.transaction(async (tx) => {
+			const target = await candidateTarget(tx, candidateId);
+			assertExpectedKind(target.kind, admission.expectedKind);
+			return this.admit(tx, target, policy, admission);
+		});
 	}
 
 	enqueueSearchMiss(
@@ -166,21 +140,43 @@ export class PostgresPlaceEnrichmentJobs {
 		policy: PlaceEnrichmentPolicy,
 	) {
 		validatePolicy(policy);
-		if (!/^[A-Z]{2}$/.test(input.countryCode)) {
-			throw new DomainError(
-				400,
-				"PLACE_ENRICHMENT_INPUT_INVALID",
-				"Place enrichment input is invalid.",
-			);
-		}
+		validateSearchMiss(input);
 		return this.enqueue(
 			{
 				type: "search_miss",
-				query: normalizePlaceSearchQuery(input.query),
+				query: normalizedSearchMissQuery(input.query),
 				kind: input.kind,
 				countryCode: input.countryCode,
 			},
 			policy,
+		);
+	}
+
+	admitSearchMiss(
+		input: {
+			query: string;
+			kind: PlaceCandidateKind;
+			countryCode: string;
+		},
+		policy: PlaceEnrichmentPolicy,
+		admission: Admission,
+	): Promise<PlaceEnrichmentJob> {
+		validatePolicy(policy);
+		validateSearchMiss(input);
+		assertExpectedKind(input.kind, admission.expectedKind);
+		const query = normalizedSearchMissQuery(input.query);
+		return this.transaction((tx) =>
+			this.admit(
+				tx,
+				{
+					type: "search_miss",
+					query,
+					kind: input.kind,
+					countryCode: input.countryCode,
+				},
+				policy,
+				admission,
+			),
 		);
 	}
 
@@ -222,6 +218,11 @@ export class PostgresPlaceEnrichmentJobs {
 				WHERE attempts < max_attempts AND (
 					(status IN ('pending', 'retry') AND available_at <= clock_timestamp()) OR
 					(status = 'processing' AND lease_until <= clock_timestamp())
+				)
+				AND EXISTS (
+					SELECT 1 FROM place_enrichment_job_associations association
+					WHERE association.job_id = place_enrichment_jobs.id
+						AND association.reserved_cost_micros > 0
 				)
 				ORDER BY COALESCE(lease_until, available_at), id
 				FOR UPDATE SKIP LOCKED LIMIT 1
@@ -307,6 +308,11 @@ export class PostgresPlaceEnrichmentJobs {
 					max_response_bytes AS "maxResponseBytes"
 				FROM place_enrichment_jobs
 				WHERE ${ownedLease(tx, claim)}
+					AND EXISTS (
+						SELECT 1 FROM place_enrichment_job_associations association
+						WHERE association.job_id = place_enrichment_jobs.id
+							AND association.reserved_cost_micros > 0
+					)
 				FOR UPDATE
 			`;
 			if (!job) return "stale" as const;
@@ -533,6 +539,29 @@ export class PostgresPlaceEnrichmentJobs {
 		};
 	}
 
+	async getAssociated(actorId: string, rootEventId: string, id: string) {
+		const [association] = await this.sql<{ found: boolean }[]>`
+			SELECT true AS found FROM place_enrichment_job_associations
+			WHERE job_id = ${id} AND actor_id = ${actorId}
+				AND root_event_id = ${rootEventId}
+		`;
+		return association ? this.get(id) : null;
+	}
+
+	async requestRetryAssociated(
+		actorId: string,
+		rootEventId: string,
+		id: string,
+	) {
+		const [association] = await this.sql<{ found: boolean }[]>`
+			SELECT true AS found FROM place_enrichment_job_associations
+			WHERE job_id = ${id} AND actor_id = ${actorId}
+				AND root_event_id = ${rootEventId}
+		`;
+		if (!association) throw enrichmentNotFound();
+		return this.requestRetry(id);
+	}
+
 	async requestRetry(id: string) {
 		return this.transaction(async (tx) => {
 			const [job] = await tx<JobRow[]>`
@@ -563,37 +592,118 @@ export class PostgresPlaceEnrichmentJobs {
 		target: PlaceEnrichmentTarget,
 		policy: PlaceEnrichmentPolicy,
 	) {
+		return jobRecord(await insertJob(this.sql, target, policy));
+	}
+
+	private async admit(
+		tx: Tx,
+		target: PlaceEnrichmentTarget,
+		policy: PlaceEnrichmentPolicy,
+		admission: Admission,
+	) {
 		const identity = placeEnrichmentIdentity(target, policy);
-		const [row] = await this.sql<JobRow[]>`
-			INSERT INTO place_enrichment_jobs (
-				id, request_hash, target_type, candidate_id, candidate_snapshot_hash,
-				candidate_source, candidate_source_url, search_query, kind, name,
-				locality, region, country_code, latitude, longitude, pipeline_version,
-				model, prompt_version, max_attempts, max_exa_calls, max_llm_calls,
-				max_input_tokens, max_output_tokens, max_cost_micros,
-				provider_timeout_ms, max_response_bytes
-			) VALUES (
-				${identity.id}, ${identity.requestHash}, ${target.type},
-				${target.type === "candidate" ? target.candidateId : null},
-				${target.type === "candidate" ? target.candidateSnapshotHash : null},
-				${target.type === "candidate" ? target.candidateSource : null},
-				${target.type === "candidate" ? target.candidateSourceUrl : null},
-				${target.type === "search_miss" ? target.query : null}, ${target.kind},
-				${target.type === "candidate" ? target.name : null},
-				${target.type === "candidate" ? target.locality : null},
-				${target.type === "candidate" ? target.region : null},
-				${target.countryCode},
-				${target.type === "candidate" ? target.latitude : null},
-				${target.type === "candidate" ? target.longitude : null},
-				${policy.pipelineVersion}, ${policy.model}, ${policy.promptVersion},
-				${policy.maxAttempts}, ${policy.maxExaCalls}, ${policy.maxLlmCalls},
-				${policy.maxInputTokens}, ${policy.maxOutputTokens}, ${policy.maxCostMicros},
-				${policy.providerTimeoutMs}, ${policy.maxResponseBytes}
+		// ponytail: global serialization keeps exact quotas; shard by admission bucket if contention becomes measurable.
+		await tx`
+			SELECT pg_advisory_xact_lock(
+				hashtextextended('place-enrichment-admission:v1', 0)
 			)
-			ON CONFLICT (id) DO UPDATE SET request_hash = EXCLUDED.request_hash
-			RETURNING ${jobColumns(this.sql)}
 		`;
-		if (!row) throw new Error("Place-enrichment enqueue invariant failed");
+		const [existing] = await tx<JobRow[]>`
+			SELECT ${jobColumns(tx)} FROM place_enrichment_jobs
+			WHERE id = ${identity.id}
+		`;
+		const [replay] = await tx<{ found: boolean }[]>`
+			SELECT true AS found FROM place_enrichment_job_associations
+			WHERE job_id = ${identity.id} AND actor_id = ${admission.actorId}
+				AND root_event_id = ${admission.rootEventId}
+		`;
+		if (replay) {
+			if (!existing)
+				throw new Error("Place-enrichment association invariant failed");
+			return jobRecord(existing);
+		}
+
+		const active = !existing || ACTIVE_STATUSES.includes(existing.status);
+		const [charged] = existing
+			? await tx<{ found: boolean }[]>`
+					SELECT true AS found FROM place_enrichment_job_associations
+					WHERE job_id = ${identity.id} AND reserved_cost_micros > 0
+				`
+			: [];
+		const [actorJobAssociation] = existing
+			? await tx<{ found: boolean }[]>`
+					SELECT true AS found FROM place_enrichment_job_associations
+					WHERE job_id = ${identity.id} AND actor_id = ${admission.actorId}
+					LIMIT 1
+				`
+			: [];
+		const reservedCostMicros =
+			active && !charged
+				? (existing?.maxCostMicros ?? policy.maxCostMicros)
+				: 0;
+		const [usage] = await tx<
+			{
+				actorOutstanding: number;
+				globalOutstanding: number;
+				actorDailyCost: number;
+				globalDailyCost: number;
+			}[]
+		>`
+			SELECT
+				(
+					SELECT count(DISTINCT association.job_id)::int
+					FROM place_enrichment_job_associations association
+					JOIN place_enrichment_jobs job ON job.id = association.job_id
+					WHERE association.actor_id = ${admission.actorId}
+						AND job.status IN ('pending', 'processing', 'retry')
+				) AS "actorOutstanding",
+				(
+					SELECT count(*)::int FROM place_enrichment_jobs job
+					WHERE job.status IN ('pending', 'processing', 'retry')
+						AND EXISTS (
+							SELECT 1 FROM place_enrichment_job_associations association
+							WHERE association.job_id = job.id
+								AND association.reserved_cost_micros > 0
+						)
+				) AS "globalOutstanding",
+				(
+					SELECT COALESCE(sum(reserved_cost_micros), 0)::int
+					FROM place_enrichment_job_associations
+					WHERE actor_id = ${admission.actorId}
+						AND reserved_cost_micros > 0
+						AND created_at >= date_trunc('day', clock_timestamp() AT TIME ZONE 'UTC')
+							AT TIME ZONE 'UTC'
+				) AS "actorDailyCost",
+				(
+					SELECT COALESCE(sum(reserved_cost_micros), 0)::int
+					FROM place_enrichment_job_associations
+					WHERE reserved_cost_micros > 0
+						AND created_at >= date_trunc('day', clock_timestamp() AT TIME ZONE 'UTC')
+						AT TIME ZONE 'UTC'
+				) AS "globalDailyCost"
+		`;
+		if (
+			!usage ||
+			(active &&
+				!actorJobAssociation &&
+				usage.actorOutstanding >= ACTOR_OUTSTANDING_LIMIT) ||
+			(reservedCostMicros > 0 &&
+				(usage.globalOutstanding >= GLOBAL_OUTSTANDING_LIMIT ||
+					usage.actorDailyCost + reservedCostMicros > ACTOR_DAILY_COST_LIMIT ||
+					usage.globalDailyCost + reservedCostMicros > GLOBAL_DAILY_COST_LIMIT))
+		) {
+			throw enrichmentCapacity();
+		}
+
+		const row = existing ?? (await insertJob(tx, target, policy));
+		await tx`
+			INSERT INTO place_enrichment_job_associations (
+				job_id, actor_id, root_event_id, reserved_cost_micros
+			) VALUES (
+				${row.id}, ${admission.actorId}, ${admission.rootEventId},
+				${reservedCostMicros}
+			)
+		`;
 		return jobRecord(row);
 	}
 
@@ -603,6 +713,74 @@ export class PostgresPlaceEnrichmentJobs {
 			work(transaction as unknown as Tx),
 		) as Promise<T>;
 	}
+}
+
+async function candidateTarget(
+	tx: Tx,
+	candidateId: string,
+): Promise<PlaceEnrichmentTarget> {
+	const [candidate] = await tx<CandidateSeedRow[]>`
+		SELECT id, snapshot_hash AS "snapshotHash", source,
+			source_record_url AS "sourceRecordUrl", kind, name, locality, region,
+			country_code AS "countryCode", latitude, longitude
+		FROM place_candidates
+		WHERE id = ${candidateId} AND retired_at IS NULL
+			AND (expires_at IS NULL OR expires_at > clock_timestamp())
+	`;
+	if (!candidate) throw candidateNotFound();
+	return {
+		type: "candidate",
+		candidateId: candidate.id,
+		candidateSnapshotHash: candidate.snapshotHash,
+		candidateSource: candidate.source,
+		candidateSourceUrl: candidate.sourceRecordUrl,
+		kind: candidate.kind,
+		name: candidate.name,
+		locality: candidate.locality,
+		region: candidate.region,
+		countryCode: candidate.countryCode,
+		latitude: candidate.latitude,
+		longitude: candidate.longitude,
+	};
+}
+
+async function insertJob(
+	tx: Tx,
+	target: PlaceEnrichmentTarget,
+	policy: PlaceEnrichmentPolicy,
+) {
+	const identity = placeEnrichmentIdentity(target, policy);
+	const [row] = await tx<JobRow[]>`
+		INSERT INTO place_enrichment_jobs (
+			id, request_hash, target_type, candidate_id, candidate_snapshot_hash,
+			candidate_source, candidate_source_url, search_query, kind, name,
+			locality, region, country_code, latitude, longitude, pipeline_version,
+			model, prompt_version, max_attempts, max_exa_calls, max_llm_calls,
+			max_input_tokens, max_output_tokens, max_cost_micros,
+			provider_timeout_ms, max_response_bytes
+		) VALUES (
+			${identity.id}, ${identity.requestHash}, ${target.type},
+			${target.type === "candidate" ? target.candidateId : null},
+			${target.type === "candidate" ? target.candidateSnapshotHash : null},
+			${target.type === "candidate" ? target.candidateSource : null},
+			${target.type === "candidate" ? target.candidateSourceUrl : null},
+			${target.type === "search_miss" ? target.query : null}, ${target.kind},
+			${target.type === "candidate" ? target.name : null},
+			${target.type === "candidate" ? target.locality : null},
+			${target.type === "candidate" ? target.region : null},
+			${target.countryCode},
+			${target.type === "candidate" ? target.latitude : null},
+			${target.type === "candidate" ? target.longitude : null},
+			${policy.pipelineVersion}, ${policy.model}, ${policy.promptVersion},
+			${policy.maxAttempts}, ${policy.maxExaCalls}, ${policy.maxLlmCalls},
+			${policy.maxInputTokens}, ${policy.maxOutputTokens}, ${policy.maxCostMicros},
+			${policy.providerTimeoutMs}, ${policy.maxResponseBytes}
+		)
+		ON CONFLICT (id) DO UPDATE SET request_hash = EXCLUDED.request_hash
+		RETURNING ${jobColumns(tx)}
+	`;
+	if (!row) throw new Error("Place-enrichment enqueue invariant failed");
+	return row;
 }
 
 function jobColumns(sql: Tx) {
@@ -723,6 +901,36 @@ function validatePolicy(policy: PlaceEnrichmentPolicy) {
 	}
 }
 
+function validateSearchMiss(input: { countryCode: string }) {
+	if (!/^[A-Z]{2}$/.test(input.countryCode)) {
+		throw new DomainError(
+			400,
+			"PLACE_ENRICHMENT_INPUT_INVALID",
+			"Place enrichment input is invalid.",
+		);
+	}
+}
+
+function normalizedSearchMissQuery(value: string) {
+	try {
+		return normalizePlaceSearchQuery(value);
+	} catch (error) {
+		if (!(error instanceof PlaceEnrichmentValidationError)) throw error;
+		throw new DomainError(
+			400,
+			"PLACE_ENRICHMENT_INPUT_INVALID",
+			"Place enrichment input is invalid.",
+		);
+	}
+}
+
+function assertExpectedKind(
+	actual: PlaceCandidateKind,
+	expected: PlaceCandidateKind,
+) {
+	if (actual !== expected) throw enrichmentScopeInvalid();
+}
+
 function integerBetween(value: number, minimum: number, maximum: number) {
 	return Number.isInteger(value) && value >= minimum && value <= maximum;
 }
@@ -746,6 +954,23 @@ function enrichmentNotFound() {
 		404,
 		"PLACE_ENRICHMENT_NOT_FOUND",
 		"The place enrichment job was not found.",
+	);
+}
+
+function enrichmentScopeInvalid() {
+	return new DomainError(
+		409,
+		"PLACE_ENRICHMENT_SCOPE_INVALID",
+		"Place enrichment is not available for this event capability.",
+	);
+}
+
+function enrichmentCapacity() {
+	return new DomainError(
+		409,
+		"PLACE_ENRICHMENT_CAPACITY",
+		"Place enrichment capacity is temporarily exhausted.",
+		{ "Retry-After": "60" },
 	);
 }
 

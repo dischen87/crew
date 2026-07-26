@@ -118,7 +118,7 @@ import type {
 	RecapExternalGrantDecisionInput,
 	RecapSourceInput,
 } from "./recap-domain";
-import type { EventRepository } from "./repository";
+import type { EventRepository, PlaceEnrichmentScope } from "./repository";
 import {
 	type BootstrapCursor,
 	type SyncAppliedMutation,
@@ -4985,21 +4985,36 @@ export class PostgresEventRepository implements EventRepository {
 	}
 
 	requestPlaceEnrichmentCandidate(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
 		candidateId: string,
 		policy: PlaceEnrichmentPolicy,
 	) {
 		if (!this.inTransaction)
 			throw new Error("Place selection requires an idempotent command");
-		return this.selectPlaceCandidate(candidateId, policy);
+		return this.selectPlaceCandidate(actor, scope, candidateId, policy);
 	}
 
 	private async selectPlaceCandidate(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
 		candidateId: string,
 		policy: PlaceEnrichmentPolicy,
 	) {
+		const expectedKind = await requirePlaceEnrichmentCreateScope(
+			this.sql,
+			actor,
+			scope,
+			"update",
+		);
 		const job = await new PostgresPlaceEnrichmentJobs(
 			this.sql,
-		).enqueueCandidate(candidateId, policy);
+			true,
+		).admitCandidate(candidateId, policy, {
+			actorId: actor.id,
+			rootEventId: scope.rootEventId,
+			expectedKind,
+		});
 		const id = globalPlaceId(candidateId);
 		const [place] = await this.sql<{ id: string }[]>`
 			INSERT INTO global_places (id, candidate_id)
@@ -5014,26 +5029,63 @@ export class PostgresEventRepository implements EventRepository {
 	}
 
 	requestPlaceEnrichmentSearchMiss(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
 		input: { query: string; kind: PlaceCandidateKind; countryCode: string },
 		policy: PlaceEnrichmentPolicy,
 	) {
 		if (!this.inTransaction)
 			throw new Error("Place enrichment requires an idempotent command");
-		return new PostgresPlaceEnrichmentJobs(this.sql).enqueueSearchMiss(
-			input,
-			policy,
-		);
+		return this.transaction(async (tx) => {
+			const expectedKind = await requirePlaceEnrichmentCreateScope(
+				tx,
+				actor,
+				scope,
+				"update",
+			);
+			return new PostgresPlaceEnrichmentJobs(tx, true).admitSearchMiss(
+				input,
+				policy,
+				{
+					actorId: actor.id,
+					rootEventId: scope.rootEventId,
+					expectedKind,
+				},
+			);
+		});
 	}
 
-	getPlaceEnrichment(id: string) {
-		return new PostgresPlaceEnrichmentJobs(this.sql).get(id);
+	assertPlaceEnrichmentCreateScope(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+	): Promise<void> {
+		return this.transaction(async (tx) => {
+			await requirePlaceEnrichmentCreateScope(tx, actor, scope, "share");
+		});
 	}
 
-	requestPlaceEnrichmentRetry(id: string) {
-		return new PostgresPlaceEnrichmentJobs(
-			this.sql,
-			this.inTransaction,
-		).requestRetry(id);
+	getPlaceEnrichment(actor: Actor, rootEventId: string, id: string) {
+		return this.transaction(async (tx) => {
+			await lockReadableRoot(tx, rootEventId, actor, "share");
+			return new PostgresPlaceEnrichmentJobs(tx, true).getAssociated(
+				actor.id,
+				rootEventId,
+				id,
+			);
+		});
+	}
+
+	requestPlaceEnrichmentRetry(actor: Actor, rootEventId: string, id: string) {
+		if (!this.inTransaction)
+			throw new Error("Place enrichment retry requires an idempotent command");
+		return this.transaction(async (tx) => {
+			await lockReadableRoot(tx, rootEventId, actor, "update");
+			return new PostgresPlaceEnrichmentJobs(tx, true).requestRetryAssociated(
+				actor.id,
+				rootEventId,
+				id,
+			);
+		});
 	}
 }
 
@@ -5749,6 +5801,38 @@ async function readPublishReadiness(
 		ready: reasons.length === 0,
 		reasons,
 	};
+}
+
+async function requiredPlaceEnrichmentKind(
+	tx: Tx,
+	scope: PlaceEnrichmentScope,
+): Promise<PlaceCandidateKind> {
+	const readiness = await readPublishReadiness(tx, scope.rootEventId);
+	const required = readiness.reasons.some(
+		(reason) =>
+			reason.code === "EVENT_CAPABILITY_PLACE_REQUIRED" &&
+			reason.meta?.eventId === scope.eventId &&
+			reason.meta.capabilityType === scope.capabilityType,
+	);
+	if (!required) {
+		throw new DomainError(
+			409,
+			"PLACE_ENRICHMENT_SCOPE_INVALID",
+			"Place enrichment is not available for this event capability.",
+		);
+	}
+	return scope.capabilityType === "golf" ? "golf_course" : "venue";
+}
+
+async function requirePlaceEnrichmentCreateScope(
+	tx: Tx,
+	actor: Actor,
+	scope: PlaceEnrichmentScope,
+	mode: "share" | "update",
+) {
+	const root = await lockManagerRoot(tx, scope.rootEventId, actor, mode);
+	if (root.status !== "active") throw notFound();
+	return requiredPlaceEnrichmentKind(tx, scope);
 }
 
 async function findRecapHead(tx: Tx, rootEventId: string, lock: boolean) {

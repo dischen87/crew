@@ -64,7 +64,7 @@ import {
 	RecapShareTokenCodec,
 	RecapShareTokenKeyUnavailableError,
 } from "./recap-share-token";
-import type { EventRepository } from "./repository";
+import type { EventRepository, PlaceEnrichmentScope } from "./repository";
 import {
 	type BootstrapCursor,
 	InvalidSyncCursorError,
@@ -1899,10 +1899,18 @@ export class EventService {
 		);
 	}
 
-	requestPlaceEnrichmentCandidate(candidateId: string) {
-		return this.repository.requestPlaceEnrichmentCandidate(
-			candidateId,
-			this.requiredPlaceEnrichmentPolicy(),
+	requestPlaceEnrichmentCandidate(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		candidateId: string,
+	) {
+		return concealPlaceEnrichmentAccess(
+			this.repository.requestPlaceEnrichmentCandidate(
+				actor,
+				scope,
+				candidateId,
+				this.requiredPlaceEnrichmentPolicy(),
+			),
 		);
 	}
 
@@ -1910,29 +1918,66 @@ export class EventService {
 		this.requiredPlaceEnrichmentPolicy();
 	}
 
-	requestPlaceEnrichmentSearchMiss(input: {
-		query: string;
-		kind: PlaceCandidateKind;
-		countryCode: string;
-	}) {
-		return this.repository.requestPlaceEnrichmentSearchMiss(
-			input,
-			this.requiredPlaceEnrichmentPolicy(),
+	requestPlaceEnrichmentSearchMiss(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		input: {
+			query: string;
+			kind: PlaceCandidateKind;
+			countryCode: string;
+		},
+	) {
+		return concealPlaceEnrichmentAccess(
+			this.repository.requestPlaceEnrichmentSearchMiss(
+				actor,
+				scope,
+				input,
+				this.requiredPlaceEnrichmentPolicy(),
+			),
 		);
 	}
 
-	async getPlaceEnrichment(id: string) {
+	async getPlaceEnrichment(actor: Actor, rootEventId: string, id: string) {
 		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw placeEnrichmentNotFound();
-		const result = await this.repository.getPlaceEnrichment(id);
+		const result = await concealPlaceEnrichmentAccess(
+			this.repository.getPlaceEnrichment(actor, rootEventId, id),
+		);
 		if (!result) throw placeEnrichmentNotFound();
 		return result;
 	}
 
-	async requestPlaceEnrichmentRetry(id: string) {
+	async assertPlaceEnrichmentCreateReplaySafe(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		id: string | null,
+	) {
+		try {
+			await this.repository.assertPlaceEnrichmentCreateScope(actor, scope);
+			if (id !== null)
+				await this.getPlaceEnrichment(actor, scope.rootEventId, id);
+		} catch (error) {
+			if (
+				error instanceof DomainError &&
+				(error.status === 403 ||
+					error.status === 404 ||
+					error.code === "PLACE_ENRICHMENT_SCOPE_INVALID")
+			)
+				throw placeEnrichmentNotFound();
+			throw error;
+		}
+	}
+
+	async requestPlaceEnrichmentRetry(
+		actor: Actor,
+		rootEventId: string,
+		id: string,
+	) {
 		this.requiredPlaceEnrichmentPolicy();
 		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw placeEnrichmentNotFound();
-		await this.repository.requestPlaceEnrichmentRetry(id);
-		return this.getPlaceEnrichment(id);
+		await concealPlaceEnrichmentAccess(
+			this.repository.requestPlaceEnrichmentRetry(actor, rootEventId, id),
+		);
+		return this.getPlaceEnrichment(actor, rootEventId, id);
 	}
 
 	async tokenForInvitation(
@@ -2278,4 +2323,17 @@ function placeEnrichmentNotFound() {
 		"PLACE_ENRICHMENT_NOT_FOUND",
 		"The place enrichment job was not found.",
 	);
+}
+
+async function concealPlaceEnrichmentAccess<T>(work: Promise<T>) {
+	try {
+		return await work;
+	} catch (error) {
+		if (
+			error instanceof DomainError &&
+			(error.status === 403 || error.status === 404)
+		)
+			throw placeEnrichmentNotFound();
+		throw error;
+	}
 }

@@ -17,6 +17,14 @@ import { EventService } from "./service";
 
 const databaseUrl = Bun.env.PLACE_ENRICHMENT_API_TEST_DATABASE_URL;
 const actorId = "usr_00000000000000000000000000000901";
+const memberId = "usr_00000000000000000000000000000902";
+const outsiderId = "usr_00000000000000000000000000000903";
+const rootEventId = "evt_enrichment_api_root";
+const enrichmentScope = {
+	rootEventId,
+	eventId: rootEventId,
+	capabilityType: "golf" as const,
+};
 
 if (!databaseUrl) {
 	test.skip("place-enrichment API PostgreSQL integration (set PLACE_ENRICHMENT_API_TEST_DATABASE_URL)", () => {});
@@ -24,12 +32,13 @@ if (!databaseUrl) {
 	describe("place enrichment API against PostgreSQL 17", () => {
 		let sql: Sql;
 		let app: ReturnType<typeof createApp>;
+		let service: EventService;
 		let candidateId: string;
 
 		beforeAll(async () => {
 			sql = postgres(databaseUrl, { max: 12, onnotice: () => {} });
 			await migrate(sql);
-			const service = new EventService(
+			service = new EventService(
 				new PostgresEventRepository(
 					sql,
 					new EventNotificationPayloadCodec({
@@ -50,7 +59,41 @@ if (!databaseUrl) {
 		});
 
 		beforeEach(async () => {
-			await sql`TRUNCATE place_enrichment_jobs, place_candidates, event_idempotency_records CASCADE`;
+			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates CASCADE`;
+			await service.createRoot(
+				{ id: actorId },
+				{
+					id: rootEventId,
+					kind: "golf",
+					title: "Golf day",
+					description: "Place enrichment admission fixture.",
+					timeZone: "Europe/Zurich",
+					startsAt: null,
+					endsAt: null,
+					status: "draft",
+				},
+			);
+			await service.replaceCapability(
+				{ id: actorId },
+				rootEventId,
+				rootEventId,
+				0,
+				{
+					type: "golf",
+					schemaVersion: 1,
+					config: {
+						coursePlaceId: null,
+						teeFormat: "individual",
+						handicapMode: "optional",
+						scoringMode: "stableford",
+						roundState: "planned",
+					},
+				},
+			);
+			await sql`
+				INSERT INTO event_memberships (root_event_id, user_id, role, status)
+				VALUES (${rootEventId}, ${memberId}, 'participant', 'active')
+			`;
 			const [imported] = await new PostgresPlaceCandidateRepository(
 				sql,
 			).importBatch([candidate()]);
@@ -68,6 +111,7 @@ if (!databaseUrl) {
 				request(
 					"select-unauthenticated",
 					{
+						...enrichmentScope,
 						target: "candidate",
 						candidateId,
 					},
@@ -98,7 +142,7 @@ if (!databaseUrl) {
 			const jobId = firstBody.enrichment.id as string;
 			expect(firstBody.place.id).toMatch(/^gpl_[a-f0-9]{64}$/);
 			expect(first.headers.get("location")).toBe(
-				`/v1/places/enrichment-jobs/${jobId}`,
+				`/v1/places/enrichment-jobs/${jobId}?rootEventId=${rootEventId}`,
 			);
 			expect(firstText).not.toContain("maxCostMicros");
 			expect(firstText).not.toContain("fixture-model");
@@ -114,21 +158,102 @@ if (!databaseUrl) {
 			`;
 			expect(count?.count).toBe(1);
 
-			const status = await app.request(`/v1/places/enrichment-jobs/${jobId}`, {
-				headers: { Authorization: `Bearer ${actorId}` },
-			});
+			const status = await app.request(
+				`/v1/places/enrichment-jobs/${jobId}?rootEventId=${rootEventId}`,
+				{ headers: { Authorization: `Bearer ${actorId}` } },
+			);
 			expect(status.status).toBe(200);
 			expect(status.headers.get("retry-after")).toBe("2");
 			expect(await status.json()).toEqual(firstBody);
+
+			for (const userId of [memberId, outsiderId]) {
+				const concealed = await app.request(
+					`/v1/places/enrichment-jobs/${jobId}?rootEventId=${rootEventId}`,
+					{ headers: { Authorization: `Bearer ${userId}` } },
+				);
+				expect(concealed.status).toBe(404);
+				expect(await concealed.json()).toMatchObject({
+					error: { code: "PLACE_ENRICHMENT_NOT_FOUND" },
+				});
+			}
+			const storedErrorRequest = request("stored-create-error-01", {
+				...enrichmentScope,
+				target: "search_miss",
+				query: "Private venue mismatch",
+				kind: "venue",
+				countryCode: "CH",
+			});
+			const storedError = await app.request(
+				"/v1/places/enrichment-jobs",
+				storedErrorRequest,
+			);
+			expect(storedError.status).toBe(409);
+			await service.createPlace({ id: actorId }, rootEventId, {
+				id: "plc_enrichment_api_course",
+				name: "Selected course",
+				locality: "Belek",
+				countryCode: "TR",
+				latitude: null,
+				longitude: null,
+			});
+			await service.replaceCapability(
+				{ id: actorId },
+				rootEventId,
+				rootEventId,
+				1,
+				{
+					type: "golf",
+					schemaVersion: 1,
+					config: {
+						coursePlaceId: "plc_enrichment_api_course",
+						teeFormat: "individual",
+						handicapMode: "optional",
+						scoringMode: "stableford",
+						roundState: "planned",
+					},
+				},
+			);
+			const staleWorkflowReplay = await selectCandidate("select-carya-01");
+			expect(staleWorkflowReplay.status).toBe(404);
+			const staleErrorReplay = await app.request(
+				"/v1/places/enrichment-jobs",
+				storedErrorRequest,
+			);
+			expect(staleErrorReplay.status).toBe(404);
+			expect(await staleErrorReplay.json()).toMatchObject({
+				error: { code: "PLACE_ENRICHMENT_NOT_FOUND" },
+			});
+			await service.transferOwnership(
+				{ id: actorId },
+				rootEventId,
+				memberId,
+				1,
+				1,
+			);
+			await service.updateMembership(
+				{ id: memberId },
+				rootEventId,
+				actorId,
+				2,
+				"organizer",
+				"removed",
+				"Lost-membership redaction fixture.",
+			);
+			const lostMembership = await app.request(
+				`/v1/places/enrichment-jobs/${jobId}?rootEventId=${rootEventId}`,
+				{ headers: { Authorization: `Bearer ${actorId}` } },
+			);
+			expect(lostMembership.status).toBe(404);
 		});
 
 		test("keeps search-miss text private and never expands retry budgets", async () => {
 			const searchMiss = await app.request(
 				"/v1/places/enrichment-jobs",
 				request("search-miss-01", {
+					...enrichmentScope,
 					target: "search_miss",
 					query: "private organizer wording",
-					kind: "venue",
+					kind: "golf_course",
 					countryCode: "CH",
 				}),
 			);
@@ -146,7 +271,7 @@ if (!databaseUrl) {
 				WHERE id = ${jobId}
 			`;
 			const retry = await app.request(
-				`/v1/places/enrichment-jobs/${jobId}/retry`,
+				`/v1/places/enrichment-jobs/${jobId}/retry?rootEventId=${rootEventId}`,
 				request("retry-carya-01"),
 			);
 			expect(retry.status).toBe(202);
@@ -180,7 +305,7 @@ if (!databaseUrl) {
 				WHERE id = ${jobId}
 			`;
 			const terminalRetry = await app.request(
-				`/v1/places/enrichment-jobs/${jobId}/retry`,
+				`/v1/places/enrichment-jobs/${jobId}/retry?rootEventId=${rootEventId}`,
 				request("retry-carya-terminal-01"),
 			);
 			expect(terminalRetry.status).toBe(409);
@@ -195,7 +320,11 @@ if (!databaseUrl) {
 		function selectCandidate(idempotencyKey: string) {
 			return app.request(
 				"/v1/places/enrichment-jobs",
-				request(idempotencyKey, { target: "candidate", candidateId }),
+				request(idempotencyKey, {
+					...enrichmentScope,
+					target: "candidate",
+					candidateId,
+				}),
 			);
 		}
 	});
