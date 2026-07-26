@@ -141,75 +141,85 @@ export class FeedbackComposeRuntime {
     if (!feedbackPattern.test(feedbackId) || !rootPattern.test(rootEventId)) {
       return null;
     }
-    await this.#assertActive();
-    const screenshot = await this.#screenshots.get(
-      this.#accountUserId,
-      feedbackId,
-    );
-    await this.#assertActive();
-    if (!screenshot || screenshot.rootEventId !== rootEventId) return null;
-    if (screenshot.state !== 'retained') return null;
-    try {
-      const previewDataUri = await previewRetainedAttachment(
+    return runAttachmentMediaOperation(this.#accountUserId, async () => {
+      await this.#assertActive();
+      const screenshot = await this.#screenshots.get(
         this.#accountUserId,
-        screenshot.retainedFileKey,
+        feedbackId,
       );
       await this.#assertActive();
-      return {
-        attachmentId: screenshot.attachmentId,
-        feedbackId,
-        pixelHeight: screenshot.pixelHeight,
-        pixelWidth: screenshot.pixelWidth,
-        previewDataUri,
-      };
-    } catch (error) {
-      await this.#discardAndReconcile(feedbackId);
-      throw error;
-    }
+      if (!screenshot || screenshot.rootEventId !== rootEventId) return null;
+      if (screenshot.state !== 'retained') return null;
+      try {
+        const previewDataUri = await previewRetainedAttachment(
+          this.#accountUserId,
+          screenshot.retainedFileKey,
+        );
+        await this.#assertActive();
+        return {
+          attachmentId: screenshot.attachmentId,
+          feedbackId,
+          pixelHeight: screenshot.pixelHeight,
+          pixelWidth: screenshot.pixelWidth,
+          previewDataUri,
+        };
+      } catch (error) {
+        await this.#discardAndReconcile(feedbackId);
+        throw error;
+      }
+    });
   }
 
   async discard(feedbackId: string): Promise<void> {
-    await this.#assertActive();
-    await this.#screenshots.discard(this.#accountUserId, feedbackId);
-    await reconcileRetainedAttachmentFiles(
-      this.#attachments,
-      this.#accountUserId,
-    ).catch(() => undefined);
-    await this.#assertActive();
+    await runAttachmentMediaOperation(this.#accountUserId, async () => {
+      await this.#assertActive();
+      await this.#screenshots.discard(this.#accountUserId, feedbackId);
+      await reconcileRetainedAttachmentFiles(
+        this.#attachments,
+        this.#accountUserId,
+      ).catch(() => undefined);
+      await this.#assertActive();
+    });
   }
 
   async cleanup(feedbackId: string): Promise<void> {
-    await this.#discardAndReconcile(feedbackId);
+    await runAttachmentMediaOperation(this.#accountUserId, () =>
+      this.#discardAndReconcile(feedbackId),
+    );
   }
 
   async canSendWithoutScreenshot(feedbackId: string): Promise<boolean> {
-    await this.#assertActive();
-    const screenshot = await this.#screenshots.get(
-      this.#accountUserId,
-      feedbackId,
-    );
-    await this.#assertActive();
-    return Boolean(
-      screenshot?.state === 'attention' &&
-        screenshot.feedbackSendStartedAt === null,
-    );
+    return runAttachmentMediaOperation(this.#accountUserId, async () => {
+      await this.#assertActive();
+      const screenshot = await this.#screenshots.get(
+        this.#accountUserId,
+        feedbackId,
+      );
+      await this.#assertActive();
+      return Boolean(
+        screenshot?.state === 'attention' &&
+          screenshot.feedbackSendStartedAt === null,
+      );
+    });
   }
 
   async sendWithoutScreenshot(
     feedbackId: string,
   ): Promise<FeedbackSubmissionReceipt> {
-    await this.#assertActive();
-    const receipt = await this.controller.sendWithoutScreenshot(
-      this.#accountUserId,
-      feedbackId,
-    );
-    await this.#assertActive();
-    await reconcileRetainedAttachmentFiles(
-      this.#attachments,
-      this.#accountUserId,
-    ).catch(() => undefined);
-    await this.#assertActive();
-    return receipt;
+    return runAttachmentMediaOperation(this.#accountUserId, async () => {
+      await this.#assertActive();
+      const receipt = await this.controller.sendWithoutScreenshot(
+        this.#accountUserId,
+        feedbackId,
+      );
+      await this.#assertActive();
+      await reconcileRetainedAttachmentFiles(
+        this.#attachments,
+        this.#accountUserId,
+      ).catch(() => undefined);
+      await this.#assertActive();
+      return receipt;
+    });
   }
 
   async #assertActive(): Promise<void> {

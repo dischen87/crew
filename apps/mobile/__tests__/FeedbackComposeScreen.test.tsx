@@ -520,6 +520,45 @@ test('quiesce drains the compose controller flight and rejects a retry', async (
   }
 });
 
+test('quiesce waits for an offline feedback enqueue before private data can close', async () => {
+  let resolveEnqueue!: (value: FeedbackSubmissionReceipt) => void;
+  mockController.enqueue.mockReturnValueOnce(
+    new Promise(resolve => {
+      resolveEnqueue = resolve;
+    }),
+  );
+  const renderer = await renderScreen();
+  try {
+    await fill(renderer, 'Offline sichern', 'Der lokale Write muss enden.');
+    let submitFlight!: Promise<void>;
+    await ReactTestRenderer.act(() => {
+      submitFlight = renderer.root
+        .findByProps({ testID: 'feedback-compose-submit' })
+        .props.onPress();
+    });
+
+    let quiesced = false;
+    const quiescence = quiesceAttachmentMedia(mockAccountUserId, {
+      nativeModule: { cancelPending: async () => undefined },
+    }).then(() => {
+      quiesced = true;
+    });
+    await Promise.resolve();
+    expect(quiesced).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      resolveEnqueue(receipt('pending'));
+      await submitFlight;
+    });
+    await quiescence;
+    expect(quiesced).toBe(true);
+    expect(mockController.drain).not.toHaveBeenCalled();
+  } finally {
+    resumeAttachmentMedia(mockAccountUserId);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  }
+});
+
 test('a direct ready account switch conceals the old receipt and starts blank', async () => {
   const availableDiagnostics = {
     appVersion: '2.3.0',
@@ -915,6 +954,55 @@ test('debounces generated duplicate suggestions without blocking typing or submi
   expect(onOpenDuplicateSuggestion).toHaveBeenCalledWith('fbk_check_in');
   await ReactTestRenderer.act(() => renderer.unmount());
   jest.useRealTimers();
+});
+
+test('quiesce waits for an active duplicate suggestion database flight', async () => {
+  jest.useFakeTimers();
+  mockOnline = true;
+  let resolveSearch!: (value: {
+    items: never[];
+    refreshedAt: null;
+    source: 'network';
+  }) => void;
+  mockDuplicateSuggestions.search.mockReturnValueOnce(
+    new Promise(resolve => {
+      resolveSearch = resolve;
+    }),
+  );
+  const renderer = await renderScreen({
+    onOpenDuplicateSuggestion: jest.fn(),
+  });
+  try {
+    await fill(renderer, 'Ähnliche Idee', 'Suche bleibt accountgebunden.');
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(450);
+      await Promise.resolve();
+    });
+
+    let quiesced = false;
+    const quiescence = quiesceAttachmentMedia(mockAccountUserId, {
+      nativeModule: { cancelPending: async () => undefined },
+    }).then(() => {
+      quiesced = true;
+    });
+    await Promise.resolve();
+    expect(quiesced).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      resolveSearch({
+        items: [],
+        refreshedAt: null,
+        source: 'network',
+      });
+      await Promise.resolve();
+    });
+    await quiescence;
+    expect(quiesced).toBe(true);
+  } finally {
+    resumeAttachmentMedia(mockAccountUserId);
+    await ReactTestRenderer.act(() => renderer.unmount());
+    jest.useRealTimers();
+  }
 });
 
 test('publishes only the latest debounced query result across rapid Unicode edits', async () => {

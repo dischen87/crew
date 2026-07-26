@@ -330,8 +330,15 @@ export function FeedbackComposeScreen({
     const abortController = new AbortController();
     setDuplicateSuggestions({ kind: 'searching' });
     const timer = setTimeout(() => {
-      runtime.duplicateSuggestions
-        .search(scopeKey, rootEventId, query, online, abortController.signal)
+      runAttachmentMediaOperation(scopeKey, () =>
+        runtime.duplicateSuggestions.search(
+          scopeKey,
+          rootEventId,
+          query,
+          online,
+          abortController.signal,
+        ),
+      )
         .then(result => {
           if (
             !mountedRef.current ||
@@ -462,7 +469,9 @@ export function FeedbackComposeScreen({
           }
           const receipt =
             receipts.find(item => item.feedbackId === feedbackId) ??
-            (await controller.get(accountUserId, feedbackId));
+            (await runAttachmentMediaOperation(accountUserId, () =>
+              controller.get(accountUserId, feedbackId),
+            ));
           if (
             receipt &&
             activeSourceBindingRef.current === expectedSourceBindingKey
@@ -487,7 +496,10 @@ export function FeedbackComposeScreen({
             lifecycle.reloadSession().catch(() => undefined);
           }
           try {
-            const receipt = await controller.get(accountUserId, feedbackId);
+            const receipt = await runAttachmentMediaOperation(
+              accountUserId,
+              () => controller.get(accountUserId, feedbackId),
+            );
             if (
               receipt &&
               activeSourceBindingRef.current === expectedSourceBindingKey
@@ -558,22 +570,24 @@ export function FeedbackComposeScreen({
           screenshotRef.current = null;
           pendingScreenshotRef.current = null;
         }
-        const receipt = await controller.enqueue(accountUserId, {
-          ...(selectedScreenshot
-            ? { attachmentId: selectedScreenshot.attachmentId }
-            : {}),
-          body,
-          diagnostics: includeDiagnostics ? boundedDiagnostics : null,
-          eventId: visibility === 'public' ? safeSource.eventId : null,
-          id: feedbackId,
-          rootEventId:
-            visibility === 'public' || selectedScreenshot
-              ? safeSource.rootEventId
-              : null,
-          screenKey: includeDiagnostics ? contextCategory.key : null,
-          title,
-          visibility,
-        });
+        const receipt = await runAttachmentMediaOperation(accountUserId, () =>
+          controller.enqueue(accountUserId, {
+            ...(selectedScreenshot
+              ? { attachmentId: selectedScreenshot.attachmentId }
+              : {}),
+            body,
+            diagnostics: includeDiagnostics ? boundedDiagnostics : null,
+            eventId: visibility === 'public' ? safeSource.eventId : null,
+            id: feedbackId,
+            rootEventId:
+              visibility === 'public' || selectedScreenshot
+                ? safeSource.rootEventId
+                : null,
+            screenKey: includeDiagnostics ? contextCategory.key : null,
+            title,
+            visibility,
+          }),
+        );
         if (
           selectedScreenshot &&
           pendingScreenshot?.feedbackId === feedbackId

@@ -168,6 +168,37 @@ test('restores only an exact retained root binding and cleans a failed preview',
   );
 });
 
+test('registers screenshot reads, cleanup, and fallback delivery with the account media lifecycle', async () => {
+  const feedbackId = 'fbk_existing';
+  mockScreenshotStore.get.mockResolvedValue({
+    ...captured,
+    accountUserId,
+    attachmentId: 'att_existing',
+    feedbackId,
+    feedbackSendStartedAt: null,
+    rootEventId,
+    state: 'retained',
+  });
+  const runtime = createRuntime();
+
+  await runtime.restore(feedbackId, rootEventId);
+  await runtime.discard(feedbackId);
+  await runtime.cleanup(feedbackId);
+  mockScreenshotStore.get.mockResolvedValue({
+    feedbackSendStartedAt: null,
+    state: 'attention',
+  });
+  await runtime.canSendWithoutScreenshot(feedbackId);
+  await runtime.sendWithoutScreenshot(feedbackId);
+
+  expect(mockRunAttachmentOperation).toHaveBeenCalledTimes(5);
+  expect(
+    mockRunAttachmentOperation.mock.calls.every(
+      ([registeredAccount]) => registeredAccount === accountUserId,
+    ),
+  ).toBe(true);
+});
+
 test('account change during capture deletes the unbound retained file', async () => {
   let activeAccount: string | null = accountUserId;
   mockCapture.mockImplementation(async () => {
