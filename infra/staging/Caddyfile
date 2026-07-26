@@ -16,7 +16,9 @@ crew-haus.com, www.crew-haus.com {
 	import security_headers
 
 	@unverified_associations path /.well-known/apple-app-site-association /.well-known/assetlinks.json
-	respond @unverified_associations 404
+	handle @unverified_associations {
+		respond 404
+	}
 
 	@gateway path /core/* /docs /docs/* /internal/live /internal/ready
 	handle @gateway {

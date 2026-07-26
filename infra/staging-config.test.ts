@@ -141,7 +141,9 @@ test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(caddy).toContain(
 		"@unverified_associations path /.well-known/apple-app-site-association /.well-known/assetlinks.json",
 	);
-	expect(caddy).toContain("respond @unverified_associations 404");
+	expect(caddy).toContain(
+		"handle @unverified_associations {\n\t\trespond 404\n\t}",
+	);
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:8080");
 	expect(caddy).toContain("Strict-Transport-Security");
