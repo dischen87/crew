@@ -1034,6 +1034,64 @@ active_record_path aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 	}
 });
 
+test("place import retries only transient source failures on official failover", () => {
+	const runPlaceImport = hostDeploy.slice(
+		hostDeploy.indexOf("run_place_import()"),
+		hostDeploy.indexOf("\nwait_for_service()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-place-import-"));
+	try {
+		const script = join(directory, "place-import.sh");
+		writeFileSync(
+			script,
+			`${runPlaceImport}
+set -Eeuo pipefail
+scenario=$1
+log=$2
+run_job() {
+	printf 'primary\n' >>"$log"
+	case "$scenario" in
+		primary-ok) return 0 ;;
+		primary-hard) return 2 ;;
+		*) return 75 ;;
+	esac
+}
+compose_command() {
+	printf '%s\n' "$*" >>"$log"
+	[[ "$scenario" != fallback-fail ]] || return 75
+}
+run_place_import /release
+`,
+		);
+		for (const [scenario, expectedStatus, fallback] of [
+			["primary-ok", 0, false],
+			["primary-hard", 2, false],
+			["fallback-ok", 0, true],
+			["fallback-fail", 75, true],
+		] as const) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).toBe(
+				expectedStatus,
+			);
+			const calls = readFileSync(log, "utf8");
+			expect(calls.includes("https://z.overpass-api.de/api/interpreter")).toBe(
+				fallback,
+			);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(caddy).toContain("crew-haus.com, www.crew-haus.com");
 	expect(caddy).toContain("staging.crew-haus.com");

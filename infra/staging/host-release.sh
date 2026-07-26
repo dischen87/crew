@@ -1567,6 +1567,27 @@ run_job() {
 		--exit-code-from "${service}" "${service}"
 }
 
+run_place_import() {
+	local release_dir=$1
+	local import_status
+	if run_job "${release_dir}" place-golf-import; then
+		return 0
+	else
+		import_status=$?
+	fi
+	if [[ "${import_status}" -eq 75 ]]; then
+		echo "Primary Overpass unavailable; retrying the official failover" >&2
+		if compose_command "${release_dir}" run --rm --no-deps \
+			-e PLACE_GOLF_IMPORT_OVERPASS_URL=https://z.overpass-api.de/api/interpreter \
+			place-golf-import; then
+			return 0
+		else
+			import_status=$?
+		fi
+	fi
+	return "${import_status}"
+}
+
 wait_for_service() {
 	local release_dir=$1
 	local service=$2
@@ -1948,7 +1969,7 @@ if [[ "${action}" == deploy ]]; then
 		notification-worker recap-retention-worker api-gateway web; do
 		wait_for_service "${release_dir}" "${service}"
 	done
-	if run_job "${release_dir}" place-golf-import; then
+	if run_place_import "${release_dir}"; then
 		:
 	else
 		import_status=$?
