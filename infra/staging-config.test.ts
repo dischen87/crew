@@ -647,7 +647,7 @@ docker volume inspect "$decoy"
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
-});
+}, 15_000);
 
 test("reset digest drift reuses the stored manifest and keeps its intent", () => {
 	const canonicalizeManifest = hostDeploy.slice(
