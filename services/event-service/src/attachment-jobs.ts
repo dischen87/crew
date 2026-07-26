@@ -392,7 +392,6 @@ async function feedbackOrphanObjectKey(tx: Tx, upload: AttachmentUploadRecord) {
 				WHERE link.root_event_id = attachment.root_event_id
 					AND link.attachment_id = attachment.id
 			)
-		FOR UPDATE OF attachment
 	`;
 	return orphan?.objectKey ?? null;
 }

@@ -370,7 +370,7 @@ async function validateAttachments(
 		WHERE attachment.root_event_id = ${rootEventId}
 			AND attachment.id IN ${tx(attachmentIds)}
 		ORDER BY attachment.id
-		FOR UPDATE OF attachment, upload
+		FOR UPDATE OF upload
 	`;
 	if (attachments.length !== attachmentIds.length) throw notFound();
 	for (const attachment of attachments) {
@@ -404,7 +404,7 @@ async function validateAttachments(
 				AND attachment.target_type = 'feed_entry'
 				AND current.deleted_at IS NULL
 				${attachmentVisibility(tx, role)}
-			FOR SHARE OF attachment, entry, current
+			FOR SHARE OF entry, current
 		`;
 		if (!visibleAttachment) throw notFound();
 		bindings.set(attachment.id, {

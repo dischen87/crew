@@ -26,6 +26,7 @@ import {
 	type UploadObjectSpec,
 	verifyAttachmentBytes,
 } from "./object-store";
+import { createFeedback } from "./postgres-feedback";
 import { PostgresEventRepository } from "./postgres-repository";
 import { EventService } from "./service";
 import { installPublishedRootFixtures } from "./test-published-root-fixture";
@@ -67,7 +68,13 @@ beforeAll(async () => {
 		GRANT USAGE ON SCHEMA public TO
 			${attachmentApiAclRole}, ${attachmentWorkerAclRole},
 			${attachmentOtherWorkerAclRole};
+		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
+			TO ${attachmentApiAclRole};
+		REVOKE ALL ON event_schema_migrations, event_attachments
+			FROM ${attachmentApiAclRole};
 		GRANT SELECT, INSERT ON event_attachments TO ${attachmentApiAclRole};
+		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
+			TO ${attachmentApiAclRole};
 		GRANT SELECT, UPDATE ON event_attachment_verify_jobs,
 			event_attachment_cleanup_jobs, event_attachment_uploads
 			TO ${attachmentWorkerAclRole};
@@ -855,19 +862,28 @@ describe("durable event feed and attachments", () => {
 			"fbk_feedbackacl_linked",
 			"att_feedbackacl_linked",
 		);
-		await service.createFeedback(participant, {
+		expect(
+			await asDatabaseRole(attachmentApiAclRole, (tx) =>
+				createFeedback(tx, participant, {
+					id: "fbk_feedbackacl_linked",
+					title: "Linked screenshot",
+					body: "The cleanup function must retain this attachment.",
+					visibility: "private",
+					rootEventId,
+					eventId: rootEventId,
+					screenKey: "feedback.compose",
+					diagnostics: null,
+					attachmentIds: [linked.attachment.id],
+				}),
+			),
+		).toMatchObject({
 			id: "fbk_feedbackacl_linked",
-			title: "Linked screenshot",
-			body: "The cleanup function must retain this attachment.",
-			visibility: "private",
-			rootEventId,
-			eventId: rootEventId,
-			screenKey: "feedback.compose",
-			diagnostics: null,
-			attachmentIds: [linked.attachment.id],
+			attachments: [{ id: linked.attachment.id }],
 		});
 
-		const jobs = new PostgresAttachmentJobRepository(sql);
+		const jobs = new PostgresAttachmentJobRepository(
+			databaseRoleSql(attachmentWorkerAclRole),
+		);
 		const claim = async (uploadId: string, workerId: string) => {
 			await sql`
 				UPDATE event_attachment_uploads
@@ -2384,6 +2400,13 @@ async function asDatabaseRole<T>(
 		await tx.unsafe(`SET LOCAL ROLE ${role}`);
 		return operation(tx);
 	}) as Promise<T>;
+}
+
+function databaseRoleSql(role: string) {
+	return {
+		begin: (operation: (tx: Sql) => Promise<unknown>) =>
+			asDatabaseRole(role, operation),
+	} as unknown as Sql;
 }
 
 async function databaseErrorCode(operation: () => Promise<unknown>) {
