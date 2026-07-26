@@ -9,10 +9,10 @@
       "sourceState": "committed"
     },
     "event-service": {
-      "digest": "sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad",
+      "digest": "sha256:e3bfde8a5dce4713b15a5ff5c12dce8d061201ef3b6f871254f8a993d2052e77",
       "version": "0.1.0",
       "source": "../event-service/openapi/openapi.json",
-      "sourceCommit": "62400e93ba28da60fbba249535025ed14a43369b",
+      "sourceCommit": "b43b189f4ac2dc32506532af67f38f76681c1f3d",
       "sourceState": "committed"
     }
   }

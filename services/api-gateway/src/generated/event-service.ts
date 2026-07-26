@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/event-service.openapi.json.
- * Pin: sha256:cabfa5d14f6c554ccca06bf1a672aff84e3bd42cf54dcd0511c3b44be7a040ad
+ * Pin: sha256:e3bfde8a5dce4713b15a5ff5c12dce8d061201ef3b6f871254f8a993d2052e77
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -10529,12 +10529,20 @@ export interface operations {
                 "application/json": {
                     candidateId: string;
                     /** @enum {string} */
+                    capabilityType: "travel" | "lodging" | "transport" | "golf" | "team";
+                    eventId: string;
+                    rootEventId: string;
+                    /** @enum {string} */
                     target: "candidate";
                 } | {
+                    /** @enum {string} */
+                    capabilityType: "travel" | "lodging" | "transport" | "golf" | "team";
                     countryCode: string;
+                    eventId: string;
                     /** @enum {string} */
                     kind: "golf_course" | "venue";
                     query: string;
+                    rootEventId: string;
                     /** @enum {string} */
                     target: "search_miss";
                 };
@@ -10635,7 +10643,9 @@ export interface operations {
     };
     placeEnrichmentJobsGet: {
         parameters: {
-            query?: never;
+            query: {
+                rootEventId: string;
+            };
             header?: never;
             path: {
                 jobId: string;
@@ -10647,6 +10657,8 @@ export interface operations {
             /** @description Enrichment status */
             200: {
                 headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
                     /** @description Crew request correlation identifier */
                     "X-Request-ID"?: string;
                     [name: string]: unknown;
@@ -10695,7 +10707,9 @@ export interface operations {
     };
     placeEnrichmentJobsRetry: {
         parameters: {
-            query?: never;
+            query: {
+                rootEventId: string;
+            };
             header: {
                 "idempotency-key": string;
             };
