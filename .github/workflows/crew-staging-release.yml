@@ -72,7 +72,7 @@ jobs:
 
       - name: Log in to GHCR
         if: ${{ !inputs.reuse_stored_manifest }}
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -80,12 +80,12 @@ jobs:
 
       - name: Set up Docker Buildx
         if: ${{ !inputs.reuse_stored_manifest }}
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
 
       - name: Publish API gateway
         if: ${{ !inputs.reuse_stored_manifest }}
         id: api_gateway
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: services/api-gateway/Dockerfile
@@ -100,7 +100,7 @@ jobs:
       - name: Publish User service
         if: ${{ !inputs.reuse_stored_manifest }}
         id: user_service
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: services/user-service/Dockerfile
@@ -115,7 +115,7 @@ jobs:
       - name: Publish Event service
         if: ${{ !inputs.reuse_stored_manifest }}
         id: event_service
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: services/event-service/Dockerfile
@@ -130,7 +130,7 @@ jobs:
       - name: Publish infrastructure tools
         if: ${{ !inputs.reuse_stored_manifest }}
         id: infra
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: infra/Dockerfile
@@ -145,7 +145,7 @@ jobs:
       - name: Publish rate-limit Redis
         if: ${{ !inputs.reuse_stored_manifest }}
         id: rate_limit_redis
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: infra/redis/Dockerfile
@@ -177,7 +177,7 @@ jobs:
       - name: Publish web
         if: ${{ !inputs.reuse_stored_manifest }}
         id: web
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: ${{ steps.web_context.outputs.path }}
           file: ${{ steps.web_context.outputs.path }}/apps/web/Dockerfile
@@ -234,7 +234,7 @@ jobs:
 
       - name: Upload immutable image manifest
         if: ${{ !inputs.reuse_stored_manifest }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: crew-staging-image-manifest-${{ inputs.release_sha }}
           path: crew-staging-image-manifest.json
