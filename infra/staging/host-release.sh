@@ -377,7 +377,8 @@ load_target_image_manifest() {
 }
 
 active_record_path() {
-	local release_sha=$1 pointer="${records_dir}/active-${release_sha}.record"
+	local release_sha=$1
+	local pointer="${records_dir}/active-${release_sha}.record"
 	if [[ -e "${pointer}" ]]; then
 		[[ -f "${pointer}" && ! -L "${pointer}" &&
 			$(stat -c '%U:%G:%a' "${pointer}") == root:root:600 ]] || {

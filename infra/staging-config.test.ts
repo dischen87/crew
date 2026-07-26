@@ -1001,6 +1001,39 @@ test("GitHub deploy key is constrained to the current main controller", () => {
 	expect(githubDeploy).not.toContain("StrictHostKeyChecking=no");
 });
 
+test("host release active record lookup survives strict shell", () => {
+	const activeRecordPath = hostDeploy.slice(
+		hostDeploy.indexOf("active_record_path()"),
+		hostDeploy.indexOf("\nvalidate_record()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-strict-shell-"));
+	try {
+		const record = join(directory, "current.record");
+		const script = join(directory, "strict-shell.sh");
+		writeFileSync(record, "record-ok\n");
+		writeFileSync(
+			script,
+			`${activeRecordPath}
+set -Eeuo pipefail
+records_dir=$1
+current_record_file=$2
+active_record_path aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`,
+		);
+		const result = spawnSync(
+			"node",
+			["-e", nativeSpawn, "/bin/bash", script, directory, record],
+			{
+				encoding: "utf8",
+				env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+			},
+		);
+		expect(result.status, result.stderr).toBe(0);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(caddy).toContain("crew-haus.com, www.crew-haus.com");
 	expect(caddy).toContain("staging.crew-haus.com");
