@@ -98,7 +98,7 @@ test("private production dependencies terminate TLS at the isolated proxy", () =
 	expect(services["internal-tls"]?.ports).toEqual(["0.0.0.0:8444:8444"]);
 	expect(
 		(services["internal-tls"]?.healthcheck as Record<string, unknown>)?.test,
-	).toEqual(["CMD", "kill", "-0", "1"]);
+	).toEqual(["CMD", "nc", "-z", "-w", "1", "127.0.0.1", "6379"]);
 	for (const port of ["6379", "8443", "8444", "8445", "8446", "8447"]) {
 		expect(haproxy).toContain(`bind :${port} ssl crt`);
 	}

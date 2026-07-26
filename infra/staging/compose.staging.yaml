@@ -22,7 +22,7 @@ services:
         aliases:
           - staging.crew-haus.com
     healthcheck:
-      test: [CMD, kill, "-0", "1"]
+      test: [CMD, nc, -z, -w, "1", 127.0.0.1, "6379"]
       interval: 10s
       timeout: 5s
       retries: 6
