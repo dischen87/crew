@@ -898,7 +898,7 @@ test("staging release publishes six digests behind the reviewed environment", ()
 		"docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 		"docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
 		"actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-		"actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+		"actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
 	]) {
 		expect(releaseWorkflow).toContain(action);
 	}
