@@ -32,6 +32,7 @@ import {
   type TeamDeliveryState,
   type TeamRole,
 } from './TeamCollaborationController';
+import { parseSystemFeedPayload } from './systemFeedPayload';
 
 type DeviceIdReader = {
   assertCurrent?(
@@ -980,7 +981,7 @@ function systemFeedBody(entry: FeedRecord): string | null {
     return null;
   }
   try {
-    const payload = JSON.parse(entry.payloadJson) as Record<string, unknown>;
+    const payload = parseSystemFeedPayload(entry.payloadJson);
     if (
       payload.schemaVersion !== 1 ||
       typeof payload.actorUserId !== 'string' ||

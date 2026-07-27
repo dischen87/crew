@@ -217,11 +217,13 @@ test('runtime retains an older authorized feed target and renders only known sys
     createdAt: '2026-07-18T08:00:00.000Z',
     kind: 'system' as const,
     payloadJson: JSON.stringify({
-      actorUserId: accountUserId,
-      entityVersion: 2,
-      eventId,
-      schemaVersion: 1,
-      type: 'event.published',
+      text: JSON.stringify({
+        actorUserId: accountUserId,
+        entityVersion: 2,
+        eventId,
+        schemaVersion: 1,
+        type: 'event.published',
+      }),
     }),
   };
   const listFeed = jest
@@ -232,10 +234,12 @@ test('runtime retains an older authorized feed target and renders only known sys
         ...focused,
         id: 'fed_sys_unknown',
         payloadJson: JSON.stringify({
-          actorUserId: accountUserId,
-          entityVersion: 1,
-          schemaVersion: 1,
-          type: 'future.system.event',
+          text: JSON.stringify({
+            actorUserId: accountUserId,
+            entityVersion: 1,
+            schemaVersion: 1,
+            type: 'future.system.event',
+          }),
         }),
       },
     ]);

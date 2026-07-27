@@ -31,6 +31,7 @@ import { deniedRootRegistry } from '../storage/deniedRoots';
 import { secureUuidV4 } from '../storage/secureRandom';
 import type { RootStackParamList } from '../navigation/types';
 import { reconcileRetainedAttachmentFiles } from '../media/attachmentMedia';
+import { parseSystemFeedPayload } from '../team/systemFeedPayload';
 import {
   EventHubView,
   participantCountLabel,
@@ -788,6 +789,7 @@ function latestFeedUpdate(
   now: Date,
 ): EventHubModel['feedUpdate'] {
   for (const entry of feed) {
+    if (entry.kind === 'system') continue;
     try {
       const payload = JSON.parse(entry.payloadJson) as { text?: unknown };
       const action =
@@ -819,7 +821,7 @@ function eventHubCrewTarget(
   for (const entry of feed) {
     if (entry.kind !== 'system' || entry.payloadSchemaVersion !== 1) continue;
     try {
-      const payload = JSON.parse(entry.payloadJson) as Record<string, unknown>;
+      const payload = parseSystemFeedPayload(entry.payloadJson);
       if (
         !assignment &&
         payload.schemaVersion === 1 &&

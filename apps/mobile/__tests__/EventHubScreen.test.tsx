@@ -729,6 +729,15 @@ test('routes the Crew tab to the latest role-correct synchronized team surface',
       type: 'team.assignments.published',
     }),
   ];
+  expect(
+    eventHubModelFromReadModels({
+      now: new Date('2026-07-18T12:00:00.000Z'),
+      phase: 'cached',
+      selectedDateId: null,
+      snapshot: participantRead,
+      syncStatus: null,
+    }).feedUpdate,
+  ).toBeNull();
   mockPrivateDatabase = {
     accountId: accountA,
     database: {
@@ -1081,10 +1090,12 @@ function systemFeed(
     kind: 'system',
     parentEntryId: null,
     payloadJson: JSON.stringify({
-      actorUserId: accountUserId,
-      entityVersion: 1,
-      schemaVersion: 1,
-      ...payload,
+      text: JSON.stringify({
+        actorUserId: accountUserId,
+        entityVersion: 1,
+        schemaVersion: 1,
+        ...payload,
+      }),
     }),
     payloadSchemaVersion: 1,
     revisionOrdinal: 1,
