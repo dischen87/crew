@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "status": "coherent_pass",
+  "generatedAt": "2026-07-27T20:15:46Z",
+  "finalizedAt": "2026-07-27T21:11:56Z",
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "source": {
+    "branch": "main",
+    "head": "75a6761c046758a89e8b84349ac80766d827d637",
+    "originMain": "75a6761c046758a89e8b84349ac80766d827d637",
+    "cleanTrackedTree": true
+  },
+  "rootEventId": "evt_local_team_day_2026",
+  "fixture": {
+    "scenario": "team-event",
+    "turkeyOrGolfFixtureDependency": false
+  },
+  "builds": {
+    "androidSha256": "101771f4940ffa9a37248751d9f6c5878b367e5acf78d9d9ecc544b5df2718ae",
+    "iosExecutableSha256": "60128f85434f18f3948e578c305c362521bd24d712b1096f7acd48a5550fde40",
+    "iosDebugDylibSha256": "c08fe76a6413b3e88dbbdf30482bfa29172eff8932b41c72e22c399c0b8ee2a7"
+  },
+  "counts": {
+    "junitReports": 21,
+    "junitTestCases": 21,
+    "junitFailures": 0,
+    "screenshots": 22,
+    "gatewayTraces": 8,
+    "flows": 21,
+    "oracles": 4
+  },
+  "executionOrder": [
+    {
+      "sequence": 1,
+      "phase": "ios-owner",
+      "flow": "flows/15-ios-events-start.yaml",
+      "report": "ios/reports/00-events-start.xml"
+    },
+    {
+      "sequence": 2,
+      "phase": "ios-owner",
+      "flow": "flows/16-ios-owner-magic-submit.yaml",
+      "report": "ios/reports/01-owner-magic-request.xml"
+    },
+    {
+      "sequence": 3,
+      "phase": "ios-owner",
+      "flow": "flows/17-ios-owner-auth-complete.yaml",
+      "report": "ios/reports/02-owner-auth-complete.xml"
+    },
+    {
+      "sequence": 4,
+      "phase": "ios-owner",
+      "flow": "flows/18-ios-owner-plan-live-editor.yaml",
+      "report": "ios/reports/03-owner-plan-live-editor.xml"
+    },
+    {
+      "sequence": 5,
+      "phase": "ios-owner",
+      "flow": "flows/19-ios-owner-crew.yaml",
+      "report": "ios/reports/04-owner-crew.xml"
+    },
+    {
+      "sequence": 6,
+      "phase": "android-participant-feed",
+      "flow": "flows/00-android-participant-magic-request.yaml",
+      "report": "android/reports/00-participant-magic-request.xml"
+    },
+    {
+      "sequence": 7,
+      "phase": "android-participant-feed",
+      "flow": "flows/01-android-participant-bootstrap.yaml",
+      "report": "android/reports/01-participant-bootstrap.xml"
+    },
+    {
+      "sequence": 8,
+      "phase": "android-participant-feed",
+      "flow": "flows/02-android-participant-crew.yaml",
+      "report": "android/reports/02-participant-crew.xml"
+    },
+    {
+      "sequence": 9,
+      "phase": "android-participant-feed",
+      "flow": "flows/03-android-feed-open.yaml",
+      "report": "android/reports/03-feed-open.xml"
+    },
+    {
+      "sequence": 10,
+      "phase": "android-participant-feed",
+      "flow": "flows/04-android-feed-submit-queued.yaml",
+      "report": "android/reports/04-feed-submit-queued.xml"
+    },
+    {
+      "sequence": 11,
+      "phase": "android-participant-feed",
+      "flow": "flows/05-android-feed-queued-capture.yaml",
+      "report": "android/reports/04a-feed-queued-capture.xml"
+    },
+    {
+      "sequence": 12,
+      "phase": "android-participant-feed",
+      "flow": "flows/06-android-feed-true-relaunch.yaml",
+      "report": "android/reports/05-feed-true-relaunch.xml"
+    },
+    {
+      "sequence": 13,
+      "phase": "android-participant-feed",
+      "flow": "flows/07-android-feed-relaunch-capture.yaml",
+      "report": "android/reports/05a-feed-relaunch-capture.xml"
+    },
+    {
+      "sequence": 14,
+      "phase": "android-participant-feed",
+      "flow": "flows/08-android-feed-response-loss-retained.yaml",
+      "report": "android/reports/06-feed-response-loss-retained.xml"
+    },
+    {
+      "sequence": 15,
+      "phase": "android-participant-feed",
+      "flow": "flows/09-android-feed-replay-converged.yaml",
+      "report": "android/reports/07-feed-replay-converged.xml"
+    },
+    {
+      "sequence": 16,
+      "phase": "ios-owner-readback",
+      "flow": "flows/20-ios-owner-feed-readback.yaml",
+      "report": "ios/reports/05-owner-feed-readback.xml"
+    },
+    {
+      "sequence": 17,
+      "phase": "android-feedback",
+      "flow": "flows/10-android-feedback-capture-slow-fill.yaml",
+      "report": "android/reports/08-feedback-capture-slow-fill.xml"
+    },
+    {
+      "sequence": 18,
+      "phase": "android-feedback",
+      "flow": "flows/11-android-feedback-submit-pending.yaml",
+      "report": "android/reports/09-feedback-submit-pending.xml"
+    },
+    {
+      "sequence": 19,
+      "phase": "android-feedback",
+      "flow": "flows/12-android-feedback-upload-delivered.yaml",
+      "report": "android/reports/10-feedback-upload-delivered.xml"
+    },
+    {
+      "sequence": 20,
+      "phase": "android-feedback",
+      "flow": "flows/13-android-feedback-cold-restart-readback.yaml",
+      "report": "android/reports/11-feedback-cold-restart-readback.xml"
+    },
+    {
+      "sequence": 21,
+      "phase": "android-feedback",
+      "flow": "flows/14-android-feedback-logout.yaml",
+      "report": "android/reports/12-feedback-logout.xml"
+    }
+  ],
+  "phases": {
+    "apiFixtureEventInviteRedeem": "pass",
+    "iosOwnerAuthPlanLiveEditorCrew": "pass",
+    "androidParticipantAuthCrew": "pass",
+    "androidOfflineSubmitTrueRelaunch": "pass",
+    "androidCommittedResponseLossReplayConvergence": "pass",
+    "iosOwnerFeedReadback": "pass",
+    "androidFeedbackSlowComposeErrorGate": "pass",
+    "androidFeedbackSubmitUploadRestartReadbackLogout": "pass",
+    "buildProvenance": "pass",
+    "sanitization": "pass",
+    "isolatedResourceCleanup": "pass"
+  },
+  "objectStoreRecovery": {
+    "initialHttp507Responses": 10,
+    "proxyErrors": 0,
+    "cause": "isolated MinIO low-disk protection",
+    "samePendingSubmissionResumed": true,
+    "productOrDatabaseStateEdited": false,
+    "expiredQuarantineAttemptCount": 1,
+    "committedUploadCount": 1
+  },
+  "devices": {
+    "ios": "fresh disposable iPhone 17 Pro simulator - iOS 26.2",
+    "android": "clean Android API 36 emulator"
+  },
+  "scope": {
+    "localNativeAcceptance": true,
+    "physicalDeviceAcceptance": false,
+    "distributionBuildAcceptance": false,
+    "stagingAcceptance": false,
+    "productionAcceptance": false
+  },
+  "cleanup": {
+    "isolatedServicePortsReleased": true,
+    "androidEmulatorRemoved": true,
+    "disposableIosSimulatorRemoved": true,
+    "testDatabasesRemoved": true,
+    "temporaryRunPathsRemoved": true,
+    "sparseObjectStoreVolumeDetached": true,
+    "foreignPort8081Untouched": true
+  }
+}

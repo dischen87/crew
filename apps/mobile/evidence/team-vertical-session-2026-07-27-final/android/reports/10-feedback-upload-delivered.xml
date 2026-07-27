@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" time="14.0">
+    <testcase id="12-android-feedback-upload-delivered" name="12-android-feedback-upload-delivered" classname="12-android-feedback-upload-delivered" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/12-android-feedback-upload-delivered.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

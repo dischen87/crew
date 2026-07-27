@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 17 Pro simulator - iOS 26.2" tests="1" failures="0" time="3.0">
+    <testcase id="15-ios-events-start" name="15-ios-events-start" classname="15-ios-events-start" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/15-ios-events-start.yaml" time="3.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

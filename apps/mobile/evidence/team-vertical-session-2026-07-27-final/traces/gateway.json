@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "records": [
+    {
+      "sequence": 1,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 2,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 3,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 4,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 5,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "transport-detached",
+      "downstreamStatus": null,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 6,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": false,
+      "outcome": "success-suppressed",
+      "downstreamStatus": 200,
+      "facadeStatus": 503
+    },
+    {
+      "sequence": 7,
+      "requestId": "crew-e2e.android",
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "sync-push",
+      "bodyFingerprint": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+      "feedbackFingerprint": null,
+      "idempotencyFingerprint": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+      "replayed": true,
+      "outcome": "forwarded",
+      "downstreamStatus": 200,
+      "facadeStatus": 200
+    },
+    {
+      "sequence": 8,
+      "requestId": null,
+      "requestFingerprint": "sha256:2743afe2a1a5e19a0e24026dcc3a32e42191614c9825bd4e6bbf18c84aeadd0e",
+      "operation": "feedback-create",
+      "bodyFingerprint": "sha256:72bd905ac6b2255ede3aa3b5b3fd1e35189d25771d4b1c4dcec97718454a2a7c",
+      "feedbackFingerprint": "sha256:7fa90644395ca76ea34295c5c66d35cc66a41022d4c8ab29f24bee5b8c12e90b",
+      "idempotencyFingerprint": "sha256:4293585c841608da2fa72dad629fae5897e432f3a68435fb03b5ef20e2c84053",
+      "replayed": false,
+      "outcome": "forwarded",
+      "downstreamStatus": 201,
+      "facadeStatus": 201
+    }
+  ]
+}

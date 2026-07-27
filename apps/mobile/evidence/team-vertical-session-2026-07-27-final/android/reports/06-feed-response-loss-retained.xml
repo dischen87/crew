@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" time="3.0">
+    <testcase id="08-android-feed-response-loss-retained" name="08-android-feed-response-loss-retained" classname="08-android-feed-response-loss-retained" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/08-android-feed-response-loss-retained.yaml" time="3.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

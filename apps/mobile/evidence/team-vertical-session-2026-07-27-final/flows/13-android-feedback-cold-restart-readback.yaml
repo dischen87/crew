@@ -1,0 +1,18 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- extendedWaitUntil:
+    visible: Android Team Feedback 8.3 75a6761
+    timeout: 30000
+- assertVisible: Android Team Feedback 8.3 75a6761
+- takeScreenshot: ${CAPTURE_DIR}/10-feedback-cold-restart-server-item

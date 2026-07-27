@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "sourceRevision": "75a6761c046758a89e8b84349ac80766d827d637",
+  "originMainRevision": "75a6761c046758a89e8b84349ac80766d827d637",
+  "rootEventId": "evt_local_team_day_2026",
+  "fixtureScenario": "team-event",
+  "turkeyOrGolfFixtureDependency": false,
+  "androidInstalledSha256": "101771f4940ffa9a37248751d9f6c5878b367e5acf78d9d9ecc544b5df2718ae",
+  "iosInstalledExecutableSha256": "60128f85434f18f3948e578c305c362521bd24d712b1096f7acd48a5550fde40",
+  "apiFixtureBound": true,
+  "allArtifactsFromOneRunnerSession": true,
+  "allFlowsCopiedBeforeExecution": true,
+  "junitTestCases": 21,
+  "junitFailures": 0,
+  "screenshots": 22,
+  "gatewayTraces": 8,
+  "result": "pass"
+}

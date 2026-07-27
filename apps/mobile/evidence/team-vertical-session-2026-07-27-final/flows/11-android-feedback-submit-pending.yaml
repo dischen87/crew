@@ -1,0 +1,15 @@
+appId: ${APP_ID}
+---
+- tapOn:
+    id: feedback-compose-submit
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-return
+    timeout: 30000
+- extendedWaitUntil:
+    visible: WARTET AUF VERBINDUNG
+    timeout: 30000
+- assertVisible: Text und Screenshot sind lokal gespeichert. Die Zustellung ist noch nicht bestätigt.
+- takeScreenshot: ${CAPTURE_DIR}/08-feedback-pending
+

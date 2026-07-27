@@ -1,0 +1,114 @@
+appId: ${APP_ID}
+---
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- assertNotVisible: AbortError
+- assertNotVisible: LogBox
+- assertNotVisible: Unhandled JS Exception
+- assertNotVisible: 'Uncaught \(in promise'
+- assertNotVisible: Log 1 of 1
+- takeScreenshot: ${CAPTURE_DIR}/05a-feedback-precompose-clean
+- scrollUntilVisible:
+    element:
+      id: community-feedback-compose-screenshot
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: community-feedback-compose-screenshot
+    enabled: true
+- takeScreenshot: ${CAPTURE_DIR}/05-feedback-source
+- tapOn:
+    id: community-feedback-compose-screenshot
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-preview
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-preview
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: false
+    enabled: true
+- takeScreenshot: ${CAPTURE_DIR}/06-feedback-preview-consent-off
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-title
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-title
+- inputText: Android
+- runScript: wait-650ms.js
+- inputText: " Team"
+- runScript: wait-650ms.js
+- inputText: " Feedback"
+- runScript: wait-650ms.js
+- inputText: " 8.3"
+- runScript: wait-650ms.js
+- inputText: " 75a6761"
+- runScript: wait-650ms.js
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    point: 20%,20%
+- inputText: Native
+- runScript: wait-650ms.js
+- inputText: " capture"
+- runScript: wait-650ms.js
+- inputText: " upload"
+- runScript: wait-650ms.js
+- inputText: " restart"
+- runScript: wait-650ms.js
+- inputText: " readback."
+- runScript: wait-650ms.js
+- hideKeyboard
+- assertNotVisible: AbortError
+- assertNotVisible: LogBox
+- assertNotVisible: Unhandled JS Exception
+- assertNotVisible: 'Uncaught \(in promise'
+- assertNotVisible: Log 1 of 1
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-consent
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-screenshot-consent
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: true
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
+- takeScreenshot: ${CAPTURE_DIR}/07-feedback-submit-ready
+- takeScreenshot: ${CAPTURE_DIR}/07a-feedback-posttype-clean

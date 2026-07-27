@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" time="10.0">
+    <testcase id="06-android-feed-true-relaunch" name="06-android-feed-true-relaunch" classname="06-android-feed-true-relaunch" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/06-android-feed-true-relaunch.yaml" time="10.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

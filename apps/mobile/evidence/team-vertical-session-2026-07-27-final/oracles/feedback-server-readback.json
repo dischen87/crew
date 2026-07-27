@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "rootEventId": "evt_local_team_day_2026",
+  "feedback": {
+    "title": "Android Team Feedback 8.3 75a6761",
+    "count": 1,
+    "visibility": "public",
+    "status": "open",
+    "createTraceSequence": 8,
+    "createDownstreamStatus": 201,
+    "createFacadeStatus": 201
+  },
+  "attachment": {
+    "feedbackAttachmentLinkCount": 1,
+    "eventAttachmentCount": 1,
+    "committedUploadCount": 1,
+    "expiredQuarantineAttemptCount": 1,
+    "committedUploadState": "committed",
+    "contentType": "image/png",
+    "byteCount": 677403,
+    "databaseSha256": "feae5b57dcadea863e6247f25e26c2677f6a01dde682ec732a8ec43fbb373db6",
+    "committedObjectSha256": "feae5b57dcadea863e6247f25e26c2677f6a01dde682ec732a8ec43fbb373db6",
+    "databaseMatchesCommittedObject": true,
+    "databaseBytesMatchCommittedObject": true
+  },
+  "harnessRecovery": {
+    "productStateEdited": false,
+    "databaseEdited": false,
+    "initialObjectStoreResponses": {
+      "http507": 10,
+      "proxyErrors": 0
+    },
+    "cause": "isolated MinIO low-disk protection",
+    "samePendingRecordResumed": true,
+    "realAndroidOfflineOnlineTransitionsUsed": true,
+    "ownedObjectStoreDataPreservedAcrossRestart": true
+  },
+  "nativeAcceptance": {
+    "sameAndroidEmulatorCapturedScreenshot": true,
+    "previewConsentOff": true,
+    "oneFeedbackSubmission": true,
+    "pendingStateVisibleBeforeDelivery": true,
+    "transportDetachedBeforeDeliveryRestart": true,
+    "deliveredStateVisible": true,
+    "committedStateVisible": true,
+    "screenshotBindingVisible": true,
+    "screenshotMetadataVisible": true,
+    "coldRestartServerReadbackVisible": true,
+    "logoutVisible": true
+  },
+  "screenshots": [
+    "android/screenshots/05-feedback-source.png",
+    "android/screenshots/06-feedback-preview-consent-off.png",
+    "android/screenshots/08-feedback-pending.png",
+    "android/screenshots/09-feedback-delivered.png",
+    "android/screenshots/10-feedback-cold-restart-server-item.png",
+    "android/screenshots/11-signed-out-after-purge.png"
+  ],
+  "result": "pass"
+}

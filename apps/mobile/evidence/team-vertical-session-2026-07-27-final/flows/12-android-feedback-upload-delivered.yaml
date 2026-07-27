@@ -1,0 +1,30 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- openLink: crewnext://e2e/outbox/evt_local_team_day_2026
+- extendedWaitUntil:
+    visible:
+      id: native-e2e-feedback-evidence
+    timeout: 30000
+- scrollUntilVisible:
+    element: DELIVERED
+    direction: DOWN
+    timeout: 60000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: DELIVERED
+- assertVisible: COMMITTED
+- scrollUntilVisible:
+    element: "Screenshot-Metadaten stimmen: JA"
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: "Screenshot-Bindung stimmt: JA"
+- assertVisible: "Screenshot-Metadaten stimmen: JA"
+- takeScreenshot: ${CAPTURE_DIR}/09-feedback-delivered

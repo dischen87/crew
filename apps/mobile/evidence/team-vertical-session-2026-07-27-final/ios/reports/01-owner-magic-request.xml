@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 17 Pro simulator - iOS 26.2" tests="1" failures="0" time="7.0">
+    <testcase id="16-ios-owner-magic-submit" name="16-ios-owner-magic-submit" classname="16-ios-owner-magic-submit" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/16-ios-owner-magic-submit.yaml" time="7.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

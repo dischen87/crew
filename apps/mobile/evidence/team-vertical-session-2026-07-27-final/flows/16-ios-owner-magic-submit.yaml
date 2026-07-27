@@ -1,0 +1,24 @@
+appId: ${APP_ID}
+---
+- assertVisible:
+    id: private-access-signed-out
+- tapOn:
+    id: private-access-sign-in
+- extendedWaitUntil:
+    visible:
+      id: sign-in-view
+    timeout: 15000
+- tapOn:
+    id: sign-in-email
+- inputText: crew.team.local@example.test
+- assertVisible:
+    id: sign-in-view
+- assertVisible:
+    id: sign-in-email
+    text: crew.team.local@example.test
+- tapOn:
+    id: sign-in-submit
+- extendedWaitUntil:
+    visible: ANFRAGE ANGENOMMEN
+    timeout: 20000
+- assertVisible: Wenn die Adresse verwendet werden kann, senden wir einen Anmeldelink.

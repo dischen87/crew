@@ -1,0 +1,13 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 30000
+

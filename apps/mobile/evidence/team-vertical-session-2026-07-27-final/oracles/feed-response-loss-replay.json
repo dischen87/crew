@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "rootEventId": "evt_local_team_day_2026",
+  "requestId": "crew-e2e.android",
+  "traceRange": {
+    "firstSequence": 1,
+    "lastSequence": 7,
+    "count": 7
+  },
+  "fingerprints": {
+    "body": "sha256:f18a0fe67332166e7ddd77d73812b58e127c432aa5567d5baca9a05c5b13b367",
+    "idempotency": "sha256:255d52fc08aeb33f2018882ab85f0759791c5f32d06d6d81340a9e1f8e5bc609",
+    "stableAcrossAllAttempts": true
+  },
+  "outcomes": {
+    "transportDetachedAttempts": 5,
+    "committedResponseSuppressedAttempts": 1,
+    "replayedSuccessAttempts": 1,
+    "committedDownstreamStatus": 200,
+    "suppressedFacadeStatus": 503,
+    "replayFacadeStatus": 200,
+    "finalReplayFlag": true
+  },
+  "nativeAcceptance": {
+    "queuedStateVisible": true,
+    "trueAndroidRelaunchRetainedItem": true,
+    "committedResponseLossRetainedItem": true,
+    "eventualConvergenceVisibleOnAndroid": true,
+    "sameItemReadBackByIosOwner": true
+  },
+  "screenshots": [
+    "android/screenshots/01-feed-queued.png",
+    "android/screenshots/02-feed-queued-after-relaunch.png",
+    "android/screenshots/03-feed-queued-after-committed-response-loss.png",
+    "android/screenshots/04-feed-converged.png",
+    "ios/screenshots/08-owner-feed-readback.png"
+  ],
+  "result": "pass"
+}

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 17 Pro simulator - iOS 26.2" tests="1" failures="0" time="84.0">
+    <testcase id="18-ios-owner-plan-live-editor" name="18-ios-owner-plan-live-editor" classname="18-ios-owner-plan-live-editor" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/18-ios-owner-plan-live-editor.yaml" time="84.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

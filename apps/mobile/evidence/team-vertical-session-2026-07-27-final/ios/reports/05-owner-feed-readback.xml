@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 17 Pro simulator - iOS 26.2" tests="1" failures="0" time="14.0">
+    <testcase id="20-ios-owner-feed-readback" name="20-ios-owner-feed-readback" classname="20-ios-owner-feed-readback" file="apps/mobile/evidence/team-vertical-session-2026-07-27-final/flows/20-ios-owner-feed-readback.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

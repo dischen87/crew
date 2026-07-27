@@ -1,0 +1,24 @@
+appId: ${APP_ID}
+---
+- assertVisible:
+    id: team-feed-view
+- scrollUntilVisible:
+    element:
+      id: team-feed-refresh
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: team-feed-refresh
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-converged
+    timeout: 30000
+- scrollUntilVisible:
+    element: 'Participant reconnect check: option B is ready.'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: 'Participant reconnect check: option B is ready.'
+- assertVisible:
+    id: team-feed-entry-converged
+- takeScreenshot: ${CAPTURE_DIR}/04-feed-converged

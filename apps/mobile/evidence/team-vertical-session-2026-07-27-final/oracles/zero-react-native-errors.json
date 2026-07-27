@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "sourceRevision": "75a6761c046758a89e8b84349ac80766d827d637",
+  "flow": "flows/10-android-feedback-capture-slow-fill.yaml",
+  "typingDebounceExercise": {
+    "applicationDebounceThresholdMs": 450,
+    "waitIntervalMs": 650,
+    "intervalCount": 10,
+    "crossedDebounceRepeatedly": true
+  },
+  "uiAssertions": {
+    "beforeSlowCompose": {
+      "AbortErrorAbsent": true,
+      "LogBoxAbsent": true,
+      "UnhandledJsExceptionAbsent": true,
+      "uncaughtPromiseAbsent": true,
+      "logOneOfOneAbsent": true
+    },
+    "afterSlowCompose": {
+      "AbortErrorAbsent": true,
+      "LogBoxAbsent": true,
+      "UnhandledJsExceptionAbsent": true,
+      "uncaughtPromiseAbsent": true,
+      "logOneOfOneAbsent": true
+    }
+  },
+  "screenshots": [
+    "android/screenshots/05a-feedback-precompose-clean.png",
+    "android/screenshots/07a-feedback-posttype-clean.png"
+  ],
+  "logcatWindow": {
+    "clearedImmediatelyBeforeFlow": true,
+    "dumpedImmediatelyAfterFlow": true,
+    "rawLogsRetained": false,
+    "patternCounts": {
+      "AbortError": 0,
+      "uncaughtInPromise": 0,
+      "unhandledJsException": 0,
+      "possibleUnhandledPromiseRejection": 0,
+      "LogBox": 0,
+      "fatalExceptionApp": 0,
+      "fatalExceptionMqtJs": 0,
+      "reactNativeJsError": 0
+    },
+    "reactNativeUnhandledTotal": 0
+  },
+  "result": "pass"
+}

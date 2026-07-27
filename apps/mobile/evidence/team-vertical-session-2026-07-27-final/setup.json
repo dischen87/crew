@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "evidenceRunId": "crew-paq-8-3-75a6761-20260727t201546z",
+  "scenario": "team-event",
+  "rootEventId": "evt_local_team_day_2026",
+  "sourceRevision": "75a6761c046758a89e8b84349ac80766d827d637",
+  "fixture": {
+    "eventCreated": true,
+    "ownerMembershipCreated": true,
+    "invitationCreated": true,
+    "participantInvitationRedeemed": true,
+    "authentication": "local magic-link fixture",
+    "turkeyOrGolfFixtureDependency": false
+  },
+  "session": {
+    "freshIsolatedServices": true,
+    "attachmentCapable": true,
+    "transportFinalState": "attached",
+    "faultFinalState": "idle",
+    "publishBarrierFinalState": "idle",
+    "setupFinalState": "ready",
+    "gatewayTraceCount": 8
+  },
+  "devices": {
+    "ios": {
+      "target": "iPhone 17 Pro simulator - iOS 26.2",
+      "freshDisposableSimulator": true,
+      "cloned": false
+    },
+    "android": {
+      "target": "Android API 36 emulator",
+      "appDataClearedBeforeRun": true,
+      "freshNoSnapshotBoot": true
+    }
+  }
+}

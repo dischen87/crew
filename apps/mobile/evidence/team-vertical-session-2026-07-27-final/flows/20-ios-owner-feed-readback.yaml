@@ -1,0 +1,32 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_local_team_day_2026
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- tapOn:
+    id: event-hub-sync-button
+- extendedWaitUntil:
+    visible: .*synchronisiert.*
+    timeout: 30000
+- tapOn:
+    id: event-hub-tab-feed
+- extendedWaitUntil:
+    visible:
+      id: team-feed-view
+    timeout: 30000
+- scrollUntilVisible:
+    element: '.*Participant reconnect check:.*'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: '.*Participant reconnect check:.*'
+- assertVisible:
+    id: team-feed-entry-converged
+- takeScreenshot: ${CAPTURE_DIR}/08-owner-feed-readback

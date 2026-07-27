@@ -1,0 +1,14 @@
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- assertVisible:
+    id: event-evt_local_team_day_2026
+
