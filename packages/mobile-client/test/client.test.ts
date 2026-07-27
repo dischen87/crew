@@ -651,6 +651,7 @@ describe("GatewayClient request mapping", () => {
 				updatedAt: "2026-07-18T20:00:00.000Z",
 				completedAt: null,
 			},
+			review: null,
 			place: {
 				id: placeId,
 				sourceCandidateId: candidateId,

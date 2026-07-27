@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:51567526d32722544b13246e2a04806021e0cae96839b975941bddb078790156
+ * Pin: sha256:3593193aeab03f8455e7e7fc20675aae5584313e707bcaa17aa265f5db77a54c
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -1100,6 +1100,26 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/core/v1/places/enrichment-jobs/{jobId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or reject cited search-miss place facts
+         * @description Reviews a completed search-miss job without provider work. Approval atomically materializes one reusable candidate and global place; rejection materializes neither.
+         */
+        post: operations["placeEnrichmentJobsReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/core/v1/places/search": {
         parameters: {
             query?: never;
@@ -2074,6 +2094,23 @@ export type components = {
             /** Format: date-time */
             updatedAt: string;
         };
+        EventServicePlaceEnrichmentReview: {
+            fields: {
+                /** @enum {string} */
+                name: "name" | "locality" | "region" | "countryCode" | "latitude" | "longitude" | "address" | "websiteUrl" | "summary";
+                provenance: {
+                    /** Format: date-time */
+                    observedAt: string;
+                    /** @enum {string} */
+                    sourceKind: "exa_llm";
+                    /** Format: uri */
+                    sourceUrl: string;
+                };
+                value: string;
+            }[];
+            /** @enum {string} */
+            state: "pending" | "approved" | "rejected";
+        } | null;
         EventServicePlaceSearchResult: {
             attribution: string;
             confidence: number;
@@ -15580,6 +15617,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["EventServicePlaceEnrichment"];
                         place: components["schemas"]["EventServiceEnrichedPlace"];
+                        review: components["schemas"]["EventServicePlaceEnrichmentReview"];
                     };
                 };
             };
@@ -15738,6 +15776,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["EventServicePlaceEnrichment"];
                         place: components["schemas"]["EventServiceEnrichedPlace"];
+                        review: components["schemas"]["EventServicePlaceEnrichmentReview"];
                     };
                 };
             };
@@ -15876,6 +15915,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["EventServicePlaceEnrichment"];
                         place: components["schemas"]["EventServiceEnrichedPlace"];
+                        review: components["schemas"]["EventServicePlaceEnrichmentReview"];
                     };
                 };
             };
@@ -15982,6 +16022,176 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Required service timeout */
+            504: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    placeEnrichmentJobsReview: {
+        parameters: {
+            query?: never;
+            header: {
+                "idempotency-key": string;
+            };
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    capabilityType: "travel" | "lodging" | "transport" | "golf" | "team";
+                    /** @enum {string} */
+                    decision: "approve" | "reject";
+                    eventId: string;
+                    rootEventId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Search-miss review decision applied */
+            200: {
+                headers: {
+                    /** @description Sensitive responses must not be stored by HTTP caches */
+                    "Cache-Control"?: "private, no-store";
+                    /** @description True when the stored idempotent response was replayed */
+                    "Idempotency-Replayed"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enrichment: components["schemas"]["EventServicePlaceEnrichment"];
+                        place: components["schemas"]["EventServiceEnrichedPlace"];
+                        review: components["schemas"]["EventServicePlaceEnrichmentReview"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Payload too large */
+            413: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported media type */
+            415: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    /** @description Seconds until this request may be retried */
+                    "Retry-After"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected failure */
+            500: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventServiceErrorEnvelope"];
+                };
+            };
+            /** @description Invalid upstream response */
+            502: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Required service unavailable */
+            503: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Required service timeout */

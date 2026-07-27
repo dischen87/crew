@@ -1,8 +1,8 @@
 /**
  * Generated from contracts/gateway.openapi.json.
- * Pin: sha256:51567526d32722544b13246e2a04806021e0cae96839b975941bddb078790156. Do not edit.
+ * Pin: sha256:3593193aeab03f8455e7e7fc20675aae5584313e707bcaa17aa265f5db77a54c. Do not edit.
  */
-export type GatewayOperationId = "eventAttachmentsDownload" | "eventAttachmentUploadsFinalize" | "eventAttachmentUploadsPrepare" | "eventCapabilitiesRemove" | "eventCapabilitiesReplace" | "eventChildrenCreate" | "eventChildrenReorder" | "eventFeedbackCommentsCreate" | "eventFeedbackDuplicateSuggestionsList" | "eventFeedbackFollowsSet" | "eventFeedbackGet" | "eventFeedbackList" | "eventFeedbackUpdatesList" | "eventFeedbackVotesSet" | "eventFeedEntriesCreate" | "eventFeedEntriesGet" | "eventFeedEntriesList" | "eventFeedEntriesRemove" | "eventFeedEntriesRevise" | "eventFeedReactionsSet" | "eventInvitationsCreate" | "eventInvitationsList" | "eventInvitationsPreview" | "eventInvitationsRedeem" | "eventInvitationsRevoke" | "eventItineraryItemsCreate" | "eventItineraryItemsList" | "eventItineraryItemsReorder" | "eventItineraryItemsUpdate" | "eventMemberDirectoryGet" | "eventMembershipsList" | "eventMembershipsUpdate" | "eventOwnershipTransfer" | "eventPlacesCreate" | "eventPlacesList" | "eventPlacesUpdate" | "eventPublishReadinessGet" | "eventRecapExternalGrantsDecide" | "eventRecapExternalShareLinksCreate" | "eventRecapExternalShareLinksResolve" | "eventRecapsGenerate" | "eventRecapsGet" | "eventRecapShareLinksCreate" | "eventRecapShareLinksResolve" | "eventRecapShareLinksRevoke" | "eventRecapsPublish" | "eventRecapsRemove" | "eventRootsList" | "eventsArchive" | "eventsCreate" | "eventsDelete" | "eventsGet" | "eventsPublish" | "eventsReparent" | "eventsTreeGet" | "eventsUpdate" | "eventTemplateAdopt" | "eventTemplatesList" | "feedbackCommentsCreate" | "feedbackCreate" | "feedbackDuplicateMark" | "feedbackGet" | "feedbackStatusSet" | "feedbackVotesSet" | "identityMagicLinksCreate" | "identityMagicLinksRedeem" | "identitySessionsRefresh" | "identitySessionsRevoke" | "placeEnrichmentJobsCreate" | "placeEnrichmentJobsGet" | "placeEnrichmentJobsRetry" | "placesSearch" | "syncBootstrapRead" | "syncChangesList" | "syncMutationsApply" | "usersDevicesDelete" | "usersDevicesList" | "usersDevicesUpsert" | "usersMeGet" | "usersMeUpdate" | "usersSessionGet";
+export type GatewayOperationId = "eventAttachmentsDownload" | "eventAttachmentUploadsFinalize" | "eventAttachmentUploadsPrepare" | "eventCapabilitiesRemove" | "eventCapabilitiesReplace" | "eventChildrenCreate" | "eventChildrenReorder" | "eventFeedbackCommentsCreate" | "eventFeedbackDuplicateSuggestionsList" | "eventFeedbackFollowsSet" | "eventFeedbackGet" | "eventFeedbackList" | "eventFeedbackUpdatesList" | "eventFeedbackVotesSet" | "eventFeedEntriesCreate" | "eventFeedEntriesGet" | "eventFeedEntriesList" | "eventFeedEntriesRemove" | "eventFeedEntriesRevise" | "eventFeedReactionsSet" | "eventInvitationsCreate" | "eventInvitationsList" | "eventInvitationsPreview" | "eventInvitationsRedeem" | "eventInvitationsRevoke" | "eventItineraryItemsCreate" | "eventItineraryItemsList" | "eventItineraryItemsReorder" | "eventItineraryItemsUpdate" | "eventMemberDirectoryGet" | "eventMembershipsList" | "eventMembershipsUpdate" | "eventOwnershipTransfer" | "eventPlacesCreate" | "eventPlacesList" | "eventPlacesUpdate" | "eventPublishReadinessGet" | "eventRecapExternalGrantsDecide" | "eventRecapExternalShareLinksCreate" | "eventRecapExternalShareLinksResolve" | "eventRecapsGenerate" | "eventRecapsGet" | "eventRecapShareLinksCreate" | "eventRecapShareLinksResolve" | "eventRecapShareLinksRevoke" | "eventRecapsPublish" | "eventRecapsRemove" | "eventRootsList" | "eventsArchive" | "eventsCreate" | "eventsDelete" | "eventsGet" | "eventsPublish" | "eventsReparent" | "eventsTreeGet" | "eventsUpdate" | "eventTemplateAdopt" | "eventTemplatesList" | "feedbackCommentsCreate" | "feedbackCreate" | "feedbackDuplicateMark" | "feedbackGet" | "feedbackStatusSet" | "feedbackVotesSet" | "identityMagicLinksCreate" | "identityMagicLinksRedeem" | "identitySessionsRefresh" | "identitySessionsRevoke" | "placeEnrichmentJobsCreate" | "placeEnrichmentJobsGet" | "placeEnrichmentJobsRetry" | "placeEnrichmentJobsReview" | "placesSearch" | "syncBootstrapRead" | "syncChangesList" | "syncMutationsApply" | "usersDevicesDelete" | "usersDevicesList" | "usersDevicesUpsert" | "usersMeGet" | "usersMeUpdate" | "usersSessionGet";
 
 export interface GatewayJsonSchema {
 	readonly $ref?: string;
@@ -3767,6 +3767,89 @@ export const gatewaySchemas: Readonly<Record<string, GatewayJsonSchema>> = {
       "createdAt",
       "updatedAt",
       "completedAt"
+    ],
+    "additionalProperties": false
+  },
+  "EventServicePlaceEnrichmentReview": {
+    "type": [
+      "object",
+      "null"
+    ],
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ]
+      },
+      "fields": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "name",
+                "locality",
+                "region",
+                "countryCode",
+                "latitude",
+                "longitude",
+                "address",
+                "websiteUrl",
+                "summary"
+              ]
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "provenance": {
+              "type": "object",
+              "properties": {
+                "sourceKind": {
+                  "type": "string",
+                  "enum": [
+                    "exa_llm"
+                  ]
+                },
+                "sourceUrl": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri",
+                  "pattern": "^https:\\/\\/"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "sourceKind",
+                "sourceUrl",
+                "observedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "name",
+            "value",
+            "provenance"
+          ],
+          "additionalProperties": false
+        },
+        "minItems": 2,
+        "maxItems": 9
+      }
+    },
+    "required": [
+      "state",
+      "fields"
     ],
     "additionalProperties": false
   },
@@ -13318,12 +13401,16 @@ export const gatewayRoutes: readonly GatewayRoute[] = [
             "enrichment": {
               "$ref": "#/components/schemas/EventServicePlaceEnrichment"
             },
+            "review": {
+              "$ref": "#/components/schemas/EventServicePlaceEnrichmentReview"
+            },
             "place": {
               "$ref": "#/components/schemas/EventServiceEnrichedPlace"
             }
           },
           "required": [
             "enrichment",
+            "review",
             "place"
           ],
           "additionalProperties": false
@@ -13355,12 +13442,16 @@ export const gatewayRoutes: readonly GatewayRoute[] = [
             "enrichment": {
               "$ref": "#/components/schemas/EventServicePlaceEnrichment"
             },
+            "review": {
+              "$ref": "#/components/schemas/EventServicePlaceEnrichmentReview"
+            },
             "place": {
               "$ref": "#/components/schemas/EventServiceEnrichedPlace"
             }
           },
           "required": [
             "enrichment",
+            "review",
             "place"
           ],
           "additionalProperties": false
@@ -13394,12 +13485,57 @@ export const gatewayRoutes: readonly GatewayRoute[] = [
             "enrichment": {
               "$ref": "#/components/schemas/EventServicePlaceEnrichment"
             },
+            "review": {
+              "$ref": "#/components/schemas/EventServicePlaceEnrichmentReview"
+            },
             "place": {
               "$ref": "#/components/schemas/EventServiceEnrichedPlace"
             }
           },
           "required": [
             "enrichment",
+            "review",
+            "place"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  },
+  {
+    "operationId": "placeEnrichmentJobsReview",
+    "method": "POST",
+    "path": "/core/v1/places/enrichment-jobs/{jobId}/review",
+    "auth": "required",
+    "idempotency": "required",
+    "pathParameters": [
+      "jobId"
+    ],
+    "queryParameters": [],
+    "headerParameters": [
+      "idempotency-key"
+    ],
+    "hasJsonBody": true,
+    "successResponses": [
+      {
+        "status": 200,
+        "contentType": "application/json",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "enrichment": {
+              "$ref": "#/components/schemas/EventServicePlaceEnrichment"
+            },
+            "review": {
+              "$ref": "#/components/schemas/EventServicePlaceEnrichmentReview"
+            },
+            "place": {
+              "$ref": "#/components/schemas/EventServiceEnrichedPlace"
+            }
+          },
+          "required": [
+            "enrichment",
+            "review",
             "place"
           ],
           "additionalProperties": false
