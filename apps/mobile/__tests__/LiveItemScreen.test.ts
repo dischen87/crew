@@ -96,7 +96,7 @@ test('next action skips non-active items and reaches recap after the last active
   expect(liveItemReadyModel(withNext, true).primaryAction).toEqual({
     itemId: 'iti_next',
     kind: 'item',
-    label: 'Nächsten Programmpunkt öffnen',
+    label: 'Nächsten Punkt öffnen',
   });
 
   const teamRoot = { ...rootEvent(), kind: 'team_event' as const };

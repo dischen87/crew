@@ -541,7 +541,7 @@ function primaryAction(
     return {
       itemId: snapshot.nextItemId,
       kind: 'item',
-      label: 'Nächsten Programmpunkt öffnen',
+      label: 'Nächsten Punkt öffnen',
     };
   }
   if (snapshot.hasTeamContext) {

@@ -73,6 +73,11 @@ test('exposes only supplied organizer and golf callbacks', async () => {
       canEdit: true,
       canOpenGolfScorecard: true,
       itemType: 'Golfrunde',
+      primaryAction: {
+        itemId: 'iti_next',
+        kind: 'item',
+        label: 'Nächsten Punkt öffnen',
+      },
       role: 'organizer',
     },
     { onBack, onEdit, onOpenGolfScorecard, onPrimaryAction },
@@ -98,6 +103,18 @@ test('exposes only supplied organizer and golf callbacks', async () => {
   expect(onOpenGolfScorecard).toHaveBeenCalledTimes(1);
   expect(onPrimaryAction).toHaveBeenCalledTimes(1);
   expect(onBack).toHaveBeenCalledTimes(1);
+  expect(
+    renderer.root.findByProps({ testID: 'live-item-primary-action' }).props,
+  ).toMatchObject({
+    accessibilityLabel: 'Nächsten Programmpunkt öffnen',
+    label: 'Nächsten Punkt öffnen',
+  });
+  expect(
+    renderer.root.findByProps({ testID: 'live-item-edit' }).props,
+  ).toMatchObject({
+    accessibilityLabel: 'Programmpunkt bearbeiten',
+    label: 'Punkt bearbeiten',
+  });
   expect(
     renderer.root.findAll(
       node =>

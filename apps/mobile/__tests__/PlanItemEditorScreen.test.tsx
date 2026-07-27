@@ -1,4 +1,5 @@
 import React from 'react';
+import * as ReactNative from 'react-native';
 import { Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
@@ -246,6 +247,21 @@ test('conceals stale editor data when live place access is unavailable', async (
   expect(textInside(renderer)).not.toContain('Crew Planung');
 
   await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('shows the full title in a multiline field at large text', async () => {
+  const dimensions = jest
+    .spyOn(ReactNative, 'useWindowDimensions')
+    .mockReturnValue({ fontScale: 2, height: 844, scale: 3, width: 390 });
+  const renderer = await renderScreen();
+  const title = renderer.root.findByProps({ testID: 'plan-item-title' });
+
+  expect(title.props.multiline).toBe(true);
+  expect(title.props.submitBehavior).toBe('blurAndSubmit');
+  expect(title.props.textAlignVertical).toBe('top');
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+  dimensions.mockRestore();
 });
 
 async function renderScreen(itemId?: string) {

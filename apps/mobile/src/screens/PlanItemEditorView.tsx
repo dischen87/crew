@@ -266,11 +266,15 @@ export function PlanItemEditorView({
           autoCapitalize="sentences"
           disabled={locked}
           error={model.errors.title}
+          inputStyle={usesLargeTextLayout ? styles.multilineInput : undefined}
           label="Titel"
           maxLength={200}
+          multiline={usesLargeTextLayout}
           onChangeText={value => onChange('title', value)}
           placeholder="Zum Beispiel: Transfer zum Hotel"
+          submitBehavior="blurAndSubmit"
           testID="plan-item-title"
+          textAlignVertical={usesLargeTextLayout ? 'top' : undefined}
           value={model.form.title}
         />
         <TextField

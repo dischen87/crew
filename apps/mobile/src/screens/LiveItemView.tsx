@@ -178,6 +178,11 @@ export function LiveItemView({
         {onPrimaryAction ? (
           <Button
             accessibilityHint="Öffnet den nächsten sicheren Schritt für diesen Programmpunkt."
+            accessibilityLabel={
+              item.primaryAction.kind === 'item'
+                ? 'Nächsten Programmpunkt öffnen'
+                : undefined
+            }
             icon={<ScreenIcon source={icons.check} />}
             label={item.primaryAction.label}
             onPress={onPrimaryAction}
@@ -198,7 +203,8 @@ export function LiveItemView({
         {item.canEdit && onEdit ? (
           <Button
             accessibilityHint="Öffnet diesen Programmpunkt zur Bearbeitung."
-            label="Programmpunkt bearbeiten"
+            accessibilityLabel="Programmpunkt bearbeiten"
+            label="Punkt bearbeiten"
             onPress={onEdit}
             testID="live-item-edit"
             variant="surface"

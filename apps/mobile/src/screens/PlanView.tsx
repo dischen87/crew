@@ -308,7 +308,7 @@ export function PlanView({
             </Text>
             <Text style={styles.body}>
               {selectedEvent?.depth === 0
-                ? 'Alle Programmpunkte in Planreihenfolge'
+                ? 'Alle Programmpunkte in der richtigen Reihenfolge'
                 : selectedEvent?.title ?? 'Gewählter Bereich'}
             </Text>
           </View>
