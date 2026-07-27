@@ -98,12 +98,12 @@ const compatibilityConditionExpression = [
 	"$",
 	"{{ !inputs.reuse_stored_manifest && inputs.compatibility_from_sha != '' }}",
 ].join("");
-const auditedCompatibilityFromSha = "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4";
+const auditedCompatibilityFromSha = "5be30268d9dac66528bdc46ef8859b6bb1fd9c35";
 const auditedCompatibilityDigests = {
 	AUDITED_FROM_RUNTIME_CONTRACT_SHA:
-		"0250b362d12b96b3034fdaefef82791b01b2812e795407f23f499d235c4d73d6",
+		"e7d60d942857e5c8c00a7dac1dd67b65f4a511e05871aa086d0ba22604c6a18c",
 	AUDITED_TARGET_DATABASE_CONTRACT_SHA:
-		"25b18715f31538144e3e63f5b4b4c8bbf5901b3d245936601a7d79034bc07b17",
+		"1e81a56d62284637db9accec931a4d0d25878534da2f9de654acd7e0ed3e8d8e",
 	AUDITED_TARGET_GRANT_SHA:
 		"4ac716f6ea109571d2ba1d6555a00349060f8702d6c5392b4fef3d0dcaf34957",
 	AUDITED_TARGET_RUNTIME_CONTRACT_SHA:
