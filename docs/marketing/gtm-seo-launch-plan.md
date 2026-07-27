@@ -49,11 +49,11 @@ Die folgenden Repository-Flächen sind **keine** Crew-Next-Launch-Evidence:
 
 | Fläche                    | Beobachteter Stand                                                                                                                                                                                                                                                                                    | Launch-Folge                                                                                                                                                                                                                                 |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web` Closed Preview | Lokale, script-freie Option-2-Preview in `de-CH`; statischer Build sowie browser-gerenderte Mobile-/Desktop-, Fokus-, Reduced-Motion- und 200%-Zoom-QA sind geprüft. Die Route bleibt `noindex`; ohne konfigurierte, absolute HTTPS-Kontaktadresse zeigt sie bewusst nur einen deaktivierten CTA. | Ist eine aktuelle Code-/Copy-/Design-Grundlage, aber weder launchfähig noch veröffentlicht. Vor Freigabe fehlen mindestens datenschutzgeprüfter Kontaktweg, Deployment-/Live-Beleg sowie eine ausdrückliche Analytics-/Consent-Entscheidung. |
+| `apps/web` Closed Preview | Öffentlich unter `https://crew-haus.com/` bereitgestellte, script-freie Option-2-Preview in `de-CH`; statischer Build sowie browser-gerenderte Mobile-/Desktop-, Fokus-, Reduced-Motion- und 200%-Zoom-QA sind geprüft. Die Route bleibt `noindex`; ohne konfigurierte, absolute HTTPS-Kontaktadresse zeigt sie bewusst nur einen deaktivierten CTA und sammelt keine Anfragen. | Ist eine öffentliche Closed Preview, kein allgemeiner Produktlaunch. Vor Aktivierung des Kontaktwegs fehlen mindestens dessen Datenschutzfreigabe sowie eine ausdrückliche Analytics-/Consent-Entscheidung; Analytics bleiben bis dahin aus. |
 
-Auch ein in diesem Dokument als `Current` bezeichnetes Claim, die vorhandene
-Preview-Route oder eine aktuelle Metrikdefinition belegt deshalb keine
-Instrumentierung, Deployment-, Live- oder Conversion-Evidence.
+Auch ein in diesem Dokument als `Current` bezeichnetes Claim, die öffentliche
+Preview-Route oder eine aktuelle Metrikdefinition belegt deshalb weder
+Instrumentierung noch allgemeine Produktfreigabe oder Conversion-Evidence.
 
 ### Nicht-Ziele
 

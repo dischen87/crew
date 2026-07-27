@@ -91,8 +91,13 @@ requireMatch(
 );
 requireMatch(
   html,
-  /Noch nicht öffentlich: Wir schalten den Kontaktweg erst nach der\s+Datenschutzprüfung frei\./,
+  /Die öffentliche Closed Preview sammelt noch keine Anfragen\. Den\s+Kontaktweg schalten wir erst nach der Datenschutzprüfung frei\./,
   "Disabled CTA explanation is missing"
+);
+requireMatch(
+  html,
+  /Crew Next · Öffentliche Closed Preview · kein allgemeiner Produktlaunch/,
+  "Public Closed Preview footer is missing"
 );
 requireMatch(
   html,
@@ -141,6 +146,11 @@ rejectMatch(
   html,
   /\b(?:offline|stableford|scorekarte|rückblick|recap)\b|jetzt verfügbar|in produktion|produktionsreif/i,
   "Launch-gated feature or availability copy leaked into Closed Preview"
+);
+rejectMatch(
+  html,
+  /nicht veröffentlicht|Noch nicht öffentlich/i,
+  "Public Closed Preview must not describe itself as unpublished"
 );
 rejectMatch(
   html,

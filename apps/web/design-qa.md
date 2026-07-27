@@ -1,10 +1,12 @@
 # Crew Next Closed Preview — Design QA
 
 - Source visual truth: `apps/mobile/evidence/event-hub-option-2/reference-390x844.png`
-- Implementation: static production preview at `http://127.0.0.1:4321/`
+- Implementation: public Closed Preview at `https://crew-haus.com/`, built from
+  the static production preview
 - Evidence: `apps/web/evidence/closed-preview-2026-07-20/`
 - Required viewports: mobile `390 x 844`; desktop `1440 x 1000`
-- State: Closed Preview, contact destination absent, CTA visibly disabled
+- State: public Closed Preview, not a general product launch; contact
+  destination absent and CTA visibly disabled
 
 ## Findings
 
@@ -51,8 +53,9 @@ is therefore free of development overlays and Vite scripts.
 - Chrome 150.0.7871.128: required viewports, focus, reduced motion, zoom,
   console, local-only resources, disabled CTA, and legacy `404` passed.
 
-The page remains intentionally unpublished. Contact configuration,
-Privacy/Legal approval, analytics/consent, deployment, live access, and
-conversion evidence are separate release gates.
+The page is publicly deployed as a `noindex` Closed Preview, not as a general
+product launch. Contact configuration, Privacy/Legal approval,
+analytics/consent, distribution, and conversion evidence remain separate
+release gates.
 
 **final result: passed**
