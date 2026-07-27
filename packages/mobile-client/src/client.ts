@@ -1367,13 +1367,11 @@ function abortable<Value>(
 	promise: Promise<Value>,
 	signal: AbortSignal,
 ): Promise<Value> {
-	if (signal.aborted) return Promise.reject(aborted);
 	return new Promise((resolve, reject) => {
 		const onAbort = () => {
 			signal.removeEventListener("abort", onAbort);
 			reject(aborted);
 		};
-		signal.addEventListener("abort", onAbort, { once: true });
 		promise.then(
 			(value) => {
 				signal.removeEventListener("abort", onAbort);
@@ -1384,6 +1382,8 @@ function abortable<Value>(
 				reject(error);
 			},
 		);
+		if (signal.aborted) onAbort();
+		else signal.addEventListener("abort", onAbort, { once: true });
 	});
 }
 

@@ -2080,6 +2080,25 @@ describe("GatewayClient cancellation and diagnostics", () => {
 		expect((error as GatewayClientError).code).toBe("aborted");
 	});
 
+	test("a pre-aborted caller consumes the raw fetch rejection", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const client = clientWith(new MemorySessionStore(null), async () =>
+			Promise.reject(new DOMException("Aborted", "AbortError")),
+		);
+
+		const error = await captured(
+			client.request("identityMagicLinksCreate", {
+				body: { email: "crew@example.com" },
+				signal: controller.signal,
+			}),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(error).toBeInstanceOf(GatewayClientError);
+		expect((error as GatewayClientError).code).toBe("aborted");
+	});
+
 	test("raw error bodies and tokens never enter errors or diagnostics", async () => {
 		const diagnostics: GatewayDiagnostic[] = [];
 		const client = clientWith(
