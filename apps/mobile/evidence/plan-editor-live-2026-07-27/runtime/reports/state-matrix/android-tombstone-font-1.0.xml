@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" time="22.0">
+    <testcase id="tombstone-visible-android" name="tombstone-visible-android" classname="tombstone-visible-android" file="runtime/flows/tombstone-visible-android.yaml" time="22.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

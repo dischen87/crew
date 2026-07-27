@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "capturedOn": "2026-07-27",
+  "status": "simulator-state-matrix-closure-complete",
+  "source": {
+    "branch": "main",
+    "baseSha": "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4",
+    "originMainShaAtStart": "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4",
+    "worktreeModel": "base-plus-content-addressed-pre-existing-ux-diff",
+    "diffPatchSha256": "2b68844fc40dad1e5689fdfc5721ee76ab2fe8edd0b3232a73944756d8797024",
+    "finalCommitSha": "a705063bbe6479e4281e889da0054b0d53c60459",
+    "files": [
+      {
+        "path": "apps/mobile/__tests__/PlanViews.test.tsx",
+        "sha256": "7155c192577ebe450565150b59c942c7e50d91b6cecd5a7de605e805ed7d6920",
+        "runtimeBundled": false
+      },
+      {
+        "path": "packages/mobile-data/src/outbox.ts",
+        "sha256": "d856800badade94b448a2a616c7d0efbc2eca6e07cf8ae18f063519b6972a21b",
+        "runtimeBundled": true
+      },
+      {
+        "path": "packages/mobile-data/test/mobile-data.test.ts",
+        "sha256": "3d117e6634577254a83210fbb31b1ba407883f07280852f8ba825c42b884466c",
+        "runtimeBundled": false
+      }
+    ],
+    "applicationSourceEditedByEvidenceRunner": false,
+    "finalCommitMappingPending": false
+  },
+  "runtime": {
+    "fixture": "evt_local_turkey_golf_2026",
+    "gateway": "isolated native-e2e-runner",
+    "transportControl": "isolated native runner",
+    "remoteMutationRoute": "production event itinerary PATCH",
+    "metroPort": 8082,
+    "foreignMetro8081Preserved": true,
+    "androidCachedMetroBundleSha256": "c5fc1d1b316dc19c16c005d475d3458aa47bd0114f9cf21be7acf4835b1799a1",
+    "androidCachedMetroBundleHashScope": "exact BridgelessReactNativeDevBundle.js cached in the tested Android application sandbox",
+    "iosMetroBundleByteHashCaptured": false,
+    "iosMetroBinding": "installed simulator app launched against the isolated Metro server on port 8082"
+  },
+  "ios": {
+    "appId": "app.crew.next",
+    "device": "iPhone 16e",
+    "osVersion": "26.2",
+    "resolution": "1170x2532",
+    "signing": "simulator debug",
+    "freshSimulatorErasedBeforeRun": true,
+    "executableSha256": "546fc56a604b8745ce138cfa8dbb76696f656e70f7165351ecfa9e423aa52b9f",
+    "installedFromBoundApp": true,
+    "priorBlankFrameReproduced": false,
+    "states": [
+      {
+        "state": "tombstone",
+        "textSetting": "default-after-erase",
+        "screenshot": "runtime/screenshots/state-matrix/ios/03-tombstone.png",
+        "report": "runtime/reports/state-matrix/ios-tombstone.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Aktion erforderlich",
+        "proof": "After an independent production-route subtree delete, the rendered Plan attention card preserves the local title and identifies the removed server item."
+      }
+    ]
+  },
+  "android": {
+    "appId": "app.crew.next",
+    "device": "SwissActivities_API36",
+    "osVersion": "Android 16",
+    "apiLevel": 36,
+    "resolution": "1080x2400",
+    "apkSha256": "566acc7d073a21db94c92256d18b74b0be77b7e17027d5e5797be2e08ab4d9b2",
+    "buildProperty": "-PreactNativeDevServerPort=8082",
+    "generatedMetroPortResource": 8082,
+    "installedFromBoundApk": true,
+    "states": [
+      {
+        "state": "queued",
+        "fontScale": 1.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/01-queued-font-1.0.png",
+        "report": "runtime/reports/state-matrix/android-queued-font-1.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Lokal gespeichert"
+      },
+      {
+        "state": "queued",
+        "fontScale": 2.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/02-queued-font-2.0.png",
+        "report": "runtime/reports/state-matrix/android-queued-font-2.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Lokal gespeichert"
+      },
+      {
+        "state": "conflict",
+        "fontScale": 1.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/03-conflict-font-1.0.png",
+        "report": "runtime/reports/state-matrix/android-conflict-font-1.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Aktion erforderlich"
+      },
+      {
+        "state": "conflict",
+        "fontScale": 2.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/04-conflict-font-2.0.png",
+        "report": "runtime/reports/state-matrix/android-conflict-font-2.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Aktion erforderlich"
+      },
+      {
+        "state": "tombstone",
+        "fontScale": 1.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/05-tombstone-font-1.0.png",
+        "report": "runtime/reports/state-matrix/android-tombstone-font-1.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Aktion erforderlich"
+      },
+      {
+        "state": "tombstone",
+        "fontScale": 2.0,
+        "screenshot": "runtime/screenshots/state-matrix/android/06-tombstone-font-2.0.png",
+        "report": "runtime/reports/state-matrix/android-tombstone-font-2.0.xml",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "requiredVisibleText": "Aktion erforderlich"
+      }
+    ]
+  },
+  "diagnosticsExcluded": {
+    "androidDefaultPortAttempt": "The first diagnostic APK contacted the foreign Metro on 8081 and exposed a React Native 0.83 JavaScript / 0.86 native mismatch.",
+    "failedReportsRetained": false,
+    "ambiguousScreenshotsRetained": false
+  },
+  "privacy": {
+    "sanitized": true,
+    "credentialsRetained": false,
+    "uniqueDeviceIdentifiersRetained": false,
+    "absoluteLocalPathsRetained": false
+  },
+  "cleanupVerified": {
+    "iosAppRemoved": true,
+    "ownedIosSimulatorErasedAndShutdown": true,
+    "ownedAndroidEmulatorStopped": true,
+    "androidDevicesConnected": 0,
+    "ownedPortsClosed": [
+      3000,
+      3101,
+      5433,
+      6380,
+      8082
+    ],
+    "foreignMetro8081PidPreserved": 45252,
+    "podfileLockMatchesHead": true,
+    "generatedBuildAndTemporaryArtifactsMovedToTrash": true
+  }
+}

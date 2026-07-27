@@ -1,50 +1,77 @@
 {
-  "schemaVersion": 1,
-  "status": "partial-native-acceptance",
-  "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
+  "schemaVersion": 2,
+  "status": "simulator-state-matrix-complete",
   "groups": [
     {
+      "kind": "layout-baseline",
       "platform": "android",
+      "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "1.0",
       "screenshots": 5,
       "report": "runtime/reports/android-normal.xml"
     },
     {
+      "kind": "layout-baseline",
       "platform": "android",
+      "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "2.0",
       "screenshots": 5,
       "report": "runtime/reports/android-200.xml"
     },
     {
+      "kind": "layout-baseline",
       "platform": "ios",
+      "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "medium",
       "screenshots": 5,
       "report": "runtime/reports/ios-normal.xml"
     },
     {
+      "kind": "layout-baseline",
       "platform": "ios",
+      "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "accessibility-extra-large",
       "screenshots": 5,
       "report": "runtime/reports/ios-large.xml"
     },
     {
+      "kind": "earlier-state-run",
       "platform": "ios",
-      "textSetting": "default-after-erase",
       "sourceSha": "fecd688a79a6fc2801774c5d1d0c74721825656b",
-      "screenshots": 2,
       "states": [
         "queued",
         "conflict"
       ],
+      "screenshots": 2,
       "report": "runtime/reports/ios-plan-open.xml",
       "reportScope": "plan-route-open",
       "stateSpecificJUnit": false,
       "oracle": "runtime/oracles/plan-state-partial.json"
+    },
+    {
+      "kind": "state-matrix-closure",
+      "sourceBaseSha": "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4",
+      "sourceDiffSha256": "2b68844fc40dad1e5689fdfc5721ee76ab2fe8edd0b3232a73944756d8797024",
+      "sourceCommitSha": "a705063bbe6479e4281e889da0054b0d53c60459",
+      "platforms": [
+        "ios",
+        "android"
+      ],
+      "states": [
+        "queued",
+        "conflict",
+        "tombstone"
+      ],
+      "screenshots": 7,
+      "reports": 7,
+      "failures": 0,
+      "oracle": "runtime/oracles/plan-state-matrix.json"
     }
   ],
   "totals": {
-    "screenshots": 22,
-    "tests": 5,
+    "screenshots": 29,
+    "reports": 12,
+    "tests": 12,
     "failures": 0,
     "errors": 0
   },
@@ -59,9 +86,6 @@
     "distribution signing",
     "physical devices",
     "VoiceOver and TalkBack",
-    "Android queued, conflict and tombstone visual states",
-    "iOS tombstone visual state",
-    "state-specific passing JUnit",
     "external Figma handoff"
   ]
 }
