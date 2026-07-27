@@ -268,6 +268,52 @@ test('keeps private navigation gated until migration completes and closes on unm
   expect(database.close).toHaveBeenCalledTimes(1);
 });
 
+test('keeps navigation mounted while a signed-out session becomes ready', async () => {
+  let storedSession: Session | null = null;
+  const deps = dependencies(null);
+  jest
+    .mocked(deps.sessionStore.get)
+    .mockImplementation(async () => storedSession);
+  jest
+    .mocked(deps.sessionStore.compareAndSet)
+    .mockImplementation(async (expected, replacement) => {
+      if (expected !== storedSession) return false;
+      storedSession = replacement;
+      return true;
+    });
+  let lifecycle!: ReturnType<typeof usePrivateSessionLifecycle>;
+  let mounts = 0;
+
+  function NavigationProbe() {
+    lifecycle = usePrivateSessionLifecycle();
+    React.useEffect(() => {
+      mounts += 1;
+    }, []);
+    return <View testID={`navigation-${lifecycle.status}`} />;
+  }
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <PrivateBootstrapGate dependencies={deps}>
+        {() => <NavigationProbe />}
+      </PrivateBootstrapGate>,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  await ReactTestRenderer.act(async () => {
+    await lifecycle.replaceSession(session);
+  });
+
+  expect(
+    renderer!.root.findByProps({ testID: 'navigation-ready' }),
+  ).toBeTruthy();
+  expect(mounts).toBe(1);
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
 test('logout drains a captured file through its DB bind before listing and closing', async () => {
   const retainedFileKey = `${'c'.repeat(64)}.png`;
   const retainedFileKeys: string[] = [];

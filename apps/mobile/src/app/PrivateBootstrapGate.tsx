@@ -449,20 +449,17 @@ export function PrivateBootstrapGate({
     [continueSignedOut, reloadSession, replaceSession, result],
   );
 
-  const content =
-    result.status === 'ready' ? (
-      <PrivateDatabaseContext.Provider
-        value={{ accountId: result.accountId, database: result.database }}
-      >
-        {children('ready')}
-      </PrivateDatabaseContext.Provider>
-    ) : (
-      children(result.status)
-    );
-
   return (
     <PrivateSessionLifecycleContext.Provider value={lifecycle}>
-      {content}
+      <PrivateDatabaseContext.Provider
+        value={
+          result.status === 'ready'
+            ? { accountId: result.accountId, database: result.database }
+            : null
+        }
+      >
+        {children(result.status)}
+      </PrivateDatabaseContext.Provider>
     </PrivateSessionLifecycleContext.Provider>
   );
 }
