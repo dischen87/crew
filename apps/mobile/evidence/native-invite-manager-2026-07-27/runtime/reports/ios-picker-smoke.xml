@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="iPhone 16e simulator - iOS 26.2" device="iPhone 16e simulator - iOS 26.2" tests="1" failures="0" time="9.0">
+    <testcase id="30-ios-picker-smoke" name="30-ios-picker-smoke" classname="30-ios-picker-smoke" file="apps/mobile/evidence/native-invite-manager-2026-07-27/maestro/30-ios-picker-smoke.yaml" time="9.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

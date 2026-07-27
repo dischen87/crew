@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Android 16 emulator" device="Android 16 emulator" tests="1" failures="0" time="14.0">
+    <testcase id="20-organizer-role-narrowing" name="20-organizer-role-narrowing" classname="20-organizer-role-narrowing" file="apps/mobile/evidence/native-invite-manager-2026-07-27/maestro/20-organizer-role-narrowing.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

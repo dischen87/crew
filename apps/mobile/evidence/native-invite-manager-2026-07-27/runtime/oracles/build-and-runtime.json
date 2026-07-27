@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-27",
+  "source": {
+    "productSourceHead": "4cac3bc960db36ca7076233f3faf14a4ed970ca6",
+    "metroSourceHead": "4cac3bc960db36ca7076233f3faf14a4ed970ca6",
+    "originMainAtBuild": "024cb2744ec68bb4f465b90c0e34dc440c736fe7"
+  },
+  "ios": {
+    "device": "iPhone 16e simulator",
+    "os": "iOS 26.2",
+    "appId": "app.crew.next.invitefinalsigned",
+    "executableSha256": "8b3eb2757e5f3faa41a3ecf48e5d52f8b89c74450df6982c2f66608ca8a1dc73",
+    "rawViewport": "1170x2532",
+    "logicalViewport": "390x844",
+    "contentSizes": ["medium", "accessibility-extra-large"],
+    "role": "owner",
+    "metroHost": "127.0.0.1:8082"
+  },
+  "android": {
+    "device": "Android emulator",
+    "os": "Android 16",
+    "apiLevel": 36,
+    "appId": "app.crew.next",
+    "apkSha256": "315159e35fb55fc73313a296e21e1011f81b457ecbd685b3706557a0c45ebd30",
+    "installedApkSha256": "315159e35fb55fc73313a296e21e1011f81b457ecbd685b3706557a0c45ebd30",
+    "apkBytes": 179994039,
+    "rawViewport": "1080x2400",
+    "logicalViewport": "412x915",
+    "fontScales": [1, 2],
+    "role": "organizer",
+    "metroHost": "10.0.2.2:8082",
+    "metroPreference": "shared_prefs/app.crew.next_preferences.xml",
+    "runtimeErrorMatchesAfterColdStart": 0
+  },
+  "fixture": {
+    "environment": "isolated local native E2E services",
+    "scenario": "custom-invite-role-setup",
+    "baseScenarioUsedDuringCapture": "golf-tour",
+    "baseScenarioRequired": false,
+    "bootstrap": "control.mjs prepare",
+    "roleRoot": "evt_publish_role_setup_final"
+  }
+}

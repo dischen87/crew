@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="iPhone 16e simulator - iOS 26.2" device="iPhone 16e simulator - iOS 26.2" tests="1" failures="0" time="11.0">
+    <testcase id="40-owner-create-and-done" name="40-owner-create-and-done" classname="40-owner-create-and-done" file="apps/mobile/evidence/native-invite-manager-2026-07-27/maestro/40-owner-create-and-done.yaml" time="11.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

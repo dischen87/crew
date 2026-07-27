@@ -1,0 +1,57 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_role_setup_final
+- scrollUntilVisible:
+    element:
+      id: event-hub-manage-invites
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-hub-manage-invites
+- extendedWaitUntil:
+    visible:
+      id: invite-manager
+    timeout: 30000
+- scrollUntilVisible:
+    element: Organisator:in
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-manager-create
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-manager-create
+- extendedWaitUntil:
+    visible:
+      id: invite-editor
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-participant
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 100
+    centerElement: true
+- assertNotVisible:
+    id: invite-editor-role-organizer
+- takeScreenshot: apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/raw/android-organizer-editor-role-region-font-2
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-viewer
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-editor-role-viewer
+- scrollUntilVisible:
+    element:
+      id: invite-editor-back
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-editor-back
+- extendedWaitUntil:
+    visible:
+      id: invite-manager
+    timeout: 30000

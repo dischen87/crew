@@ -1,0 +1,49 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_role_setup_final
+- scrollUntilVisible:
+    element:
+      id: event-hub-manage-invites
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-hub-manage-invites
+- extendedWaitUntil:
+    visible:
+      id: invite-manager-create
+    timeout: 30000
+- tapOn:
+    id: invite-manager-create
+- extendedWaitUntil:
+    visible:
+      id: invite-editor
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-expires-at
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-editor-expires-at
+- extendedWaitUntil:
+    visible:
+      text: '(?i)^(abbrechen|cancel)$'
+    timeout: 10000
+- tapOn:
+    text: '(?i)^(abbrechen|cancel)$'
+- extendedWaitUntil:
+    visible:
+      id: invite-editor-expires-at
+    timeout: 10000
+- tapOn:
+    id: invite-editor-expires-at
+- extendedWaitUntil:
+    visible:
+      text: '(?i)^(fertig|done)$'
+    timeout: 10000
+- tapOn:
+    text: '(?i)^(fertig|done)$'
+- extendedWaitUntil:
+    visible:
+      id: invite-editor-expires-at
+    timeout: 10000

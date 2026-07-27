@@ -1,0 +1,73 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_publish_role_setup_final
+- scrollUntilVisible:
+    element:
+      id: event-hub-manage-invites
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: event-hub-manage-invites
+- extendedWaitUntil:
+    visible:
+      id: invite-manager
+    timeout: 30000
+- scrollUntilVisible:
+    element: Eigentümer:in
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-manager-create
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-manager-create
+- extendedWaitUntil:
+    visible:
+      id: invite-editor
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-organizer
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-participant
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-viewer
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-editor-role-organizer
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: invite-editor-role-organizer
+- scrollUntilVisible:
+    element:
+      id: invite-editor-back
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-editor-back
+- extendedWaitUntil:
+    visible:
+      id: invite-manager
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: invite-manager-back
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: invite-manager-back
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000

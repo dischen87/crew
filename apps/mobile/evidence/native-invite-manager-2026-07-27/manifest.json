@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "status": "current_sanitized",
+  "currentAcceptance": true,
+  "capturedAt": "2026-07-27",
+  "platforms": [
+    {
+      "device": "iPhone 16e simulator",
+      "os": "iOS 26.2",
+      "logicalViewport": "390x844",
+      "rawViewport": "1170x2532",
+      "textScales": ["medium", "accessibility-extra-large"],
+      "role": "owner"
+    },
+    {
+      "device": "Android emulator",
+      "os": "Android 16",
+      "logicalViewport": "412x915",
+      "rawViewport": "1080x2400",
+      "textScales": [1, 2],
+      "role": "organizer"
+    }
+  ],
+  "counts": {
+    "reports": 7,
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "oracles": 1,
+    "controlScripts": 1,
+    "rawImages": 7,
+    "logicalImages": 7
+  },
+  "privacy": {
+    "simulatorUuidRetained": false,
+    "androidSerialRetained": false,
+    "absoluteLocalPathRetained": false,
+    "secretValueRetained": false
+  },
+  "diagnosticsExcluded": true,
+  "checksumFile": "SHA256SUMS",
+  "checksumSelfExcluded": true,
+  "reproduction": {
+    "controlScript": "control.mjs",
+    "runner": "../../../../infra/native-e2e-runner.ts",
+    "runnerSetupEndpointRequired": false,
+    "fixtureRootEventId": "evt_publish_role_setup_final",
+    "freshIsolatedDatastoresRequired": true,
+    "credentialValuesRetained": false
+  },
+  "boundaries": {
+    "physicalDeviceRun": false,
+    "signedDistributionBuildRun": false,
+    "voiceOverRun": false,
+    "talkBackRun": false,
+    "shareSheetCancellationRun": false,
+    "nativeDstOverlapRun": false,
+    "productionBackendRun": false
+  }
+}
