@@ -428,9 +428,13 @@ jobs:
           "${previous_compose[@]}" config --quiet
 
           "${target_compose[@]}" build --pull redis-rate-limit jwt-bootstrap
-          "${target_compose[@]}" up --wait --wait-timeout 180 \
-            postgres redis-rate-limit minio typesense provider-sink \
-            jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap
+          "${target_compose[@]}" up -d --wait --wait-timeout 180 \
+            postgres redis-rate-limit minio typesense provider-sink
+          for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
+            "${target_compose[@]}" up \
+              --no-build --no-deps --force-recreate --abort-on-container-exit \
+              --exit-code-from "$job" "$job"
+          done
 
           event_migrations=$(find services/event-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)
           test "$("${target_compose[@]}" exec -T postgres psql \

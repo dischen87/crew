@@ -165,6 +165,17 @@ describe("Crew Next GitHub Actions workflow", () => {
 				"            --command 'SELECT 1')\" -eq 1\n",
 			],
 			[
+				`          for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
+            "${targetComposeExpression}" up \\
+              --no-build --no-deps --force-recreate --abort-on-container-exit \\
+              --exit-code-from "$job" "$job"
+          done
+`,
+				`          "${targetComposeExpression}" up --wait --wait-timeout 180 \\
+            jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap
+`,
+			],
+			[
 				`          "${previousComposeExpression}" up --no-build --no-deps --wait --wait-timeout 180 \\\n`,
 				"          true # removed previous runtime startup\n",
 			],
@@ -629,8 +640,11 @@ function validateStagingCompatibilityWorkflow(source: string) {
 		"PREVIOUS_INFRA_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-infra)",
 		"PREVIOUS_RATE_LIMIT_REDIS_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-rate-limit-redis)",
 		"PREVIOUS_WEB_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-web)",
-		`"${targetComposeExpression}" up --wait --wait-timeout 180 \\`,
-		"jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap",
+		`"${targetComposeExpression}" up -d --wait --wait-timeout 180 \\`,
+		"postgres redis-rate-limit minio typesense provider-sink",
+		"for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do",
+		"--no-build --no-deps --force-recreate --abort-on-container-exit",
+		'--exit-code-from "$job" "$job"',
 		"SELECT count(*) FROM event_schema_migrations WHERE name = '0035_place_enrichment_worker_health.sql'",
 		'test "$enrichment_worker_acl" = "f|t|t|t|t|t|f|t|f|f|f"',
 		`"${previousComposeExpression}" up --no-build --no-deps --wait --wait-timeout 180 \\`,
@@ -653,6 +667,27 @@ function validateStagingCompatibilityWorkflow(source: string) {
 		'"githubActionsRunId": run_id',
 	]) {
 		expect(proof).toContain(required);
+	}
+	const targetPersistentStart = proof.indexOf(
+		`"${targetComposeExpression}" up -d --wait --wait-timeout 180 \\`,
+	);
+	const targetJobsStart = proof.indexOf(
+		"for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do",
+	);
+	expect(targetPersistentStart).toBeGreaterThan(-1);
+	expect(targetJobsStart).toBeGreaterThan(targetPersistentStart);
+	const targetPersistentStartup = proof.slice(
+		targetPersistentStart,
+		targetJobsStart,
+	);
+	for (const job of [
+		"jwt-bootstrap",
+		"user-migrate",
+		"event-migrate",
+		"db-grants",
+		"minio-bootstrap",
+	]) {
+		expect(targetPersistentStartup).not.toContain(job);
 	}
 	for (const [service, image] of [
 		["redis-rate-limit", "$PREVIOUS_RATE_LIMIT_REDIS_IMAGE"],
