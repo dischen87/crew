@@ -753,6 +753,7 @@ describe("mobile SQLite read models", () => {
 			{ version: 21, name: "recap_external_command_attempts" },
 			{ version: 22, name: "root_scoped_mutation_stream_identity" },
 			{ version: 23, name: "feed_photo_lifecycle" },
+			{ version: 24, name: "community_feedback_manager_write_attempts" },
 		]);
 		expect(
 			await database.first<{ foreign_keys: number }>("PRAGMA foreign_keys"),
@@ -1156,12 +1157,13 @@ INSERT INTO events VALUES (
 			{ version: 21 },
 			{ version: 22 },
 			{ version: 23 },
+			{ version: 24 },
 		]);
 		await database.run(
-			"INSERT INTO schema_migrations (version, name) VALUES (24, 'future_schema')",
+			"INSERT INTO schema_migrations (version, name) VALUES (25, 'future_schema')",
 		);
 		await expect(migrate(database)).rejects.toThrow(
-			"Unknown or renamed SQLite migration 24:future_schema",
+			"Unknown or renamed SQLite migration 25:future_schema",
 		);
 		database.close();
 	});
@@ -1907,6 +1909,20 @@ INSERT INTO events VALUES (
 				[accountUserId, `fbk_${accountUserId}`, now, now],
 			);
 			await database.run(
+				`INSERT INTO community_feedback_manager_write_attempts (
+  account_user_id, root_event_id, feedback_id, signature_hash,
+  idempotency_key, state, created_at, committed_at
+) VALUES (?, 'evt_trip', ?, ?, ?, 'committed_refresh_required', ?, ?)`,
+				[
+					accountUserId,
+					`fbk_manager_${accountUserId}`,
+					"a".repeat(64),
+					`manager-${accountUserId}`,
+					now,
+					now,
+				],
+			);
+			await database.run(
 				`INSERT INTO local_attachment_media (
   account_user_id, attachment_id, root_event_id, target_entry_id,
   retained_file_key, content_type, byte_count, sha256, pixel_width,
@@ -1979,6 +1995,7 @@ INSERT INTO events VALUES (
 			"sync_push_batches",
 			"community_feedback_cache",
 			"community_feedback_updates",
+			"community_feedback_manager_write_attempts",
 			"feedback_submissions",
 			"golf_rounds",
 			"golf_holes",
@@ -2001,6 +2018,11 @@ INSERT INTO events VALUES (
 		expect(
 			await database.first<{ count: number }>(
 				"SELECT COUNT(*) AS count FROM community_feedback_cache WHERE account_user_id = 'usr_bob'",
+			),
+		).toEqual({ count: 1 });
+		expect(
+			await database.first<{ count: number }>(
+				"SELECT COUNT(*) AS count FROM community_feedback_manager_write_attempts WHERE account_user_id = 'usr_bob'",
 			),
 		).toEqual({ count: 1 });
 		expect((await bob.getPublicPlace("place_zurich_hb"))?.name).toBe(
@@ -4633,6 +4655,7 @@ const deniedRootScopedTables = [
 	"local_attachment_media",
 	"community_feedback_cache",
 	"community_feedback_updates",
+	"community_feedback_manager_write_attempts",
 	"golf_rounds",
 	"golf_holes",
 	"golf_roster_players",
@@ -5272,6 +5295,14 @@ async function seedDeniedRootGraph(
   payload_json, refreshed_at
 ) VALUES (?, 'evt_trip', 'fbk_denied', 1, ?, '{}', ?)`,
 		[syncAccount, now, now],
+	);
+	await database.run(
+		`INSERT INTO community_feedback_manager_write_attempts (
+  account_user_id, root_event_id, feedback_id, signature_hash,
+  idempotency_key, state, created_at, committed_at
+) VALUES (?, 'evt_trip', 'fbk_denied', ?, 'manager-denied-0001',
+  'committed_refresh_required', ?, ?)`,
+		[syncAccount, "b".repeat(64), now, now],
 	);
 	await retainLocalAttachment(
 		database,

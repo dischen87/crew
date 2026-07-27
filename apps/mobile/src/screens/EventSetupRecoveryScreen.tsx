@@ -7,6 +7,7 @@ import {
 } from '../app/PrivateBootstrapGate';
 import type { RootStackParamList } from '../navigation/types';
 import {
+  approvedSearchMissCandidate,
   EventSetupRecoveryAccountChangedError,
   EventSetupRecoveryBusyError,
   EventSetupRecoveryConflictError,
@@ -16,6 +17,7 @@ import {
   EventSetupRecoveryOnlineRequiredError,
   EventSetupRecoveryRuntime,
   EventSetupRecoveryUnavailableError,
+  isEventSetupPlaceQueryValid,
   type EventSetupPlaceCandidate,
   type EventSetupPlaceEnrichment,
   type EventSetupRecoveryIntent,
@@ -34,9 +36,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EventSetupRecovery'>;
 type ScreenState = EventSetupRecoveryViewModel & {
   key: string;
   placePollCount: number;
+  worldwidePollCount: number;
 };
 
 const maximumPlacePolls = 3;
+const maximumWorldwidePolls = 3;
 
 export function EventSetupRecoveryScreen({ navigation, route }: Props) {
   const client = useGatewayClient();
@@ -160,7 +164,8 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
         if (!cached) {
           publish({
             ...concealedState(scopeKey, false),
-            message: 'Offline ist für diesen Prüfpunkt noch kein sicherer Kontext gespeichert.',
+            message:
+              'Offline ist für diesen Prüfpunkt noch kein sicherer Kontext gespeichert.',
           });
         }
         return;
@@ -307,6 +312,113 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
     state.selectedPlaceId,
   ]);
 
+  useEffect(() => {
+    const enrichment = state.worldwideEnrichment?.enrichment;
+    const delay = enrichment?.pollAfterSeconds;
+    if (
+      !runtime ||
+      !scopeKey ||
+      !enrichment ||
+      state.key !== scopeKey ||
+      state.phase !== 'ready' ||
+      state.worldwidePollingPaused ||
+      state.worldwideUnavailable ||
+      !online ||
+      delay === null ||
+      delay === undefined ||
+      state.worldwidePollCount >= maximumWorldwidePolls
+    ) {
+      return;
+    }
+    const jobId = enrichment.id;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (
+        cancelled ||
+        scopeRef.current !== scopeKey ||
+        activeAccountRef.current !== privateDatabase.accountId ||
+        stateRef.current.phase !== 'ready' ||
+        stateRef.current.worldwideEnrichment?.enrichment.id !== jobId
+      ) {
+        return;
+      }
+      (async () => {
+        try {
+          const result = await runtime.getSearchMissEnrichment(intent, jobId);
+          if (
+            cancelled ||
+            scopeRef.current !== scopeKey ||
+            activeAccountRef.current !== privateDatabase.accountId ||
+            stateRef.current.phase !== 'ready' ||
+            stateRef.current.worldwideEnrichment?.enrichment.id !== jobId
+          ) {
+            return;
+          }
+          const worldwidePollCount = stateRef.current.worldwidePollCount + 1;
+          const active =
+            result.enrichment.status === 'pending' ||
+            result.enrichment.status === 'processing';
+          publish({
+            ...stateRef.current,
+            message: null,
+            worldwideEnrichment: result,
+            worldwidePollCount,
+            worldwidePollingPaused:
+              active && worldwidePollCount >= maximumWorldwidePolls,
+            worldwideUnavailable: false,
+          });
+        } catch (error) {
+          if (
+            cancelled ||
+            scopeRef.current !== scopeKey ||
+            activeAccountRef.current !== privateDatabase.accountId
+          ) {
+            return;
+          }
+          if (
+            conceals(error) ||
+            error instanceof EventSetupRecoveryConflictError
+          ) {
+            publish(concealedState(scopeKey, onlineRef.current));
+            return;
+          }
+          publish({
+            ...stateRef.current,
+            message:
+              error instanceof EventSetupRecoveryEnrichmentUnavailableError
+                ? null
+                : safeMessage(error),
+            worldwidePollCount: stateRef.current.worldwidePollCount + 1,
+            worldwidePollingPaused: true,
+            worldwideUnavailable:
+              error instanceof EventSetupRecoveryEnrichmentUnavailableError,
+          });
+        }
+      })().catch(() => undefined);
+    }, delay * 1_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    intent,
+    online,
+    privateDatabase.accountId,
+    publish,
+    runtime,
+    scopeKey,
+    state.key,
+    state.phase,
+    state.worldwideEnrichment?.enrichment,
+    state.worldwideEnrichment?.enrichment.id,
+    state.worldwideEnrichment?.enrichment.pollAfterSeconds,
+    state.worldwideEnrichment?.enrichment.status,
+    state.worldwideEnrichment?.enrichment.updatedAt,
+    state.worldwidePollCount,
+    state.worldwidePollingPaused,
+    state.worldwideUnavailable,
+  ]);
+
   const runAction = useCallback(
     (action: EventSetupRecoveryAction) => {
       if (
@@ -322,9 +434,19 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
       ) {
         return;
       }
+      if (action === 'open_worldwide_search') {
+        if (!stateRef.current.placeSearchMiss) return;
+        publish({
+          ...stateRef.current,
+          message: null,
+          worldwideExpanded: true,
+        });
+        return;
+      }
       const accountUserId = privateDatabase.accountId;
       const selected = selectedPlace(stateRef.current);
       const enrichment = stateRef.current.placeEnrichment;
+      const worldwideEnrichment = stateRef.current.worldwideEnrichment;
       const selectedTemplate = selectedTemplateForAction(
         stateRef.current,
         action,
@@ -335,6 +457,48 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
       if (
         action === 'retry_enrichment' &&
         (!selected || !enrichment?.enrichment.retryAllowed)
+      ) {
+        return;
+      }
+      if (
+        action === 'start_worldwide_search' &&
+        (!stateRef.current.placeSearchMiss ||
+          !stateRef.current.worldwideExpanded ||
+          !validCountryCode(stateRef.current.worldwideCountryCode) ||
+          !isEventSetupPlaceQueryValid(stateRef.current.placeQuery) ||
+          worldwideEnrichment !== null)
+      ) {
+        return;
+      }
+      if (
+        (action === 'check_worldwide_search' ||
+          action === 'retry_worldwide_search' ||
+          action === 'approve_worldwide_place' ||
+          action === 'reject_worldwide_place' ||
+          action === 'bind_reviewed_place') &&
+        !worldwideEnrichment
+      ) {
+        return;
+      }
+      if (
+        action === 'retry_worldwide_search' &&
+        worldwideEnrichment?.enrichment.retryAllowed !== true
+      ) {
+        return;
+      }
+      if (
+        (action === 'approve_worldwide_place' ||
+          action === 'reject_worldwide_place') &&
+        (worldwideEnrichment?.enrichment.status !== 'succeeded' ||
+          worldwideEnrichment.review?.state !== 'pending' ||
+          worldwideEnrichment.place !== null)
+      ) {
+        return;
+      }
+      if (
+        action === 'bind_reviewed_place' &&
+        (worldwideEnrichment?.review?.state !== 'approved' ||
+          !worldwideEnrichment.place)
       ) {
         return;
       }
@@ -359,12 +523,11 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
             );
             publish({
               ...snapshotState(scopeKey, result.snapshot, true),
-              message:
-                result.results.length === 0
-                  ? 'Keine passenden Orte gefunden. Verfeinere deine Suche.'
-                  : null,
+              message: null,
               placeQuery: stateRef.current.placeQuery,
               placeResults: result.results,
+              placeSearchMiss: result.results.length === 0,
+              worldwideCountryCode: result.snapshot.suggestedCountryCode ?? '',
             });
             return;
           }
@@ -396,6 +559,110 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
               placeEnrichment: result,
               placeEnrichmentUnavailable: false,
               placePollCount: 0,
+            });
+            return;
+          }
+          if (action === 'start_worldwide_search') {
+            const result = await runtime.createSearchMissEnrichment(
+              intent,
+              stateRef.current.placeQuery,
+              stateRef.current.worldwideCountryCode,
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              worldwideEnrichment: result,
+              worldwidePollCount: 0,
+              worldwidePollingPaused: false,
+              worldwideUnavailable: false,
+            });
+            return;
+          }
+          if (action === 'check_worldwide_search' && worldwideEnrichment) {
+            const result = await runtime.getSearchMissEnrichment(
+              intent,
+              worldwideEnrichment.enrichment.id,
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              worldwideEnrichment: result,
+              worldwidePollCount: 0,
+              worldwidePollingPaused: false,
+              worldwideUnavailable: false,
+            });
+            return;
+          }
+          if (action === 'retry_worldwide_search' && worldwideEnrichment) {
+            const result = await runtime.retrySearchMissEnrichment(
+              intent,
+              worldwideEnrichment,
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              worldwideEnrichment: result,
+              worldwidePollCount: 0,
+              worldwidePollingPaused: false,
+              worldwideUnavailable: false,
+            });
+            return;
+          }
+          if (action === 'reject_worldwide_place' && worldwideEnrichment) {
+            const result = await runtime.reviewSearchMissEnrichment(
+              intent,
+              worldwideEnrichment,
+              'reject',
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              worldwideEnrichment: result,
+              worldwideUnavailable: false,
+            });
+            return;
+          }
+          if (action === 'approve_worldwide_place' && worldwideEnrichment) {
+            const result = await runtime.reviewSearchMissEnrichment(
+              intent,
+              worldwideEnrichment,
+              'approve',
+            );
+            publish({
+              ...stateRef.current,
+              busyAction: action,
+              message: null,
+              worldwideEnrichment: result,
+              worldwideUnavailable: false,
+            });
+            const snapshot = await runtime.bindPrimaryPlace(
+              intent,
+              approvedSearchMissCandidate(result),
+            );
+            publish({
+              ...snapshotState(scopeKey, snapshot, true),
+              message:
+                snapshot.blockerActive === false
+                  ? 'Der geprüfte Ort ist als Hauptort verbunden.'
+                  : null,
+            });
+            return;
+          }
+          if (action === 'bind_reviewed_place' && worldwideEnrichment) {
+            const snapshot = await runtime.bindPrimaryPlace(
+              intent,
+              approvedSearchMissCandidate(worldwideEnrichment),
+            );
+            publish({
+              ...snapshotState(scopeKey, snapshot, true),
+              message:
+                snapshot.blockerActive === false
+                  ? 'Der geprüfte Ort ist als Hauptort verbunden.'
+                  : null,
             });
             return;
           }
@@ -442,11 +709,40 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
             });
             return;
           }
+          if (
+            error instanceof EventSetupRecoveryEnrichmentUnavailableError &&
+            worldwideAction(action)
+          ) {
+            publish({
+              ...stateRef.current,
+              busyAction: null,
+              message: null,
+              worldwidePollingPaused: true,
+              worldwideUnavailable: true,
+            });
+            return;
+          }
           if (error instanceof EventSetupRecoveryConflictError) {
             try {
               const snapshot = await runtime.refresh(intent);
+              const approvedWorldwide =
+                snapshot.blockerActive &&
+                stateRef.current.worldwideEnrichment?.review?.state ===
+                  'approved'
+                  ? {
+                      placeQuery: stateRef.current.placeQuery,
+                      placeSearchMiss: true,
+                      worldwideCountryCode:
+                        stateRef.current.worldwideCountryCode,
+                      worldwideEnrichment: stateRef.current.worldwideEnrichment,
+                      worldwideExpanded: true,
+                      worldwidePollingPaused: false,
+                      worldwideUnavailable: false,
+                    }
+                  : {};
               publish({
                 ...snapshotState(scopeKey, snapshot, true),
+                ...approvedWorldwide,
                 message:
                   snapshot.blockerActive === false
                     ? 'Der Serverstand meldet diesen Prüfpunkt nicht mehr als offen. Prüfe die aktuellen Angaben erneut.'
@@ -473,7 +769,8 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
         if (actionFlightRef.current === flight) actionFlightRef.current = null;
       };
       flight.then(clear, clear);
-    }, [intent, privateDatabase.accountId, publish, runtime, scopeKey],
+    },
+    [intent, privateDatabase.accountId, publish, runtime, scopeKey],
   );
 
   const onBack = () => {
@@ -485,7 +782,8 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
       return;
     }
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('EventPublish', { rootEventId: intent.rootEventId });
+    else
+      navigation.navigate('EventPublish', { rootEventId: intent.rootEventId });
   };
 
   const visibleState =
@@ -499,13 +797,35 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
     <EventSetupRecoveryView
       model={visibleState}
       onBack={onBack}
+      onCountryCodeChange={value => {
+        if (
+          !scopeKey ||
+          scopeRef.current !== scopeKey ||
+          stateRef.current.key !== scopeKey ||
+          stateRef.current.busyAction ||
+          stateRef.current.snapshot?.source !== 'online' ||
+          worldwideFormLocked(stateRef.current)
+        ) {
+          return;
+        }
+        publish({
+          ...stateRef.current,
+          message: null,
+          worldwideCountryCode: value.toUpperCase(),
+          worldwideEnrichment: null,
+          worldwidePollCount: 0,
+          worldwidePollingPaused: false,
+          worldwideUnavailable: false,
+        });
+      }}
       onPlaceQueryChange={value => {
         if (
           !scopeKey ||
           scopeRef.current !== scopeKey ||
           stateRef.current.key !== scopeKey ||
           stateRef.current.busyAction ||
-          stateRef.current.snapshot?.source !== 'online'
+          stateRef.current.snapshot?.source !== 'online' ||
+          worldwideFormLocked(stateRef.current)
         ) {
           return;
         }
@@ -517,7 +837,13 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
           placeQuery: value,
           placeResults: [],
           placePollCount: 0,
+          placeSearchMiss: false,
           selectedPlaceId: null,
+          worldwideEnrichment: null,
+          worldwideExpanded: false,
+          worldwidePollCount: 0,
+          worldwidePollingPaused: false,
+          worldwideUnavailable: false,
         });
       }}
       onPrimaryAction={runAction}
@@ -538,7 +864,13 @@ export function EventSetupRecoveryScreen({ navigation, route }: Props) {
           placeEnrichment: null,
           placeEnrichmentUnavailable: false,
           placePollCount: 0,
+          placeSearchMiss: false,
           selectedPlaceId: id,
+          worldwideEnrichment: null,
+          worldwideExpanded: false,
+          worldwidePollCount: 0,
+          worldwidePollingPaused: false,
+          worldwideUnavailable: false,
         });
         runAction('enrich_place');
       }}
@@ -571,9 +903,16 @@ function initialState(key: string, online: boolean): ScreenState {
     placePollCount: 0,
     placeQuery: '',
     placeResults: [],
+    placeSearchMiss: false,
     selectedPlaceId: null,
     selectedTemplateId: null,
     snapshot: null,
+    worldwideCountryCode: '',
+    worldwideEnrichment: null,
+    worldwideExpanded: false,
+    worldwidePollCount: 0,
+    worldwidePollingPaused: false,
+    worldwideUnavailable: false,
   };
 }
 
@@ -590,6 +929,7 @@ function snapshotState(
     ...initialState(key, online),
     phase: snapshot.blockerActive === false ? 'resolved' : 'ready',
     snapshot,
+    worldwideCountryCode: snapshot.suggestedCountryCode ?? '',
   };
 }
 
@@ -629,6 +969,37 @@ function selectedTemplateForAction(
   )
     ? state.selectedTemplateId
     : null;
+}
+
+function validCountryCode(value: string): boolean {
+  return /^[A-Z]{2}$/.test(value.trim().toUpperCase());
+}
+
+function worldwideFormLocked(state: ScreenState): boolean {
+  if (state.worldwideUnavailable) return false;
+  const enrichment = state.worldwideEnrichment;
+  if (!enrichment) return false;
+  if (
+    enrichment.enrichment.status === 'pending' ||
+    enrichment.enrichment.status === 'processing'
+  ) {
+    return true;
+  }
+  return (
+    enrichment.enrichment.status === 'succeeded' &&
+    enrichment.review?.state !== 'rejected'
+  );
+}
+
+function worldwideAction(action: EventSetupRecoveryAction): boolean {
+  return (
+    action === 'start_worldwide_search' ||
+    action === 'check_worldwide_search' ||
+    action === 'retry_worldwide_search' ||
+    action === 'approve_worldwide_place' ||
+    action === 'reject_worldwide_place' ||
+    action === 'bind_reviewed_place'
+  );
 }
 
 function conceals(error: unknown) {

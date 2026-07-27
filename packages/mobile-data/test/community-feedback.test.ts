@@ -13,6 +13,8 @@ import {
 	type CommunityFeedback,
 	CommunityFeedbackAccountChangedError,
 	CommunityFeedbackController,
+	CommunityFeedbackDuplicateTargetUnavailableError,
+	CommunityFeedbackManagerUnavailableError,
 	type CommunityFeedbackSummary,
 	type CommunityFeedbackUpdate,
 	MobileDataStore,
@@ -324,6 +326,585 @@ describe("root-scoped community feedback data controller", () => {
 			expect(serialized).not.toContain(forbidden);
 		}
 		database.close();
+	});
+
+	test("rechecks owner scope, sends caller-stable manager writes, and refreshes only sanitized canonical feedback", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		const seen: Array<{
+			body: unknown;
+			key: string | null;
+			path: string;
+		}> = [];
+		let duplicateMarked = false;
+		const client = gatewayClient(async (input, init) => {
+			const path = new URL(String(input)).pathname;
+			const body =
+				typeof init?.body === "string" ? JSON.parse(init.body) : null;
+			seen.push({
+				body,
+				key: new Headers(init?.headers).get("idempotency-key"),
+				path,
+			});
+			if (path.endsWith(`/feedback/${duplicateId}/status`)) {
+				return jsonResponse(200, { feedback: genericFeedback() });
+			}
+			if (path.endsWith(`/feedback/${duplicateId}/duplicate`)) {
+				duplicateMarked = true;
+				return jsonResponse(200, {
+					feedback: genericFeedback({
+						duplicateOfFeedbackId: canonicalId,
+						status: "duplicate",
+					}),
+				});
+			}
+			if (path.endsWith(`/feedback/${duplicateId}`)) {
+				return duplicateMarked
+					? jsonResponse(200, {
+							feedback: detail(),
+							redirectedFromFeedbackId: duplicateId,
+						})
+					: jsonResponse(200, {
+							feedback: detail({
+								id: duplicateId,
+								status: "in_progress",
+								version: 3,
+							}),
+							redirectedFromFeedbackId: null,
+						});
+			}
+			return jsonResponse(200, {
+				items: [
+					summary({ id: duplicateId, title: "Unklare Wegführung" }),
+					summary(),
+				],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		});
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+
+		await expect(controller.managerRole(rootA)).resolves.toBe("owner");
+		await controller.setStatus(
+			rootA,
+			duplicateId,
+			"in_progress",
+			"  Wird geprüft.  ",
+			"manager-status-stable-0001",
+		);
+		await controller.setStatus(
+			rootA,
+			duplicateId,
+			"in_progress",
+			"Wird geprüft.",
+			"manager-status-stable-0001",
+		);
+		const merged = await controller.markDuplicate(
+			rootA,
+			duplicateId,
+			canonicalId,
+			"  Gleicher Bedarf. ",
+			"manager-duplicate-stable-0001",
+		);
+
+		expect(merged).toEqual({
+			kind: "refreshed",
+			resolution: {
+				feedback: detail(),
+				redirectedFromFeedbackId: duplicateId,
+			},
+		});
+		const statusWrites = seen.filter(({ path }) =>
+			path.endsWith(`/feedback/${duplicateId}/status`),
+		);
+		expect(statusWrites).toHaveLength(2);
+		expect(statusWrites.map(({ key }) => key)).toEqual([
+			"manager-status-stable-0001",
+			"manager-status-stable-0001",
+		]);
+		expect(statusWrites[0]?.body).toEqual({
+			note: "Wird geprüft.",
+			status: "in_progress",
+		});
+		expect(
+			seen.find(({ path }) =>
+				path.endsWith(`/feedback/${duplicateId}/duplicate`),
+			),
+		).toMatchObject({
+			body: {
+				canonicalFeedbackId: canonicalId,
+				note: "Gleicher Bedarf.",
+			},
+			key: "manager-duplicate-stable-0001",
+		});
+		expect(await controller.getCached(rootA, duplicateId)).toBeNull();
+		expect(await controller.getCached(rootA, canonicalId)).toEqual(detail());
+		const serialized = JSON.stringify(
+			await database.all(
+				"SELECT summary_json, detail_json FROM community_feedback_cache",
+			),
+		);
+		expect(serialized).not.toContain(accountB);
+		expect(serialized).not.toContain("private-device");
+		database.close();
+	});
+
+	test("persists a committed manager write and suppresses every later write until refresh", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		const requests: Array<{ operation: string; request: unknown }> = [];
+		const subject = { userId: accountA } as GatewaySessionSubject;
+		const client = {
+			sessionSubject: async () => subject,
+			assertSessionSubject: async () => {},
+			requestAsUser: async (
+				_subject: GatewaySessionSubject,
+				operation: string,
+				request: unknown,
+			) => {
+				requests.push({ operation, request });
+				if (operation === "eventFeedbackList") {
+					return {
+						data: {
+							items: [
+								summary({ id: duplicateId }),
+								summary({ id: canonicalId }),
+							],
+							pageInfo: { hasMore: false, nextCursor: null },
+						},
+					};
+				}
+				if (
+					operation === "feedbackStatusSet" ||
+					operation === "feedbackDuplicateMark"
+				) {
+					return { data: { feedback: genericFeedback() } };
+				}
+				throw new Error("private refresh failure detail");
+			},
+		} as unknown as GatewayClient;
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+
+		await expect(
+			controller.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				null,
+				"committed-status-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		await expect(
+			controller.markDuplicate(
+				rootA,
+				duplicateId,
+				canonicalId,
+				null,
+				"committed-duplicate-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		expect(
+			requests.filter(({ operation }) => operation === "feedbackStatusSet"),
+		).toHaveLength(1);
+		expect(
+			requests.filter(({ operation }) => operation === "feedbackDuplicateMark"),
+		).toHaveLength(0);
+		expect(
+			requests.filter(({ operation }) => operation === "eventFeedbackGet"),
+		).toHaveLength(1);
+		expect(JSON.stringify(requests)).toContain("committed-status-0001");
+		expect(JSON.stringify(requests)).not.toContain("committed-duplicate-0001");
+		await expect(
+			controller.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(true);
+		expect(
+			JSON.stringify([
+				await controller.list(rootA),
+				{ kind: "committed_refresh_failed" },
+			]),
+		).not.toContain("private refresh failure detail");
+		database.close();
+	});
+
+	test("keeps a committed write locked until authoritative root denial purges its stale cache", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		let committed = false;
+		const client = gatewayClient(async (input) => {
+			const requestPath = new URL(String(input)).pathname;
+			if (requestPath.endsWith(`/feedback/${duplicateId}/status`)) {
+				committed = true;
+				return jsonResponse(200, { feedback: genericFeedback() });
+			}
+			if (requestPath.endsWith(`/feedback/${duplicateId}`)) {
+				if (committed) {
+					return jsonResponse(404, {
+						error: {
+							code: "NOT_FOUND",
+							message: "Safe test error",
+							retryable: false,
+						},
+					});
+				}
+				return jsonResponse(200, {
+					feedback: detail({ id: duplicateId }),
+					redirectedFromFeedbackId: null,
+				});
+			}
+			return jsonResponse(200, {
+				items: [summary({ id: duplicateId })],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		});
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+		await controller.refresh(rootA, duplicateId);
+
+		await expect(
+			controller.setStatus(
+				rootA,
+				duplicateId,
+				"completed",
+				null,
+				"revoked-manager-key-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		await expect(
+			controller.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(true);
+		await expect(
+			controller.getCached(rootA, duplicateId),
+		).resolves.toMatchObject({
+			id: duplicateId,
+			status: "planned",
+		});
+
+		await new MobileDataStore(database).clearRootData(accountA, rootA);
+		await expect(controller.getCached(rootA, duplicateId)).resolves.toBeNull();
+		await expect(
+			controller.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(false);
+		database.close();
+	});
+
+	test("returns the committed outcome without disk residue when a parallel root purge wins before refresh", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		let detailReads = 0;
+		const client = gatewayClient(async (input) => {
+			const requestPath = new URL(String(input)).pathname;
+			if (requestPath.endsWith(`/feedback/${duplicateId}/status`)) {
+				await new MobileDataStore(database).clearRootData(accountA, rootA);
+				return jsonResponse(200, { feedback: genericFeedback() });
+			}
+			if (requestPath.endsWith(`/feedback/${duplicateId}`)) {
+				detailReads += 1;
+				return jsonResponse(200, {
+					feedback: detail({ id: duplicateId }),
+					redirectedFromFeedbackId: null,
+				});
+			}
+			return jsonResponse(200, {
+				items: [summary({ id: duplicateId })],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		});
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+		await controller.refresh(rootA, duplicateId);
+
+		await expect(
+			controller.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				null,
+				"parallel-purge-key-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		expect(detailReads).toBe(1);
+		await expect(controller.getCached(rootA, duplicateId)).resolves.toBeNull();
+		await expect(
+			controller.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(false);
+		database.close();
+	});
+
+	test("restores the manager refresh lock across reopen, isolates accounts and clears it only after an authoritative refresh", async () => {
+		const path = temporaryDatabasePath();
+		const database = new BunDatabase(path);
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedRootState(database, accountA, rootB);
+		await seedRootState(database, accountB, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		await seedSelfMembership(database, accountA, rootB, "owner");
+		await seedSelfMembership(database, accountB, rootA, "owner");
+		const sessionStore = new MemorySessionStore(session(accountA));
+		let refreshAvailable = false;
+		const client = gatewayClient(async (input) => {
+			const requestPath = new URL(String(input)).pathname;
+			if (requestPath.endsWith(`/feedback/${duplicateId}/status`)) {
+				return jsonResponse(200, { feedback: genericFeedback() });
+			}
+			if (requestPath.endsWith(`/feedback/${duplicateId}`)) {
+				if (!refreshAvailable) throw new Error("private refresh failure");
+				return jsonResponse(200, {
+					feedback: detail({
+						id: duplicateId,
+						status: "planned",
+						version: 2,
+					}),
+					redirectedFromFeedbackId: null,
+				});
+			}
+			return jsonResponse(200, {
+				items: [summary({ id: duplicateId })],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		}, sessionStore);
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+
+		await expect(
+			controller.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				"Jane jane@example.com",
+				"durable-manager-key-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		const persisted = await database.first<Record<string, unknown>>(
+			"SELECT * FROM community_feedback_manager_write_attempts",
+		);
+		expect(persisted).toMatchObject({
+			account_user_id: accountA,
+			feedback_id: duplicateId,
+			idempotency_key: "durable-manager-key-0001",
+			root_event_id: rootA,
+			state: "committed_refresh_required",
+		});
+		expect(String(persisted?.signature_hash)).toMatch(/^[a-f0-9]{64}$/);
+		expect(JSON.stringify(persisted)).not.toContain("Jane");
+		expect(JSON.stringify(persisted)).not.toContain("jane@example.com");
+		database.close();
+
+		const reopened = new BunDatabase(path);
+		await migrate(reopened);
+		const reopenedController = new CommunityFeedbackController(
+			reopened,
+			client,
+		);
+		await expect(
+			reopenedController.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(true);
+		await expect(
+			reopenedController.managerWritePending(rootB, duplicateId),
+		).resolves.toBe(false);
+		sessionStore.session = session(accountB);
+		await expect(
+			reopenedController.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(false);
+
+		sessionStore.session = session(accountA);
+		refreshAvailable = true;
+		await expect(
+			reopenedController.refresh(rootA, duplicateId),
+		).resolves.toMatchObject({
+			feedback: { id: duplicateId, status: "planned", version: 2 },
+		});
+		await expect(
+			reopenedController.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(false);
+		expect(
+			await reopened.first<{ count: number }>(
+				"SELECT count(*) AS count FROM community_feedback_manager_write_attempts",
+			),
+		).toEqual({ count: 0 });
+		reopened.close();
+	});
+
+	test("reuses the durable idempotency key for an uncertain same-signature retry and blocks a different command", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "owner");
+		const seenKeys: Array<string | null> = [];
+		let statusAttempt = 0;
+		const client = gatewayClient(async (input, init) => {
+			const requestPath = new URL(String(input)).pathname;
+			if (requestPath.endsWith(`/feedback/${duplicateId}/status`)) {
+				seenKeys.push(new Headers(init?.headers).get("idempotency-key"));
+				statusAttempt += 1;
+				if (statusAttempt === 1) throw new Error("response lost");
+				return jsonResponse(200, { feedback: genericFeedback() });
+			}
+			if (requestPath.endsWith(`/feedback/${duplicateId}`)) {
+				return jsonResponse(200, {
+					feedback: detail({
+						id: duplicateId,
+						status: "planned",
+						version: 2,
+					}),
+					redirectedFromFeedbackId: null,
+				});
+			}
+			return jsonResponse(200, {
+				items: [summary({ id: duplicateId })],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		});
+		const first = new CommunityFeedbackController(database, client);
+		await first.refreshList(rootA);
+		await expect(
+			first.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				"Stable note",
+				"original-manager-key-0001",
+			),
+		).rejects.toThrow("Gateway request failed");
+
+		const reopened = new CommunityFeedbackController(database, client);
+		await expect(
+			reopened.setStatus(
+				rootA,
+				duplicateId,
+				"completed",
+				"Different command",
+				"different-manager-key-0001",
+			),
+		).resolves.toEqual({ kind: "committed_refresh_failed" });
+		expect(seenKeys).toEqual(["original-manager-key-0001"]);
+		await expect(
+			reopened.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				"Stable note",
+				"new-caller-key-0001",
+			),
+		).resolves.toMatchObject({ kind: "refreshed" });
+		expect(seenKeys).toEqual([
+			"original-manager-key-0001",
+			"original-manager-key-0001",
+		]);
+		await expect(
+			reopened.managerWritePending(rootA, duplicateId),
+		).resolves.toBe(false);
+		database.close();
+	});
+
+	test("conceals manager actions from participants and rejects targets outside sanitized same-root projections", async () => {
+		const database = new BunDatabase(temporaryDatabasePath());
+		await migrate(database);
+		await seedRootState(database, accountA, rootA);
+		await seedSelfMembership(database, accountA, rootA, "participant");
+		let genericWrites = 0;
+		const client = gatewayClient(async (input) => {
+			const path = new URL(String(input)).pathname;
+			if (path.startsWith("/core/v1/feedback/")) genericWrites += 1;
+			return jsonResponse(200, {
+				items: [summary({ id: duplicateId })],
+				pageInfo: { hasMore: false, nextCursor: null },
+			});
+		});
+		const controller = new CommunityFeedbackController(database, client);
+		await controller.refreshList(rootA);
+
+		await expect(controller.managerRole(rootA)).resolves.toBeNull();
+		await expect(
+			controller.setStatus(
+				rootA,
+				duplicateId,
+				"planned",
+				null,
+				"participant-status-0001",
+			),
+		).rejects.toBeInstanceOf(CommunityFeedbackManagerUnavailableError);
+		await seedSelfMembership(database, accountA, rootA, "organizer", 2);
+		await expect(
+			controller.markDuplicate(
+				rootA,
+				duplicateId,
+				"fbk_not_sanitized_target",
+				null,
+				"unsafe-target-0001",
+			),
+		).rejects.toBeInstanceOf(CommunityFeedbackDuplicateTargetUnavailableError);
+		expect(genericWrites).toBe(0);
+		database.close();
+	});
+
+	test("rejects account changes and reports a committed role-change refresh failure without caching it", async () => {
+		for (const change of ["account", "role"] as const) {
+			const database = new BunDatabase(temporaryDatabasePath());
+			await migrate(database);
+			await seedRootState(database, accountA, rootA);
+			await seedSelfMembership(database, accountA, rootA, "owner");
+			const sessionStore = new MemorySessionStore(session(accountA));
+			let release: (() => void) | undefined;
+			let started: (() => void) | undefined;
+			const requestStarted = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const responseReleased = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const client = gatewayClient(async (input) => {
+				const path = new URL(String(input)).pathname;
+				if (path.endsWith(`/feedback/${duplicateId}/status`)) {
+					started?.();
+					await responseReleased;
+					return jsonResponse(200, { feedback: genericFeedback() });
+				}
+				return jsonResponse(200, {
+					items: [summary({ id: duplicateId })],
+					pageInfo: { hasMore: false, nextCursor: null },
+				});
+			}, sessionStore);
+			const controller = new CommunityFeedbackController(database, client);
+			await controller.refreshList(rootA);
+			const pending = controller.setStatus(
+				rootA,
+				duplicateId,
+				"completed",
+				null,
+				`manager-${change}-0001`,
+			);
+			await requestStarted;
+			if (change === "account") {
+				sessionStore.session = session(accountB);
+			} else {
+				await seedSelfMembership(database, accountA, rootA, "participant", 2);
+			}
+			release?.();
+			if (change === "account") {
+				await expect(pending).rejects.toBeInstanceOf(
+					CommunityFeedbackAccountChangedError,
+				);
+			} else {
+				await expect(pending).resolves.toEqual({
+					kind: "committed_refresh_failed",
+				});
+			}
+			if (change === "account") sessionStore.session = session(accountA);
+			expect(await controller.list(rootA)).toEqual([
+				summary({ id: duplicateId }),
+			]);
+			database.close();
+		}
 	});
 
 	test("uses server-authoritative follows, canonical redirects and caller-stable idempotency", async () => {
@@ -796,6 +1377,25 @@ async function seedRootState(
 	);
 }
 
+async function seedSelfMembership(
+	database: SqlDatabase,
+	accountUserId: string,
+	rootEventId: string,
+	role: "owner" | "organizer" | "participant" | "viewer",
+	version = 1,
+) {
+	await new MobileDataStore(database).putMembership({
+		accountUserId,
+		rootEventId,
+		memberUserId: accountUserId,
+		role,
+		status: "active",
+		version,
+		createdAt: now,
+		updatedAt: now,
+	});
+}
+
 function gatewayClient(
 	fetchImplementation: (
 		input: string | URL | Request,
@@ -922,6 +1522,35 @@ function unsafeDetail() {
 			...change,
 			changedBy: "usr_private-actor",
 		})),
+	};
+}
+
+function genericFeedback(
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+	return {
+		attachments: [],
+		authorUserId: accountB,
+		body: "Private generic response body",
+		commentCount: 0,
+		comments: [],
+		commentsHasMore: false,
+		context: { eventId: null, rootEventId: rootA, screenKey: null },
+		createdAt: now,
+		diagnostics: { deviceModel: "private-device", platform: "ios" },
+		duplicateOfFeedbackId: null,
+		id: duplicateId,
+		status: "in_progress",
+		statusHistory: [],
+		statusHistoryCount: 0,
+		statusHistoryHasMore: false,
+		title: "Private generic response",
+		updatedAt: now,
+		version: 3,
+		viewerHasVoted: false,
+		visibility: "public",
+		voteCount: 1,
+		...overrides,
 	};
 }
 

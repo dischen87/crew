@@ -1,6 +1,7 @@
 import { CommunityFeedbackRuntime } from '../src/screens/CommunityFeedbackRuntime';
 
 const mockController = {};
+const mockDuplicateSuggestions = {};
 const mockSyncRoot = jest.fn();
 const mockListMemberships = jest.fn();
 const mockArm = jest.fn();
@@ -30,6 +31,10 @@ const mockMobileSyncEngine = jest.fn(
 const mockCommunityFeedbackController = jest.fn(
   (_database: unknown, _client: unknown) => mockController,
 );
+const mockFeedbackDuplicateSuggestionController = jest.fn(
+  (_database: unknown, _client: unknown, _options: unknown) =>
+    mockDuplicateSuggestions,
+);
 const mockMobileDataStore = jest.fn((_database: unknown) => ({
   listMemberships: mockListMemberships,
 }));
@@ -43,6 +48,12 @@ jest.mock('@crew/mobile-data', () => ({
     constructor(database: unknown, client: unknown) {
       mockCommunityFeedbackController(database, client);
       return mockController;
+    }
+  },
+  FeedbackDuplicateSuggestionController: class {
+    constructor(database: unknown, client: unknown, options: unknown) {
+      mockFeedbackDuplicateSuggestionController(database, client, options);
+      return mockDuplicateSuggestions;
     }
   },
   LocalAttachmentStore: class {
@@ -107,6 +118,12 @@ test('uses generated community controller and crash-safe authoritative root hook
     database,
     client,
   );
+  expect(mockFeedbackDuplicateSuggestionController).toHaveBeenCalledWith(
+    database,
+    client,
+    { activeAccountUserId },
+  );
+  expect(runtime.duplicateSuggestions).toBe(mockDuplicateSuggestions);
   expect(mockMobileSyncEngine).toHaveBeenCalledWith(
     database,
     client,

@@ -2169,6 +2169,38 @@ BEGIN
 END;
 `,
 	},
+	{
+		version: 24,
+		name: "community_feedback_manager_write_attempts",
+		sql: `
+CREATE TABLE community_feedback_manager_write_attempts (
+  account_user_id TEXT NOT NULL CHECK (account_user_id LIKE 'usr_%'),
+  root_event_id TEXT NOT NULL CHECK (root_event_id LIKE 'evt_%'),
+  feedback_id TEXT NOT NULL CHECK (
+    feedback_id LIKE 'fbk_%' AND length(feedback_id) BETWEEN 5 AND 100
+  ),
+  signature_hash TEXT NOT NULL CHECK (
+    length(signature_hash) = 64 AND
+    signature_hash NOT GLOB '*[^a-f0-9]*'
+  ),
+  idempotency_key TEXT NOT NULL CHECK (
+    length(idempotency_key) BETWEEN 8 AND 128
+  ),
+  state TEXT NOT NULL CHECK (
+    state IN ('attempting', 'committed_refresh_required')
+  ),
+  created_at TEXT NOT NULL,
+  committed_at TEXT,
+  PRIMARY KEY (account_user_id, root_event_id, feedback_id),
+  FOREIGN KEY (account_user_id, root_event_id)
+    REFERENCES root_sync_state (account_user_id, root_event_id) ON DELETE CASCADE,
+  CHECK (
+    (state = 'attempting' AND committed_at IS NULL) OR
+    (state = 'committed_refresh_required' AND committed_at IS NOT NULL)
+  )
+);
+`,
+	},
 ];
 
 interface AppliedMigrationRow {

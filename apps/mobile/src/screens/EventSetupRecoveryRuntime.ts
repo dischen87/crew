@@ -61,6 +61,9 @@ export type EventSetupEventPlace =
 export type EventSetupPlaceEnrichment =
   GatewayResponseData<'placeEnrichmentJobsCreate'>;
 
+export type EventSetupPlaceReviewDecision =
+  GatewayRequest<'placeEnrichmentJobsReview'>['body']['decision'];
+
 export type EventSetupTemplateChoice = Pick<
   Template,
   'id' | 'summary' | 'title' | 'version'
@@ -85,6 +88,7 @@ export type EventSetupRecoverySnapshot = {
   rootRevision: string | null;
   rootVersion: number;
   source: 'cached' | 'online';
+  suggestedCountryCode: string | null;
   target: EventSetupRecoveryTarget | null;
   template: EventSetupTemplateId | null;
   templates: readonly EventSetupTemplateChoice[];
@@ -112,6 +116,7 @@ type CachedReadinessRow = {
 
 const accountPattern = /^usr_[a-f0-9]{32}$/;
 const eventPattern = /^evt_[A-Za-z0-9._:-]{1,96}$/;
+const candidatePlacePattern = /^pcd_[a-f0-9]{64}$/;
 const enrichmentJobPattern = /^pej_[a-f0-9]{64}$/;
 const globalPlacePattern = /^gpl_[a-f0-9]{64}$/;
 const revisionPattern = /^[1-9][0-9]*$/;
@@ -255,6 +260,11 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       rootRevision: cachedReadiness?.rootRevision ?? null,
       rootVersion: root.version,
       source: 'cached',
+      suggestedCountryCode: cachedCountrySuggestion(
+        places,
+        this.#accountUserId,
+        intent.rootEventId,
+      ),
       target: cachedTarget(intent, events, capabilities, places),
       template: parseTemplateId(cachedReadiness?.template?.id),
       templates: [],
@@ -419,6 +429,183 @@ WHERE account_user_id = ? AND root_event_id = ?`,
         candidate,
         projection.enrichment.id,
       );
+    });
+  }
+
+  async createSearchMissEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    value: string,
+    rawCountryCode: string,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceRecoveryIntent(rawIntent);
+    const query = placeQuery(value);
+    const countryCode = placeCountryCode(rawCountryCode);
+    return this.#command(intent, async subject => {
+      const snapshot = await this.#refresh(subject, intent);
+      if (!snapshot.blockerActive) throw new EventSetupRecoveryConflictError();
+      if (!snapshot.target) throw new EventSetupRecoveryUnavailableError();
+      const kind = searchKind(snapshot.target.type);
+      const digest = await sha256Hex(
+        JSON.stringify([
+          this.#accountUserId,
+          intent.rootEventId,
+          intent.eventId,
+          intent.capabilityType,
+          'search_miss',
+          query,
+          kind,
+          countryCode,
+        ]),
+      );
+      const response = await this.#request(
+        subject,
+        'placeEnrichmentJobsCreate',
+        {
+          body: {
+            rootEventId: intent.rootEventId,
+            eventId: intent.eventId,
+            capabilityType: intent.capabilityType,
+            target: 'search_miss',
+            query,
+            kind,
+            countryCode,
+          },
+          headers: {
+            'idempotency-key': `place-search-miss-${digest.slice(0, 40)}`,
+          },
+        },
+      );
+      return searchMissEnrichmentProjection(response.data, kind);
+    });
+  }
+
+  async getSearchMissEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    jobId: string,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceRecoveryIntent(rawIntent);
+    if (!enrichmentJobPattern.test(jobId)) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#online(async subject => {
+      await this.#managerRole(subject, intent.rootEventId);
+      const response = await this.#request(subject, 'placeEnrichmentJobsGet', {
+        path: { jobId },
+        query: { rootEventId: intent.rootEventId },
+      });
+      return searchMissEnrichmentProjection(
+        response.data,
+        searchKind(intent.capabilityType),
+        jobId,
+      );
+    });
+  }
+
+  async retrySearchMissEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    current: EventSetupPlaceEnrichment,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceRecoveryIntent(rawIntent);
+    const projection = searchMissEnrichmentProjection(
+      current,
+      searchKind(intent.capabilityType),
+    );
+    if (!projection.enrichment.retryAllowed) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#command(intent, async subject => {
+      await this.#managerRole(subject, intent.rootEventId);
+      const digest = await sha256Hex(
+        JSON.stringify([
+          this.#accountUserId,
+          intent.rootEventId,
+          projection.enrichment.id,
+          projection.enrichment.updatedAt,
+        ]),
+      );
+      const response = await this.#request(
+        subject,
+        'placeEnrichmentJobsRetry',
+        {
+          headers: {
+            'idempotency-key': `place-search-miss-${digest.slice(0, 40)}`,
+          },
+          path: { jobId: projection.enrichment.id },
+          query: { rootEventId: intent.rootEventId },
+        },
+      );
+      return searchMissEnrichmentProjection(
+        response.data,
+        searchKind(intent.capabilityType),
+        projection.enrichment.id,
+      );
+    });
+  }
+
+  async reviewSearchMissEnrichment(
+    rawIntent: EventSetupRecoveryIntent,
+    current: EventSetupPlaceEnrichment,
+    decision: EventSetupPlaceReviewDecision,
+  ): Promise<EventSetupPlaceEnrichment> {
+    const intent = validatePlaceRecoveryIntent(rawIntent);
+    const kind = searchKind(intent.capabilityType);
+    const projection = searchMissEnrichmentProjection(current, kind);
+    if (
+      projection.enrichment.status !== 'succeeded' ||
+      projection.review?.state !== 'pending' ||
+      projection.place !== null ||
+      (decision !== 'approve' && decision !== 'reject')
+    ) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#command(intent, async subject => {
+      const snapshot = await this.#refresh(subject, intent);
+      if (
+        !snapshot.blockerActive ||
+        !snapshot.target ||
+        searchKind(snapshot.target.type) !== kind
+      ) {
+        throw new EventSetupRecoveryConflictError();
+      }
+      const digest = await sha256Hex(
+        JSON.stringify([
+          this.#accountUserId,
+          intent.rootEventId,
+          intent.eventId,
+          intent.capabilityType,
+          projection.enrichment.id,
+          decision,
+        ]),
+      );
+      const response = await this.#request(
+        subject,
+        'placeEnrichmentJobsReview',
+        {
+          body: {
+            rootEventId: intent.rootEventId,
+            eventId: intent.eventId,
+            capabilityType: intent.capabilityType,
+            decision,
+          },
+          headers: {
+            'idempotency-key': `place-search-review-${digest.slice(0, 40)}`,
+          },
+          path: { jobId: projection.enrichment.id },
+        },
+      );
+      const reviewed = searchMissEnrichmentProjection(
+        response.data,
+        kind,
+        projection.enrichment.id,
+      );
+      if (
+        reviewed.review?.state !==
+          (decision === 'approve' ? 'approved' : 'rejected') ||
+        (decision === 'approve') !== (reviewed.place !== null)
+      ) {
+        throw new EventSetupRecoveryEnrichmentUnavailableError();
+      }
+      return reviewed;
     });
   }
 
@@ -932,11 +1119,19 @@ function validatePlaceIntent(
   candidate: EventSetupPlaceCandidate,
 ): EventSetupRecoveryIntent &
   Required<Pick<EventSetupRecoveryIntent, 'capabilityType' | 'eventId'>> {
+  const intent = validatePlaceRecoveryIntent(rawIntent);
+  if (!validCandidate(candidate)) {
+    throw new EventSetupRecoveryUnavailableError();
+  }
+  return intent;
+}
+
+function validatePlaceRecoveryIntent(
+  rawIntent: EventSetupRecoveryIntent,
+): EventSetupRecoveryIntent &
+  Required<Pick<EventSetupRecoveryIntent, 'capabilityType' | 'eventId'>> {
   const intent = validateIntent(rawIntent);
-  if (
-    intent.code !== 'EVENT_CAPABILITY_PLACE_REQUIRED' ||
-    !validCandidate(candidate)
-  ) {
+  if (intent.code !== 'EVENT_CAPABILITY_PLACE_REQUIRED') {
     throw new EventSetupRecoveryUnavailableError();
   }
   return intent as EventSetupRecoveryIntent &
@@ -1055,6 +1250,31 @@ function cachedTarget(
   };
 }
 
+function cachedCountrySuggestion(
+  places: readonly EventPlaceRecord[],
+  accountUserId: string,
+  rootEventId: string,
+): string | null {
+  return countrySuggestion(
+    places.filter(
+      place =>
+        place.accountUserId === accountUserId &&
+        place.rootEventId === rootEventId &&
+        place.deletedAt === null,
+    ),
+  );
+}
+
+function countrySuggestion(
+  places: readonly { countryCode: string }[],
+): string | null {
+  if (places.length === 0) return null;
+  const codes = places.map(place => place.countryCode);
+  if (codes.some(code => !/^[A-Z]{2}$/.test(code))) return null;
+  const unique = new Set(codes);
+  return unique.size === 1 ? codes[0] ?? null : null;
+}
+
 function remoteSnapshot(
   intent: EventSetupRecoveryIntent,
   role: 'organizer' | 'owner',
@@ -1093,6 +1313,7 @@ function remoteSnapshot(
     rootRevision: readiness.rootRevision,
     rootVersion: readiness.rootVersion,
     source: 'online',
+    suggestedCountryCode: countrySuggestion(places),
     target,
     template: parseTemplateId(readiness.template?.id),
     templates: templates.map(item => ({
@@ -1489,10 +1710,23 @@ function searchKind(type: EventSetupCapabilityType): 'golf_course' | 'venue' {
 
 function placeQuery(value: string): string {
   const query = value.trim();
-  if (query.length < 1 || query.length > 120) {
-    throw new TypeError('Place search must contain 1 to 120 characters');
+  if (!isEventSetupPlaceQueryValid(query)) {
+    throw new TypeError('Place search must contain 2 to 120 characters');
   }
   return query;
+}
+
+export function isEventSetupPlaceQueryValid(value: string): boolean {
+  const length = value.trim().length;
+  return length >= 2 && length <= 120;
+}
+
+function placeCountryCode(value: string): string {
+  const countryCode = value.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    throw new TypeError('Country code must contain two letters');
+  }
+  return countryCode;
 }
 
 function validCandidate(value: EventSetupPlaceCandidate): boolean {
@@ -1528,26 +1762,10 @@ function placeEnrichmentProjection(
   candidate: EventSetupPlaceCandidate,
   expectedJobId?: string,
 ): EventSetupPlaceEnrichment {
-  const { enrichment, place } = value;
-  const active =
-    enrichment.status === 'pending' ||
-    enrichment.status === 'processing' ||
-    enrichment.status === 'retry';
+  const { enrichment, place, review } = value;
   if (
-    !enrichmentJobPattern.test(enrichment.id) ||
-    (expectedJobId !== undefined && enrichment.id !== expectedJobId) ||
-    !validTimestamp(enrichment.createdAt) ||
-    !validTimestamp(enrichment.updatedAt) ||
-    (enrichment.completedAt !== null &&
-      !validTimestamp(enrichment.completedAt)) ||
-    (active
-      ? !Number.isSafeInteger(enrichment.pollAfterSeconds) ||
-        Number(enrichment.pollAfterSeconds) < 1 ||
-        Number(enrichment.pollAfterSeconds) > 30 ||
-        enrichment.completedAt !== null
-      : enrichment.pollAfterSeconds !== null ||
-        enrichment.completedAt === null) ||
-    enrichment.retryAllowed !== (enrichment.status === 'retry') ||
+    !validEnrichment(enrichment, expectedJobId) ||
+    review !== null ||
     (place === null
       ? enrichment.status === 'succeeded'
       : !globalPlacePattern.test(place.id) ||
@@ -1558,6 +1776,157 @@ function placeEnrichmentProjection(
     throw new EventSetupRecoveryEnrichmentUnavailableError();
   }
   return value;
+}
+
+function searchMissEnrichmentProjection(
+  value: EventSetupPlaceEnrichment,
+  expectedKind: EventSetupPlaceKind,
+  expectedJobId?: string,
+): EventSetupPlaceEnrichment {
+  const { enrichment, place, review } = value;
+  if (!validEnrichment(enrichment, expectedJobId)) {
+    throw new EventSetupRecoveryEnrichmentUnavailableError();
+  }
+  if (enrichment.status !== 'succeeded') {
+    if (place !== null || review !== null) {
+      throw new EventSetupRecoveryEnrichmentUnavailableError();
+    }
+    return value;
+  }
+  if (
+    !review ||
+    !validPlaceReview(review) ||
+    (review.state === 'approved'
+      ? !place || !validReviewedPlace(place, expectedKind)
+      : place !== null)
+  ) {
+    throw new EventSetupRecoveryEnrichmentUnavailableError();
+  }
+  return value;
+}
+
+function validEnrichment(
+  enrichment: EventSetupPlaceEnrichment['enrichment'],
+  expectedJobId?: string,
+): boolean {
+  const active =
+    enrichment.status === 'pending' ||
+    enrichment.status === 'processing' ||
+    enrichment.status === 'retry';
+  return (
+    enrichmentJobPattern.test(enrichment.id) &&
+    (expectedJobId === undefined || enrichment.id === expectedJobId) &&
+    validTimestamp(enrichment.createdAt) &&
+    validTimestamp(enrichment.updatedAt) &&
+    (enrichment.completedAt === null ||
+      validTimestamp(enrichment.completedAt)) &&
+    (active
+      ? Number.isSafeInteger(enrichment.pollAfterSeconds) &&
+        Number(enrichment.pollAfterSeconds) >= 1 &&
+        Number(enrichment.pollAfterSeconds) <= 30 &&
+        enrichment.completedAt === null
+      : enrichment.pollAfterSeconds === null &&
+        enrichment.completedAt !== null) &&
+    enrichment.retryAllowed === (enrichment.status === 'retry')
+  );
+}
+
+function validPlaceReview(
+  review: NonNullable<EventSetupPlaceEnrichment['review']>,
+): boolean {
+  if (review.fields.length < 2 || review.fields.length > 9) return false;
+  const names = new Set(review.fields.map(field => field.name));
+  return (
+    names.size === review.fields.length &&
+    review.fields.every(field => {
+      const { name, provenance, value } = field;
+      if (
+        provenance.sourceKind !== 'exa_llm' ||
+        !validHttpsUrl(provenance.sourceUrl) ||
+        !validTimestamp(provenance.observedAt)
+      ) {
+        return false;
+      }
+      if (name === 'countryCode') return /^[A-Z]{2}$/.test(value);
+      if (name === 'latitude') return validCoordinate(value, -90, 90);
+      if (name === 'longitude') return validCoordinate(value, -180, 180);
+      if (name === 'websiteUrl') return validHttpsUrl(value);
+      const maximum =
+        name === 'summary' ? 1_000 : name === 'address' ? 500 : 200;
+      return value.trim().length >= 1 && value.length <= maximum;
+    })
+  );
+}
+
+function validCoordinate(value: string, minimum: number, maximum: number) {
+  if (!/^-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$/.test(value)) return false;
+  const coordinate = Number(value);
+  return (
+    Number.isFinite(coordinate) &&
+    coordinate >= minimum &&
+    coordinate <= maximum
+  );
+}
+
+function validHttpsUrl(value: string): boolean {
+  return (
+    value.length >= 9 &&
+    value.length <= 2_048 &&
+    /^https:\/\/[^\s]+$/i.test(value)
+  );
+}
+
+function validReviewedPlace(
+  place: NonNullable<EventSetupPlaceEnrichment['place']>,
+  expectedKind: EventSetupPlaceKind,
+): boolean {
+  return (
+    globalPlacePattern.test(place.id) &&
+    place.kind === expectedKind &&
+    candidatePlacePattern.test(place.sourceCandidateId) &&
+    validPlaceFacts(place) &&
+    (place.address === null ||
+      (place.address.trim().length >= 1 && place.address.length <= 500)) &&
+    (place.websiteUrl === null || validHttpsUrl(place.websiteUrl)) &&
+    (place.summary === null ||
+      (place.summary.trim().length >= 1 && place.summary.length <= 1_000))
+  );
+}
+
+export function approvedSearchMissCandidate(
+  value: EventSetupPlaceEnrichment,
+): EventSetupPlaceCandidate {
+  const place = value.place;
+  if (
+    !place ||
+    value.review?.state !== 'approved' ||
+    !validReviewedPlace(place, place.kind)
+  ) {
+    throw new EventSetupRecoveryEnrichmentUnavailableError();
+  }
+  const candidate: EventSetupPlaceCandidate = {
+    attribution: 'Crew worldwide review',
+    confidence: 1,
+    countryCode: place.countryCode,
+    id: place.id,
+    kind: place.kind,
+    latitude: place.latitude,
+    licenseCode: 'reviewed-source',
+    licenseUrl: null,
+    locality: place.locality,
+    longitude: place.longitude,
+    name: place.name,
+    region: place.region,
+    retrievedAt: value.enrichment.updatedAt,
+    source: 'crew-worldwide-review',
+    sourceRecordUrl: value.review.fields[0]?.provenance.sourceUrl ?? null,
+    status: 'enriched',
+    version: 1,
+  };
+  if (!validCandidate(candidate)) {
+    throw new EventSetupRecoveryEnrichmentUnavailableError();
+  }
+  return candidate;
 }
 
 function validPlaceFacts(value: {
@@ -1750,11 +2119,21 @@ function mapGatewayError(error: unknown): Error {
     return error;
   }
   if (error instanceof GatewayClientError) {
+    const code: string = error.code;
     if (error.code === 'session_changed' || error.code === 'unauthenticated') {
       return new EventSetupRecoveryAccountChangedError();
     }
     if (error.code === 'PLACE_ENRICHMENT_CAPACITY') {
       return new EventSetupRecoveryEnrichmentUnavailableError();
+    }
+    if (code === 'PLACE_ENRICHMENT_REVIEW_UNAVAILABLE') {
+      return new EventSetupRecoveryEnrichmentUnavailableError();
+    }
+    if (code === 'PLACE_ENRICHMENT_REVIEW_CONFLICT') {
+      return new EventSetupRecoveryConflictError();
+    }
+    if (code === 'PLACE_ENRICHMENT_SCOPE_INVALID') {
+      return new EventSetupRecoveryUnavailableError();
     }
     if (error.status === 403)
       return new EventSetupRecoveryManagerRequiredError();
@@ -1764,7 +2143,8 @@ function mapGatewayError(error: unknown): Error {
       error.status === 503 &&
       (error.operationId === 'placeEnrichmentJobsCreate' ||
         error.operationId === 'placeEnrichmentJobsGet' ||
-        error.operationId === 'placeEnrichmentJobsRetry')
+        error.operationId === 'placeEnrichmentJobsRetry' ||
+        error.operationId === 'placeEnrichmentJobsReview')
     ) {
       return new EventSetupRecoveryEnrichmentUnavailableError();
     }

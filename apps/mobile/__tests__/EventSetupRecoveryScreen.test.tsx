@@ -27,10 +27,14 @@ let mockRuntime: {
   adoptTemplate: jest.Mock;
   bindPrimaryPlace: jest.Mock;
   createPlaceEnrichment: jest.Mock;
+  createSearchMissEnrichment: jest.Mock;
   getPlaceEnrichment: jest.Mock;
+  getSearchMissEnrichment: jest.Mock;
   loadCached: jest.Mock;
   refresh: jest.Mock;
+  reviewSearchMissEnrichment: jest.Mock;
   retryPlaceEnrichment: jest.Mock;
+  retrySearchMissEnrichment: jest.Mock;
   restoreCapability: jest.Mock;
   searchPlaces: jest.Mock;
 };
@@ -75,10 +79,14 @@ beforeEach(() => {
     adoptTemplate: jest.fn(),
     bindPrimaryPlace: jest.fn(),
     createPlaceEnrichment: jest.fn(),
+    createSearchMissEnrichment: jest.fn(),
     getPlaceEnrichment: jest.fn(),
+    getSearchMissEnrichment: jest.fn(),
     loadCached: jest.fn(async () => null),
     refresh: jest.fn(async () => snapshot()),
+    reviewSearchMissEnrichment: jest.fn(),
     retryPlaceEnrichment: jest.fn(),
+    retrySearchMissEnrichment: jest.fn(),
     restoreCapability: jest.fn(async () => resolvedSnapshot()),
     searchPlaces: jest.fn(),
   };
@@ -356,9 +364,7 @@ test('polls a newly selected place while the previous place poll is still in fli
         ? oldPoll.promise
         : Promise.resolve(enrichmentProjection('succeeded')),
   );
-  const { renderer } = await renderScreen(
-    'EVENT_CAPABILITY_PLACE_REQUIRED',
-  );
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
 
   await ReactTestRenderer.act(() =>
     renderer.root
@@ -456,6 +462,258 @@ test('keeps candidate binding available when enrichment is unavailable', async (
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('opens worldwide search only after an empty result, polls three times and approves through the existing bind flow', async () => {
+  jest.useFakeTimers();
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createSearchMissEnrichment.mockResolvedValue(
+    worldwideProjection('pending'),
+  );
+  const polls = [
+    worldwideProjection('pending'),
+    worldwideProjection('pending'),
+    worldwideProjection('succeeded', 'pending'),
+  ];
+  mockRuntime.getSearchMissEnrichment.mockImplementation(() =>
+    Promise.resolve(polls.shift() ?? worldwideProjection('pending')),
+  );
+  mockRuntime.reviewSearchMissEnrichment.mockResolvedValue(
+    worldwideProjection('succeeded', 'approved'),
+  );
+  mockRuntime.bindPrimaryPlace.mockResolvedValue(resolvedPlaceSnapshot());
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
+
+  expect(
+    renderer.root.findAllByProps({ testID: 'event-setup-worldwide' }),
+  ).toHaveLength(0);
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Ocean Dunes'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(renderer)).toContain('Kein passender Ort gefunden.');
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-country',
+    }),
+  ).toHaveLength(0);
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-open' })
+      .props.onPress(),
+  );
+  expect(
+    renderer.root.findByProps({
+      testID: 'event-setup-worldwide-country',
+    }).props.value,
+  ).toBe('TR');
+  const start = renderer.root.findByProps({
+    testID: 'event-setup-worldwide-start',
+  });
+  await ReactTestRenderer.act(async () => {
+    start.props.onPress();
+    start.props.onPress();
+    await flush();
+  });
+  expect(mockRuntime.createSearchMissEnrichment).toHaveBeenCalledTimes(1);
+  expect(mockRuntime.createSearchMissEnrichment).toHaveBeenCalledWith(
+    expect.anything(),
+    'Ocean Dunes',
+    'TR',
+  );
+
+  for (let poll = 0; poll < 3; poll += 1) {
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(2_000);
+      await flush();
+    });
+  }
+  jest.advanceTimersByTime(20_000);
+  expect(mockRuntime.getSearchMissEnrichment).toHaveBeenCalledTimes(3);
+  const reviewText = textInside(renderer);
+  expect(reviewText).toContain('Prüfe den weltweiten Vorschlag.');
+  expect(reviewText).toContain('Ocean Dunes Golf Club');
+  expect(reviewText).toContain('https://example.com/ocean-dunes');
+  expect(reviewText).not.toMatch(/\bprompt\b|\bmodel\b|\bquery\b/i);
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-approve' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockRuntime.reviewSearchMissEnrichment).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      review: { state: 'pending', fields: expect.any(Array) },
+    }),
+    'approve',
+  );
+  expect(mockRuntime.bindPrimaryPlace).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      countryCode: 'TR',
+      id: `gpl_${'d'.repeat(64)}`,
+      name: 'Ocean Dunes Golf Club',
+    }),
+  );
+  expect(textInside(renderer)).toContain(
+    'Der geprüfte Ort ist als Hauptort verbunden.',
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('rejects a reviewed worldwide place without calling the bind flow', async () => {
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createSearchMissEnrichment.mockResolvedValue(
+    worldwideProjection('succeeded', 'pending'),
+  );
+  mockRuntime.reviewSearchMissEnrichment.mockResolvedValue(
+    worldwideProjection('succeeded', 'rejected'),
+  );
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Ocean Dunes'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-open' })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-start' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-reject' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(mockRuntime.reviewSearchMissEnrichment).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    'reject',
+  );
+  expect(mockRuntime.bindPrimaryPlace).not.toHaveBeenCalled();
+  expect(textInside(renderer)).toContain(
+    'Es wurde kein Ort angelegt oder mit dem Event verbunden.',
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('unlocks and resets the worldwide form after a terminal review failure', async () => {
+  mockRuntime.refresh.mockResolvedValue(placeSnapshot());
+  mockRuntime.searchPlaces.mockResolvedValue({
+    results: [],
+    snapshot: placeSnapshot(),
+  });
+  mockRuntime.createSearchMissEnrichment.mockResolvedValue(
+    worldwideProjection('succeeded', 'pending'),
+  );
+  mockRuntime.reviewSearchMissEnrichment.mockRejectedValue(
+    new EventSetupRecoveryEnrichmentUnavailableError(),
+  );
+  const { renderer } = await renderScreen('EVENT_CAPABILITY_PLACE_REQUIRED');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onChangeText('Ocean Dunes'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-open' })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-start' })
+      .props.onPress();
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-approve' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(textInside(renderer)).toContain(
+    'weltweite Suche oder Prüfung ist gerade nicht verfügbar',
+  );
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-place-query' }).props
+      .disabled,
+  ).toBe(false);
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-worldwide-country' }).props
+      .disabled,
+  ).toBe(false);
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-approve',
+    }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-reject',
+    }),
+  ).toHaveLength(0);
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-worldwide-country' })
+      .props.onChangeText('DE'),
+  );
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-review',
+    }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-worldwide-country' }).props
+      .value,
+  ).toBe('DE');
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-worldwide-start' }).props
+      .disabled,
+  ).toBe(false);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('refetches authoritative setup when the recovery route regains focus', async () => {
   const { focusListeners, renderer } = await renderScreen();
   expect(mockRuntime.refresh).toHaveBeenCalledTimes(1);
@@ -547,6 +805,7 @@ function snapshot(
     rootRevision: '12',
     rootVersion: 7,
     source,
+    suggestedCountryCode: 'TR',
     target: {
       capability: null,
       capabilityVersion: 0,
@@ -662,6 +921,71 @@ function enrichmentProjection(
         : '2026-07-19T10:01:00.000Z',
     },
     place: null,
+    review: null,
+  };
+}
+
+function worldwideProjection(
+  status: 'pending' | 'retry' | 'succeeded',
+  reviewState?: 'pending' | 'approved' | 'rejected',
+) {
+  const active = status !== 'succeeded';
+  const state = status === 'succeeded' ? reviewState ?? 'pending' : null;
+  return {
+    enrichment: {
+      completedAt: active ? null : '2026-07-19T10:01:00.000Z',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'d'.repeat(64)}`,
+      pollAfterSeconds: active ? (status === 'retry' ? 5 : 2) : null,
+      retryAllowed: status === 'retry',
+      status,
+      updatedAt: active
+        ? '2026-07-19T10:00:00.000Z'
+        : '2026-07-19T10:01:00.000Z',
+    },
+    place:
+      state === 'approved'
+        ? {
+            address: 'Ocean Road 1',
+            countryCode: 'TR',
+            id: `gpl_${'d'.repeat(64)}`,
+            kind: 'golf_course' as const,
+            latitude: 36.86,
+            locality: 'Belek',
+            longitude: 31.05,
+            name: 'Ocean Dunes Golf Club',
+            region: 'Antalya',
+            sourceCandidateId: `pcd_${'e'.repeat(64)}`,
+            summary: 'A reviewed golf course.',
+            websiteUrl: 'https://example.com/ocean-dunes',
+          }
+        : null,
+    review:
+      state === null
+        ? null
+        : {
+            fields: [
+              {
+                name: 'name' as const,
+                provenance: {
+                  observedAt: '2026-07-19T09:59:00.000Z',
+                  sourceKind: 'exa_llm' as const,
+                  sourceUrl: 'https://example.com/ocean-dunes',
+                },
+                value: 'Ocean Dunes Golf Club',
+              },
+              {
+                name: 'websiteUrl' as const,
+                provenance: {
+                  observedAt: '2026-07-19T09:59:00.000Z',
+                  sourceKind: 'exa_llm' as const,
+                  sourceUrl: 'https://example.com/ocean-dunes',
+                },
+                value: 'https://example.com/ocean-dunes',
+              },
+            ],
+            state,
+          },
   };
 }
 

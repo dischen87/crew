@@ -2,6 +2,7 @@ import { GatewayClientError } from '@crew/mobile-client';
 import {
   MobileSyncRootAccessDeniedError,
   type CommunityFeedback,
+  type CommunityFeedbackManagerWriteOutcome,
   type CommunityFeedbackSummary,
 } from '@crew/mobile-data';
 import React from 'react';
@@ -34,14 +35,21 @@ const mockController = {
   changelog: jest.fn(),
   getCached: jest.fn(),
   list: jest.fn(),
+  managerRole: jest.fn(),
+  managerWritePending: jest.fn(),
+  markDuplicate: jest.fn(),
   refresh: jest.fn(),
   refreshList: jest.fn(),
   refreshUpdates: jest.fn(),
   setFollowed: jest.fn(),
+  setStatus: jest.fn(),
   setVote: jest.fn(),
 };
 const mockRuntime = {
   controller: mockController,
+  duplicateSuggestions: {
+    search: jest.fn(),
+  },
   hasCachedMembership: jest.fn(),
   verifyRoot: jest.fn(),
 };
@@ -131,6 +139,8 @@ beforeEach(() => {
   mockRuntime.hasCachedMembership.mockResolvedValue(true);
   mockRuntime.verifyRoot.mockResolvedValue(undefined);
   mockController.list.mockResolvedValue([summary]);
+  mockController.managerRole.mockResolvedValue(null);
+  mockController.managerWritePending.mockResolvedValue(false);
   mockController.changelog.mockResolvedValue([]);
   mockController.getCached.mockResolvedValue(detail);
   mockController.refresh.mockResolvedValue({
@@ -146,6 +156,32 @@ beforeEach(() => {
   mockController.setFollowed.mockResolvedValue({
     feedbackId,
     followed: true,
+  });
+  mockController.setStatus.mockResolvedValue({
+    kind: 'refreshed',
+    resolution: {
+      feedback: { ...detail, status: 'planned', version: 2 },
+      redirectedFromFeedbackId: null,
+    },
+  });
+  mockController.markDuplicate.mockResolvedValue({
+    kind: 'refreshed',
+    resolution: {
+      feedback: { ...detail, id: 'fbk_canonical' },
+      redirectedFromFeedbackId: feedbackId,
+    },
+  });
+  mockRuntime.duplicateSuggestions.search.mockResolvedValue({
+    items: [
+      {
+        id: 'fbk_canonical',
+        status: 'planned',
+        title: 'Kanonische Meldung',
+        voteCount: 8,
+      },
+    ],
+    refreshedAt: '2026-07-19T10:00:00.000Z',
+    source: 'network',
   });
   mockController.addComment.mockResolvedValue({
     feedback: detail,
@@ -351,6 +387,417 @@ test('deduplicates concurrent votes and reuses the caller-stable key after failu
   });
   expect(mockController.setVote).toHaveBeenCalledTimes(2);
   expect(mockController.setVote.mock.calls[1][3]).toBe(firstKey);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('rechecks manager scope and reuses the same status idempotency key after an honest failure', async () => {
+  mockController.managerRole.mockResolvedValue('owner');
+  mockController.setStatus
+    .mockRejectedValueOnce(new Error('network'))
+    .mockResolvedValueOnce({
+      kind: 'refreshed',
+      resolution: {
+        feedback: { ...detail, status: 'planned', version: 2 },
+        redirectedFromFeedbackId: null,
+      },
+    });
+  const renderer = await renderItem();
+
+  expect(textInside(renderer)).toContain('Owner-Zugriff');
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'community-feedback-manager-note' })
+      .props.onChangeText('  Öffentlich sichtbar.  '),
+  );
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({ testID: 'community-feedback-manager-status-planned' })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(renderer)).toContain(
+    'Änderung nicht gesendet. Es wurde nichts vorgemerkt.',
+  );
+  const firstKey = mockController.setStatus.mock.calls[0][4];
+
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({ testID: 'community-feedback-manager-status-planned' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledTimes(2);
+  expect(mockController.setStatus.mock.calls[1][4]).toBe(firstKey);
+  expect(mockController.setStatus).toHaveBeenLastCalledWith(
+    rootEventId,
+    feedbackId,
+    'planned',
+    'Öffentlich sichtbar.',
+    firstKey,
+  );
+  expect(mockRuntime.verifyRoot).toHaveBeenLastCalledWith(
+    mockAccountUserId,
+    rootEventId,
+    true,
+  );
+  expect(mockController.managerRole).toHaveBeenCalledWith(rootEventId);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('does not repeat a committed manager write when its sanitized refresh fails', async () => {
+  mockController.managerRole.mockResolvedValue('owner');
+  mockController.setStatus.mockResolvedValueOnce({
+    kind: 'committed_refresh_failed',
+  });
+  const renderer = await renderItem();
+  const statusButton = renderer.root.findByProps({
+    testID: 'community-feedback-manager-status-planned',
+  });
+  const staleStatusPress = statusButton.props.onPress;
+
+  await ReactTestRenderer.act(async () => {
+    await staleStatusPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+  expect(mockController.setStatus.mock.calls[0][4]).toMatch(/^community-/);
+  expect(textInside(renderer)).toContain(
+    'Änderung bestätigt. Der aktuelle sichere Stand konnte nicht geladen werden.',
+  );
+  expect(textInside(renderer)).toContain('sende die Änderung nicht erneut');
+  expect(
+    renderer.root.findAll(
+      node =>
+        typeof node.props.testID === 'string' &&
+        node.props.testID.startsWith('community-feedback-manager-status-'),
+    ),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({ testID: 'community-feedback-vote' }).props
+      .disabled,
+  ).toBe(true);
+
+  await ReactTestRenderer.act(async () => {
+    await staleStatusPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+
+  mockController.refresh.mockResolvedValueOnce({
+    feedback: { ...detail, status: 'planned', version: 2 },
+    redirectedFromFeedbackId: null,
+  });
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'community-feedback-item-refresh' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+  expect(textInside(renderer)).not.toContain('sende die Änderung nicht erneut');
+  expect(
+    renderer.root.findByProps({
+      testID: 'community-feedback-manager-status-planned',
+    }).props.disabled,
+  ).toBe(true);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('conceals stale in-memory feedback when authoritative verification denies after a committed manager write', async () => {
+  mockController.managerRole.mockResolvedValue('owner');
+  mockController.setStatus.mockResolvedValueOnce({
+    kind: 'committed_refresh_failed',
+  });
+  const renderer = await renderItem();
+  const verificationCount = mockRuntime.verifyRoot.mock.calls.length;
+  mockRuntime.verifyRoot
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new MobileSyncRootAccessDeniedError());
+
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({ testID: 'community-feedback-manager-status-planned' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+  expect(mockRuntime.verifyRoot).toHaveBeenCalledTimes(verificationCount + 2);
+  expect(mockRuntime.verifyRoot).toHaveBeenLastCalledWith(
+    mockAccountUserId,
+    rootEventId,
+    true,
+  );
+  expect(textInside(renderer)).toContain(
+    'Geschützte Event- und Feedbackdaten bleiben verborgen',
+  );
+  expect(textInside(renderer)).not.toContain(detail.title);
+  expect(textInside(renderer)).not.toContain(detail.body);
+  expect(textInside(renderer)).not.toContain('sende die Änderung nicht erneut');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('restores a durable manager refresh lock after remount and clears it only after safe refresh', async () => {
+  mockController.managerRole.mockResolvedValue('owner');
+  mockController.setStatus.mockResolvedValueOnce({
+    kind: 'committed_refresh_failed',
+  });
+  const first = await renderItem();
+  await ReactTestRenderer.act(async () => {
+    await first.root
+      .findByProps({ testID: 'community-feedback-manager-status-planned' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => first.unmount());
+
+  mockController.managerWritePending.mockResolvedValue(true);
+  mockController.refresh.mockRejectedValue(new Error('refresh unavailable'));
+  const reopened = await renderItem();
+  expect(mockController.managerWritePending).toHaveBeenLastCalledWith(
+    rootEventId,
+    feedbackId,
+  );
+  expect(textInside(reopened)).toContain(
+    'Aktualisiere den sicheren Stand, bevor du weitere Beiträge sendest.',
+  );
+  expect(
+    reopened.root.findAll(
+      node =>
+        typeof node.props.testID === 'string' &&
+        node.props.testID.startsWith('community-feedback-manager-status-'),
+    ),
+  ).toHaveLength(0);
+  expect(
+    reopened.root.findByProps({ testID: 'community-feedback-vote' }).props
+      .disabled,
+  ).toBe(true);
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+
+  mockController.refresh.mockResolvedValueOnce({
+    feedback: { ...detail, status: 'planned', version: 2 },
+    redirectedFromFeedbackId: null,
+  });
+  await ReactTestRenderer.act(async () => {
+    reopened.root
+      .findByProps({ testID: 'community-feedback-item-refresh' })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(reopened)).not.toContain(
+    'Aktualisiere den sicheren Stand, bevor du weitere Beiträge sendest.',
+  );
+  expect(
+    reopened.root.findByProps({
+      testID: 'community-feedback-manager-status-completed',
+    }).props.disabled,
+  ).toBe(false);
+  expect(mockController.setStatus).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => reopened.unmount());
+});
+
+test('renders only the valid reopen transition for a terminal manager item', async () => {
+  const terminal = { ...detail, status: 'completed' as const, version: 2 };
+  mockController.getCached.mockResolvedValue(terminal);
+  mockController.refresh.mockResolvedValue({
+    feedback: terminal,
+    redirectedFromFeedbackId: null,
+  });
+  mockController.managerRole.mockResolvedValue('owner');
+  mockController.setStatus.mockResolvedValue({
+    kind: 'refreshed',
+    resolution: {
+      feedback: { ...terminal, status: 'open', version: 3 },
+      redirectedFromFeedbackId: null,
+    },
+  });
+  const renderer = await renderItem();
+
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'community-feedback-manager-status-planned',
+    }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({
+      testID: 'community-feedback-manager-status-completed',
+    }).props.disabled,
+  ).toBe(true);
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({ testID: 'community-feedback-manager-status-open' })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.setStatus).toHaveBeenCalledWith(
+    rootEventId,
+    feedbackId,
+    'open',
+    '',
+    expect.stringMatching(/^community-/),
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('merges only into a sanitized suggestion and redirects to the canonical feedback', async () => {
+  mockController.managerRole.mockResolvedValue('organizer');
+  const onCanonicalFeedback = jest.fn();
+  const renderer = await renderItem({ onCanonicalFeedback });
+
+  expect(mockRuntime.duplicateSuggestions.search).toHaveBeenCalledWith(
+    mockAccountUserId,
+    rootEventId,
+    expect.any(String),
+    true,
+  );
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({
+        testID: 'community-feedback-manager-duplicate-fbk_canonical',
+      })
+      .props.onPress(),
+  );
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({
+        testID: 'community-feedback-manager-duplicate-submit',
+      })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(mockController.markDuplicate).toHaveBeenCalledWith(
+    rootEventId,
+    feedbackId,
+    'fbk_canonical',
+    '',
+    expect.stringMatching(/^community-/),
+  );
+  expect(onCanonicalFeedback).toHaveBeenCalledWith('fbk_canonical');
+  expect(textInside(renderer)).toContain('Meldungen zusammengeführt.');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test.each(['status', 'duplicate'] as const)(
+  'conceals the protected manager screen when %s preflight root verification denies access',
+  async action => {
+    mockController.managerRole.mockResolvedValue('owner');
+    const renderer = await renderItem();
+    if (action === 'duplicate') {
+      await ReactTestRenderer.act(() =>
+        renderer.root
+          .findByProps({
+            testID: 'community-feedback-manager-duplicate-fbk_canonical',
+          })
+          .props.onPress(),
+      );
+    }
+    mockRuntime.verifyRoot.mockRejectedValueOnce(
+      new MobileSyncRootAccessDeniedError(),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root
+        .findByProps({
+          testID:
+            action === 'status'
+              ? 'community-feedback-manager-status-planned'
+              : 'community-feedback-manager-duplicate-submit',
+        })
+        .props.onPress();
+      await flush();
+    });
+
+    expect(textInside(renderer)).toContain(
+      'Geschützte Event- und Feedbackdaten bleiben verborgen',
+    );
+    expect(mockController.setStatus).not.toHaveBeenCalled();
+    expect(mockController.markDuplicate).not.toHaveBeenCalled();
+    expect(
+      renderer.root.findAll(
+        node =>
+          typeof node.props.testID === 'string' &&
+          node.props.testID.startsWith('community-feedback-manager-'),
+      ),
+    ).toHaveLength(0);
+    await ReactTestRenderer.act(() => renderer.unmount());
+  },
+);
+
+test('conceals manager actions when the role is stale before the write', async () => {
+  mockController.managerRole
+    .mockResolvedValueOnce('organizer')
+    .mockResolvedValueOnce('organizer')
+    .mockResolvedValue(null);
+  const renderer = await renderItem();
+  expect(textInside(renderer)).toContain('Organizer-Zugriff');
+
+  await ReactTestRenderer.act(async () => {
+    await renderer.root
+      .findByProps({ testID: 'community-feedback-manager-status-planned' })
+      .props.onPress();
+    await flush();
+  });
+
+  expect(mockController.setStatus).not.toHaveBeenCalled();
+  expect(textInside(renderer)).toContain(
+    'Manager-Zugriff nicht mehr verfügbar. Die Änderung wurde nicht gesendet.',
+  );
+  expect(
+    renderer.root.findAll(
+      node =>
+        typeof node.props.testID === 'string' &&
+        node.props.testID.startsWith('community-feedback-manager-status-'),
+    ),
+  ).toHaveLength(0);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('ignores a deferred manager redirect after an account switch', async () => {
+  mockController.managerRole.mockResolvedValue('owner');
+  const merge = deferred<CommunityFeedbackManagerWriteOutcome>();
+  mockController.markDuplicate.mockReturnValueOnce(merge.promise);
+  const onCanonicalFeedback = jest.fn();
+  const renderer = await renderItem({ onCanonicalFeedback });
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({
+        testID: 'community-feedback-manager-duplicate-fbk_canonical',
+      })
+      .props.onPress(),
+  );
+  let flight!: Promise<void>;
+  await ReactTestRenderer.act(async () => {
+    flight = renderer.root
+      .findByProps({
+        testID: 'community-feedback-manager-duplicate-submit',
+      })
+      .props.onPress();
+    await flush();
+  });
+  expect(mockController.markDuplicate).toHaveBeenCalledTimes(1);
+
+  mockLifecycle = { ...mockLifecycle, accountId: mockOtherAccountUserId };
+  await ReactTestRenderer.act(async () => {
+    renderer.update(itemElement({ onCanonicalFeedback }));
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    merge.resolve({
+      kind: 'refreshed',
+      resolution: {
+        feedback: { ...detail, id: 'fbk_canonical' },
+        redirectedFromFeedbackId: feedbackId,
+      },
+    });
+    await flight;
+    await flush();
+  });
+  expect(onCanonicalFeedback).not.toHaveBeenCalled();
+  expect(textInside(renderer)).toContain(
+    'Geschützte Event- und Feedbackdaten bleiben verborgen',
+  );
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 

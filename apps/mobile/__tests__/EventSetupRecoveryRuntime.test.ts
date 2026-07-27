@@ -11,6 +11,7 @@ import type {
   MembershipRecord,
 } from '@crew/mobile-data';
 import {
+  approvedSearchMissCandidate,
   EventSetupRecoveryAccountChangedError,
   EventSetupRecoveryConflictError,
   EventSetupRecoveryEnrichmentUnavailableError,
@@ -30,6 +31,8 @@ const mockPutDraft = jest.fn();
 const mockSha256 = jest.fn(async (value: string) =>
   value.includes('2026-07-20')
     ? 'c'.repeat(64)
+    : value.includes('evt_setup_round_two')
+    ? 'd'.repeat(64)
     : value.includes('candidate_golf')
     ? 'a'.repeat(64)
     : 'b'.repeat(64),
@@ -408,6 +411,248 @@ test('uses one stable enrichment command and accepts pending facts before confir
     place: { name: 'Alpine Golf Club' },
   });
   expect(getRequests[0]?.query).toEqual({ rootEventId });
+});
+
+test('suggests a country only when every same-root place agrees', async () => {
+  localPlaces = [localPlace('plc_one', 'CH'), localPlace('plc_two', 'CH')];
+  const runtime = makeRuntime({ online: false });
+  await expect(runtime.loadCached(placeIntent)).resolves.toMatchObject({
+    suggestedCountryCode: 'CH',
+  });
+
+  localPlaces = [...localPlaces, localPlace('plc_three', 'DE')];
+  await expect(runtime.loadCached(placeIntent)).resolves.toMatchObject({
+    suggestedCountryCode: null,
+  });
+
+  const requestAsUser = jest.fn(async (_subject, operationId) =>
+    onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      places: [
+        remotePlace('plc_one', 'Swiss course'),
+        { ...remotePlace('plc_two', 'German course'), countryCode: 'DE' },
+      ],
+      revision: '12',
+    }),
+  );
+  await expect(
+    makeRuntime({ requestAsUser }).refresh(placeIntent),
+  ).resolves.toMatchObject({ suggestedCountryCode: null });
+});
+
+test('creates one caller-stable search miss, validates cited review and approves idempotently', async () => {
+  const createRequests: Array<GatewayRequest<'placeEnrichmentJobsCreate'>> = [];
+  const reviewRequests: Array<GatewayRequest<'placeEnrichmentJobsReview'>> = [];
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placeEnrichmentJobsCreate') {
+      createRequests.push(options);
+      return response(searchMissProjection('pending'));
+    }
+    if (operationId === 'placeEnrichmentJobsGet') {
+      return response(searchMissProjection('succeeded', 'pending'));
+    }
+    if (operationId === 'placeEnrichmentJobsReview') {
+      reviewRequests.push(options);
+      return response(searchMissProjection('succeeded', 'approved'));
+    }
+    return onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+
+  const first = await runtime.createSearchMissEnrichment(
+    placeIntent,
+    '  Ocean Dunes  ',
+    'ch',
+  );
+  await runtime.createSearchMissEnrichment(placeIntent, 'Ocean Dunes', 'CH');
+  expect(first).toMatchObject({
+    enrichment: { pollAfterSeconds: 2, status: 'pending' },
+    place: null,
+    review: null,
+  });
+  expect(createRequests).toHaveLength(2);
+  expect(createRequests[0]?.body).toEqual({
+    capabilityType: 'golf',
+    countryCode: 'CH',
+    eventId: roundEventId,
+    kind: 'golf_course',
+    query: 'Ocean Dunes',
+    rootEventId,
+    target: 'search_miss',
+  });
+  expect(createRequests[1]?.headers).toEqual(createRequests[0]?.headers);
+
+  const reviewable = await runtime.getSearchMissEnrichment(
+    placeIntent,
+    first.enrichment.id,
+  );
+  expect(reviewable).toMatchObject({
+    enrichment: { status: 'succeeded' },
+    review: {
+      fields: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'name',
+          provenance: expect.objectContaining({
+            sourceKind: 'exa_llm',
+            sourceUrl: 'https://example.com/ocean-dunes',
+          }),
+          value: 'Ocean Dunes Golf Club',
+        }),
+      ]),
+      state: 'pending',
+    },
+  });
+
+  const approved = await runtime.reviewSearchMissEnrichment(
+    placeIntent,
+    reviewable,
+    'approve',
+  );
+  await runtime.reviewSearchMissEnrichment(placeIntent, reviewable, 'approve');
+  expect(reviewRequests).toHaveLength(2);
+  expect(reviewRequests[0]).toMatchObject({
+    body: {
+      capabilityType: 'golf',
+      decision: 'approve',
+      eventId: roundEventId,
+      rootEventId,
+    },
+    path: { jobId: first.enrichment.id },
+  });
+  expect(reviewRequests[1]?.headers).toEqual(reviewRequests[0]?.headers);
+  expect(approvedSearchMissCandidate(approved)).toMatchObject({
+    countryCode: 'CH',
+    id: `gpl_${'d'.repeat(64)}`,
+    kind: 'golf_course',
+    name: 'Ocean Dunes Golf Club',
+    sourceRecordUrl: 'https://example.com/ocean-dunes',
+  });
+});
+
+test('rejects one-character place queries before any Gateway request', async () => {
+  const requestAsUser = jest.fn();
+  const runtime = makeRuntime({ requestAsUser });
+
+  await expect(runtime.searchPlaces(placeIntent, ' A ')).rejects.toThrow(
+    '2 to 120 characters',
+  );
+  await expect(
+    runtime.createSearchMissEnrichment(placeIntent, ' A ', 'CH'),
+  ).rejects.toThrow('2 to 120 characters');
+  expect(requestAsUser).not.toHaveBeenCalled();
+});
+
+test('scopes review idempotency to event and capability for one shared job', async () => {
+  const secondRoundEventId = 'evt_setup_round_two';
+  const secondIntent: EventSetupRecoveryIntent = {
+    ...placeIntent,
+    eventId: secondRoundEventId,
+  };
+  const requests: Array<GatewayRequest<'placeEnrichmentJobsReview'>> = [];
+  let activeIntent = placeIntent;
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placeEnrichmentJobsReview') {
+      requests.push(options);
+      return response(searchMissProjection('succeeded', 'approved'));
+    }
+    return onlineResponse(operationId, {
+      blocker: activeIntent,
+      capabilities: [
+        remoteGolfCapability(3),
+        remoteGolfCapability(1, null, secondRoundEventId),
+      ],
+      events: [
+        remoteRoot(),
+        remoteRound(),
+        remoteEvent(secondRoundEventId, rootEventId, 'golf', 'Second round', 1),
+      ],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+  const pending = searchMissProjection('succeeded', 'pending');
+
+  await runtime.reviewSearchMissEnrichment(placeIntent, pending, 'approve');
+  activeIntent = secondIntent;
+  await runtime.reviewSearchMissEnrichment(secondIntent, pending, 'approve');
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]?.body.eventId).toBe(roundEventId);
+  expect(requests[1]?.body.eventId).toBe(secondRoundEventId);
+  expect(requests[0]?.headers).not.toEqual(requests[1]?.headers);
+  expect(mockSha256).toHaveBeenCalledWith(
+    JSON.stringify([
+      accountA,
+      rootEventId,
+      roundEventId,
+      'golf',
+      pending.enrichment.id,
+      'approve',
+    ]),
+  );
+  expect(mockSha256).toHaveBeenCalledWith(
+    JSON.stringify([
+      accountA,
+      rootEventId,
+      secondRoundEventId,
+      'golf',
+      pending.enrichment.id,
+      'approve',
+    ]),
+  );
+});
+
+test('rejects a worldwide suggestion without creating or binding anything and conceals unsafe citations', async () => {
+  const pending = searchMissProjection('succeeded', 'pending');
+  const requestAsUser = jest.fn(async (_subject, operationId) => {
+    if (operationId === 'placeEnrichmentJobsReview') {
+      return response(searchMissProjection('succeeded', 'rejected'));
+    }
+    return onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+  await expect(
+    runtime.reviewSearchMissEnrichment(placeIntent, pending, 'reject'),
+  ).resolves.toMatchObject({
+    place: null,
+    review: { state: 'rejected' },
+  });
+  expect(
+    requestAsUser.mock.calls.some(call =>
+      ['eventPlacesCreate', 'eventCapabilitiesReplace'].includes(call[1]),
+    ),
+  ).toBe(false);
+
+  await expect(
+    runtime.reviewSearchMissEnrichment(
+      placeIntent,
+      {
+        ...pending,
+        review: {
+          ...pending.review!,
+          fields: [
+            {
+              ...pending.review!.fields[0]!,
+              provenance: {
+                ...pending.review!.fields[0]!.provenance,
+                sourceUrl: 'ftp://unsafe.example/review',
+              },
+            },
+          ],
+        },
+      },
+      'approve',
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryEnrichmentUnavailableError);
 });
 
 test('retries only an explicitly retryable enrichment with one stable command identity', async () => {
@@ -927,6 +1172,9 @@ test('never searches, creates, replaces or queues while offline', async () => {
     runtime.createPlaceEnrichment(placeIntent, candidate()),
   ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
   await expect(
+    runtime.createSearchMissEnrichment(placeIntent, 'Ocean Dunes', 'CH'),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
     runtime.getPlaceEnrichment(
       placeIntent,
       candidate(),
@@ -938,6 +1186,22 @@ test('never searches, creates, replaces or queues while offline', async () => {
       placeIntent,
       candidate(),
       enrichmentProjection('retry', null),
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
+    runtime.getSearchMissEnrichment(placeIntent, `pej_${'d'.repeat(64)}`),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
+    runtime.retrySearchMissEnrichment(
+      placeIntent,
+      searchMissProjection('retry'),
+    ),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
+  await expect(
+    runtime.reviewSearchMissEnrichment(
+      placeIntent,
+      searchMissProjection('succeeded', 'pending'),
+      'approve',
     ),
   ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
   await expect(
@@ -1295,6 +1559,72 @@ function enrichmentProjection(
         : '2026-07-19T10:01:00.000Z',
     },
     place,
+    review: null,
+  };
+}
+
+function searchMissProjection(
+  status: 'pending' | 'retry' | 'succeeded',
+  reviewState?: 'pending' | 'approved' | 'rejected',
+) {
+  const active = status !== 'succeeded';
+  const state = status === 'succeeded' ? reviewState ?? 'pending' : null;
+  return {
+    enrichment: {
+      completedAt: active ? null : '2026-07-19T10:01:00.000Z',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'d'.repeat(64)}`,
+      pollAfterSeconds: active ? (status === 'retry' ? 5 : 2) : null,
+      retryAllowed: status === 'retry',
+      status,
+      updatedAt: active
+        ? '2026-07-19T10:00:00.000Z'
+        : '2026-07-19T10:01:00.000Z',
+    },
+    place: state === 'approved' ? worldwidePlace() : null,
+    review:
+      state === null
+        ? null
+        : {
+            fields: [
+              {
+                name: 'name' as const,
+                provenance: {
+                  observedAt: '2026-07-19T09:59:00.000Z',
+                  sourceKind: 'exa_llm' as const,
+                  sourceUrl: 'https://example.com/ocean-dunes',
+                },
+                value: 'Ocean Dunes Golf Club',
+              },
+              {
+                name: 'countryCode' as const,
+                provenance: {
+                  observedAt: '2026-07-19T09:59:00.000Z',
+                  sourceKind: 'exa_llm' as const,
+                  sourceUrl: 'https://example.com/ocean-dunes',
+                },
+                value: 'CH',
+              },
+            ],
+            state,
+          },
+  };
+}
+
+function worldwidePlace() {
+  return {
+    address: 'Ocean Road 1',
+    countryCode: 'CH',
+    id: `gpl_${'d'.repeat(64)}`,
+    kind: 'golf_course' as const,
+    latitude: 46.9,
+    locality: 'Laax',
+    longitude: 9.2,
+    name: 'Ocean Dunes Golf Club',
+    region: 'GR',
+    sourceCandidateId: `pcd_${'e'.repeat(64)}`,
+    summary: 'A reviewed golf course.',
+    websiteUrl: 'https://example.com/ocean-dunes',
   };
 }
 
@@ -1361,6 +1691,23 @@ function localMembership(): MembershipRecord {
     role: 'owner',
     rootEventId,
     status: 'active',
+    updatedAt: '2026-07-19T08:00:00.000Z',
+    version: 1,
+  };
+}
+
+function localPlace(id: string, countryCode: string): EventPlaceRecord {
+  return {
+    accountUserId: accountA,
+    countryCode,
+    createdAt: '2026-07-19T08:00:00.000Z',
+    deletedAt: null,
+    id,
+    latitude: 47.37,
+    locality: 'Zürich',
+    longitude: 8.54,
+    name: id,
+    rootEventId,
     updatedAt: '2026-07-19T08:00:00.000Z',
     version: 1,
   };

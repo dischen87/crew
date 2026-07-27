@@ -1045,6 +1045,10 @@ ON CONFLICT (id) DO UPDATE SET
 				[accountUserId],
 			);
 			await transaction.run(
+				"DELETE FROM community_feedback_manager_write_attempts WHERE account_user_id = ?",
+				[accountUserId],
+			);
+			await transaction.run(
 				"DELETE FROM community_feedback_cache WHERE account_user_id = ?",
 				[accountUserId],
 			);
@@ -1064,6 +1068,11 @@ ON CONFLICT (id) DO UPDATE SET
 		rootEventId: string,
 	): Promise<void> {
 		await this.database.transaction(async (transaction) => {
+			await transaction.run(
+				`DELETE FROM community_feedback_manager_write_attempts
+WHERE account_user_id = ? AND root_event_id = ?`,
+				[accountUserId, rootEventId],
+			);
 			await transaction.run(
 				`DELETE FROM feedback_submissions
 WHERE account_user_id = ? AND root_event_id = ?`,

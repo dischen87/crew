@@ -6,6 +6,7 @@ import {
 	type GatewaySessionSubject,
 } from "@crew/mobile-client";
 import type { SqlDatabase, SqlExecutor } from "./database.ts";
+import { sha256Hex } from "./sha256.ts";
 
 export type CommunityFeedbackPage = GatewayResponseData<"eventFeedbackList">;
 export type CommunityFeedbackSummary = CommunityFeedbackPage["items"][number];
@@ -21,6 +22,15 @@ export type CommunityFeedbackFollow =
 	GatewayResponseData<"eventFeedbackFollowsSet">;
 export type CommunityFeedbackCommentInput =
 	GatewayRequest<"eventFeedbackCommentsCreate">["body"];
+export type CommunityFeedbackManagerRole = "owner" | "organizer";
+export type CommunityFeedbackManagerStatus =
+	GatewayRequest<"feedbackStatusSet">["body"]["status"];
+export type CommunityFeedbackManagerWriteOutcome =
+	| {
+			kind: "refreshed";
+			resolution: CommunityFeedbackResolution;
+	  }
+	| { kind: "committed_refresh_failed" };
 
 export interface CommunityFeedbackPageQuery {
 	limit?: number;
@@ -58,6 +68,12 @@ interface CachedUpdateRow {
 	payload_json: string;
 }
 
+interface ManagerWriteAttemptRow {
+	idempotency_key: string;
+	signature_hash: string;
+	state: "attempting" | "committed_refresh_required";
+}
+
 interface CommunityFeedbackQueues {
 	remote: Map<string, Promise<void>>;
 	database: Map<string, Promise<void>>;
@@ -73,6 +89,20 @@ export class CommunityFeedbackAccountChangedError extends Error {
 	constructor() {
 		super("Active account changed during community feedback request");
 		this.name = "CommunityFeedbackAccountChangedError";
+	}
+}
+
+export class CommunityFeedbackManagerUnavailableError extends Error {
+	constructor() {
+		super("Community feedback manager action is unavailable");
+		this.name = "CommunityFeedbackManagerUnavailableError";
+	}
+}
+
+export class CommunityFeedbackDuplicateTargetUnavailableError extends Error {
+	constructor() {
+		super("Community feedback duplicate target is unavailable");
+		this.name = "CommunityFeedbackDuplicateTargetUnavailableError";
 	}
 }
 
@@ -197,6 +227,7 @@ export class CommunityFeedbackController {
 				rootEventId,
 				resolution,
 				feedbackId,
+				true,
 			);
 			return resolution;
 		});
@@ -284,6 +315,151 @@ export class CommunityFeedbackController {
 				feedbackId,
 			);
 			return follow;
+		});
+	}
+
+	async managerRole(
+		rootEventId: string,
+	): Promise<CommunityFeedbackManagerRole | null> {
+		return this.#readForRoot(rootEventId, async (subject, accountUserId) => {
+			await this.#assertSubject(subject);
+			const row = await this.database.first<{
+				role: CommunityFeedbackManagerRole;
+			}>(
+				`SELECT role FROM memberships
+WHERE account_user_id = ? AND root_event_id = ?
+  AND member_user_id = ? AND status = 'active'
+  AND role IN ('owner', 'organizer')`,
+				[accountUserId, rootEventId, accountUserId],
+			);
+			await this.#assertSubject(subject);
+			return row?.role ?? null;
+		});
+	}
+
+	async managerWritePending(
+		rootEventId: string,
+		feedbackId: string,
+	): Promise<boolean> {
+		validateFeedbackId(feedbackId);
+		return this.#readForRoot(rootEventId, async (subject, accountUserId) => {
+			await this.#assertSubject(subject);
+			const row = await this.database.first(
+				`SELECT 1 FROM community_feedback_manager_write_attempts
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?`,
+				[accountUserId, rootEventId, feedbackId],
+			);
+			await this.#assertSubject(subject);
+			return row !== null;
+		});
+	}
+
+	async setStatus(
+		rootEventId: string,
+		feedbackId: string,
+		status: CommunityFeedbackManagerStatus,
+		note: string | null | undefined,
+		idempotencyKey: string,
+	): Promise<CommunityFeedbackManagerWriteOutcome> {
+		validateFeedbackId(feedbackId);
+		const publicNote = normalizeManagerNote(note);
+		return this.#runForRoot(rootEventId, async (subject, accountUserId) => {
+			await this.#assertManagerScope(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+			);
+			const attempt = await this.#beginManagerWrite(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				await managerWriteSignature(["status", feedbackId, status, publicNote]),
+				idempotencyKey,
+			);
+			if (!attempt.send) return { kind: "committed_refresh_failed" };
+			await this.client.requestAsUser(subject, "feedbackStatusSet", {
+				path: { feedbackId },
+				body: { note: publicNote, status },
+				headers: requiredIdempotencyHeader(attempt.idempotencyKey),
+			});
+			try {
+				await this.#markManagerWriteCommitted(
+					accountUserId,
+					rootEventId,
+					feedbackId,
+					attempt,
+				);
+			} catch {
+				return { kind: "committed_refresh_failed" };
+			}
+			return this.#managerWriteOutcome(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+			);
+		});
+	}
+
+	async markDuplicate(
+		rootEventId: string,
+		feedbackId: string,
+		canonicalFeedbackId: string,
+		note: string | null | undefined,
+		idempotencyKey: string,
+	): Promise<CommunityFeedbackManagerWriteOutcome> {
+		validateFeedbackId(feedbackId);
+		validateFeedbackId(canonicalFeedbackId);
+		if (canonicalFeedbackId === feedbackId) {
+			throw new CommunityFeedbackDuplicateTargetUnavailableError();
+		}
+		const publicNote = normalizeManagerNote(note);
+		return this.#runForRoot(rootEventId, async (subject, accountUserId) => {
+			await this.#assertManagerScope(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				canonicalFeedbackId,
+			);
+			const attempt = await this.#beginManagerWrite(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				await managerWriteSignature([
+					"duplicate",
+					feedbackId,
+					canonicalFeedbackId,
+					publicNote,
+				]),
+				idempotencyKey,
+			);
+			if (!attempt.send) return { kind: "committed_refresh_failed" };
+			await this.client.requestAsUser(subject, "feedbackDuplicateMark", {
+				path: { feedbackId },
+				body: { canonicalFeedbackId, note: publicNote },
+				headers: requiredIdempotencyHeader(attempt.idempotencyKey),
+			});
+			try {
+				await this.#markManagerWriteCommitted(
+					accountUserId,
+					rootEventId,
+					feedbackId,
+					attempt,
+				);
+			} catch {
+				return { kind: "committed_refresh_failed" };
+			}
+			return this.#managerWriteOutcome(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				canonicalFeedbackId,
+			);
 		});
 	}
 
@@ -378,12 +554,201 @@ LIMIT 200`,
 		return resolution;
 	}
 
+	async #managerWriteOutcome(
+		subject: GatewaySessionSubject,
+		accountUserId: string,
+		rootEventId: string,
+		feedbackId: string,
+		canonicalFeedbackId?: string,
+	): Promise<CommunityFeedbackManagerWriteOutcome> {
+		try {
+			await this.#assertSubject(subject);
+			await this.#assertManagerScope(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				canonicalFeedbackId,
+			);
+			const response = await this.client.requestAsUser(
+				subject,
+				"eventFeedbackGet",
+				{ path: { rootEventId, feedbackId } },
+			);
+			await this.#assertSubject(subject);
+			await this.#assertManagerScope(
+				subject,
+				accountUserId,
+				rootEventId,
+				feedbackId,
+				canonicalFeedbackId,
+			);
+			const resolution = sanitizeResolution(response.data);
+			await this.#cacheResolution(
+				subject,
+				accountUserId,
+				rootEventId,
+				resolution,
+				feedbackId,
+				true,
+			);
+			return { kind: "refreshed", resolution };
+		} catch {
+			return { kind: "committed_refresh_failed" };
+		}
+	}
+
+	async #beginManagerWrite(
+		subject: GatewaySessionSubject,
+		accountUserId: string,
+		rootEventId: string,
+		feedbackId: string,
+		signatureHash: string,
+		idempotencyKey: string,
+	): Promise<{
+		idempotencyKey: string;
+		send: boolean;
+		signatureHash: string;
+	}> {
+		requiredIdempotencyHeader(idempotencyKey);
+		return this.#transaction(
+			subject,
+			accountUserId,
+			rootEventId,
+			async (transaction) => {
+				const existing = await transaction.first<ManagerWriteAttemptRow>(
+					`SELECT signature_hash, idempotency_key, state
+FROM community_feedback_manager_write_attempts
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?`,
+					[accountUserId, rootEventId, feedbackId],
+				);
+				if (existing) {
+					return {
+						idempotencyKey: existing.idempotency_key,
+						send:
+							existing.state === "attempting" &&
+							existing.signature_hash === signatureHash,
+						signatureHash: existing.signature_hash,
+					};
+				}
+				await transaction.run(
+					`INSERT INTO community_feedback_manager_write_attempts (
+  account_user_id, root_event_id, feedback_id, signature_hash,
+  idempotency_key, state, created_at, committed_at
+) VALUES (?, ?, ?, ?, ?, 'attempting', ?, NULL)`,
+					[
+						accountUserId,
+						rootEventId,
+						feedbackId,
+						signatureHash,
+						idempotencyKey,
+						this.#timestamp(),
+					],
+				);
+				return { idempotencyKey, send: true, signatureHash };
+			},
+		);
+	}
+
+	async #markManagerWriteCommitted(
+		accountUserId: string,
+		rootEventId: string,
+		feedbackId: string,
+		attempt: { idempotencyKey: string; signatureHash: string },
+	): Promise<void> {
+		await this.#databaseLock(accountUserId, rootEventId, () =>
+			this.database.transaction(async (transaction) => {
+				await transaction.run(
+					`UPDATE community_feedback_manager_write_attempts
+SET state = 'committed_refresh_required', committed_at = ?
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?
+  AND signature_hash = ? AND idempotency_key = ? AND state = 'attempting'`,
+					[
+						this.#timestamp(),
+						accountUserId,
+						rootEventId,
+						feedbackId,
+						attempt.signatureHash,
+						attempt.idempotencyKey,
+					],
+				);
+				const committed = await transaction.first(
+					`SELECT 1 FROM community_feedback_manager_write_attempts
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?
+  AND signature_hash = ? AND idempotency_key = ?
+  AND state = 'committed_refresh_required'`,
+					[
+						accountUserId,
+						rootEventId,
+						feedbackId,
+						attempt.signatureHash,
+						attempt.idempotencyKey,
+					],
+				);
+				if (!committed) {
+					throw new Error("Community feedback manager write state was lost");
+				}
+			}),
+		);
+	}
+
+	async #assertManagerScope(
+		subject: GatewaySessionSubject,
+		accountUserId: string,
+		rootEventId: string,
+		feedbackId: string,
+		canonicalFeedbackId?: string,
+	): Promise<void> {
+		await this.#databaseLock(accountUserId, rootEventId, async () => {
+			await this.#assertSubject(subject);
+			const membership = await this.database.first(
+				`SELECT 1 FROM memberships
+WHERE account_user_id = ? AND root_event_id = ?
+  AND member_user_id = ? AND status = 'active'
+  AND role IN ('owner', 'organizer')`,
+				[accountUserId, rootEventId, accountUserId],
+			);
+			const source = await this.database.first(
+				`SELECT 1 FROM community_feedback_cache
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?`,
+				[accountUserId, rootEventId, feedbackId],
+			);
+			if (!membership || !source) {
+				throw new CommunityFeedbackManagerUnavailableError();
+			}
+			if (canonicalFeedbackId) {
+				const target = await this.database.first(
+					`SELECT 1 FROM (
+  SELECT feedback_id FROM community_feedback_cache
+  WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?
+  UNION ALL
+  SELECT feedback_id FROM feedback_duplicate_suggestion_cache
+  WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?
+) LIMIT 1`,
+					[
+						accountUserId,
+						rootEventId,
+						canonicalFeedbackId,
+						accountUserId,
+						rootEventId,
+						canonicalFeedbackId,
+					],
+				);
+				if (!target) {
+					throw new CommunityFeedbackDuplicateTargetUnavailableError();
+				}
+			}
+			await this.#assertSubject(subject);
+		});
+	}
+
 	async #cacheResolution(
 		subject: GatewaySessionSubject,
 		accountUserId: string,
 		rootEventId: string,
 		resolution: CommunityFeedbackResolution,
 		requestedFeedbackId: string,
+		clearManagerWriteAttempt = false,
 	): Promise<void> {
 		await this.#transaction(
 			subject,
@@ -416,6 +781,13 @@ LIMIT 200`,
 					resolution.feedback,
 					this.#timestamp(),
 				);
+				if (clearManagerWriteAttempt) {
+					await transaction.run(
+						`DELETE FROM community_feedback_manager_write_attempts
+WHERE account_user_id = ? AND root_event_id = ? AND feedback_id = ?`,
+						[accountUserId, rootEventId, requestedFeedbackId],
+					);
+				}
 			},
 		);
 	}
@@ -877,6 +1249,30 @@ function idempotencyHeader(idempotencyKey?: string) {
 	return idempotencyKey
 		? { headers: { "idempotency-key": idempotencyKey } }
 		: {};
+}
+
+function requiredIdempotencyHeader(idempotencyKey: string) {
+	if (
+		Array.from(idempotencyKey).length < 8 ||
+		Array.from(idempotencyKey).length > 128
+	) {
+		throw new TypeError("Idempotency key must contain 8 to 128 characters");
+	}
+	return { "idempotency-key": idempotencyKey };
+}
+
+async function managerWriteSignature(
+	values: readonly (string | null)[],
+): Promise<string> {
+	return sha256Hex(JSON.stringify(values));
+}
+
+function normalizeManagerNote(note: string | null | undefined): string | null {
+	const normalized = note?.trim() ?? "";
+	if (Array.from(normalized).length > 1_000) {
+		throw new TypeError("Community feedback manager note is too long");
+	}
+	return normalized || null;
 }
 
 function queuesFor(database: SqlDatabase): CommunityFeedbackQueues {

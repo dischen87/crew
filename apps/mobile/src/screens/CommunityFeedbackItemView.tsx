@@ -1,6 +1,17 @@
-import type { CommunityFeedback } from '@crew/mobile-data';
+import type {
+  CommunityFeedback,
+  CommunityFeedbackManagerRole,
+  CommunityFeedbackManagerStatus,
+  FeedbackDuplicateSuggestion,
+} from '@crew/mobile-data';
 import type { ImageSourcePropType } from 'react-native';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   Button,
   Card,
@@ -8,7 +19,15 @@ import {
   SyncStatus,
   TextField,
 } from '../design/primitives';
-import { colors, spacing, typography } from '../design/theme';
+import {
+  borders,
+  colors,
+  componentMetrics,
+  elevations,
+  radii,
+  spacing,
+  typography,
+} from '../design/theme';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 import { statusLabel } from './CommunityFeedbackListView';
 
@@ -35,6 +54,7 @@ export type CommunityFeedbackItem = Pick<
   | 'statusHistoryHasMore'
   | 'title'
   | 'updatedAt'
+  | 'version'
   | 'viewerHasVoted'
   | 'voteCount'
 > & {
@@ -47,14 +67,26 @@ export type CommunityFeedbackItem = Pick<
 
 export type CommunityFeedbackItemAction =
   | 'comment'
+  | 'duplicate'
   | 'follow'
   | 'refresh'
+  | 'status'
   | 'vote';
+
+export type CommunityFeedbackManagerViewModel = {
+  candidates: readonly FeedbackDuplicateSuggestion[];
+  candidatesState: 'error' | 'loading' | 'ready';
+  note: string;
+  role: CommunityFeedbackManagerRole;
+  selectedDuplicateId: string | null;
+};
 
 export type CommunityFeedbackItemViewModel = {
   commentBody: string;
   commentError: string | null;
   feedback: CommunityFeedbackItem | null;
+  manager: CommunityFeedbackManagerViewModel | null;
+  managerWriteState: 'ready' | 'refresh_required';
   message: string | null;
   messageKind: 'error' | 'info' | null;
   online: boolean;
@@ -68,6 +100,10 @@ export type CommunityFeedbackItemViewProps = {
   onBack(): void;
   onCommentBodyChange(value: string): void;
   onFollowChange(value: boolean): void;
+  onManagerDuplicateSelect(feedbackId: string): void;
+  onManagerDuplicateSubmit(): void;
+  onManagerNoteChange(value: string): void;
+  onManagerStatusChange(status: CommunityFeedbackManagerStatus): void;
   onRefresh(): void;
   onSubmitComment(): void;
   onVoteChange(value: boolean): void;
@@ -78,6 +114,10 @@ export function CommunityFeedbackItemView({
   onBack,
   onCommentBodyChange,
   onFollowChange,
+  onManagerDuplicateSelect,
+  onManagerDuplicateSubmit,
+  onManagerNoteChange,
+  onManagerStatusChange,
   onRefresh,
   onSubmitComment,
   onVoteChange,
@@ -118,6 +158,10 @@ export function CommunityFeedbackItemView({
           onBack={onBack}
           onCommentBodyChange={onCommentBodyChange}
           onFollowChange={onFollowChange}
+          onManagerDuplicateSelect={onManagerDuplicateSelect}
+          onManagerDuplicateSubmit={onManagerDuplicateSubmit}
+          onManagerNoteChange={onManagerNoteChange}
+          onManagerStatusChange={onManagerStatusChange}
           onRefresh={onRefresh}
           onSubmitComment={onSubmitComment}
           onVoteChange={onVoteChange}
@@ -133,6 +177,10 @@ function ReadyState({
   onBack,
   onCommentBodyChange,
   onFollowChange,
+  onManagerDuplicateSelect,
+  onManagerDuplicateSubmit,
+  onManagerNoteChange,
+  onManagerStatusChange,
   onRefresh,
   onSubmitComment,
   onVoteChange,
@@ -140,8 +188,10 @@ function ReadyState({
   feedback: CommunityFeedbackItem;
   model: CommunityFeedbackItemViewModel;
 }) {
+  const writesBlocked = model.managerWriteState === 'refresh_required';
   const canComment =
     model.online &&
+    !writesBlocked &&
     model.commentBody.trim().length > 0 &&
     model.working === null;
   return (
@@ -154,11 +204,13 @@ function ReadyState({
           />
         }
         label={
-          model.online
+          writesBlocked
+            ? 'Änderung bestätigt. Aktualisiere den sicheren Stand, bevor du weitere Beiträge sendest.'
+            : model.online
             ? 'Aktueller gespeicherter Stand. Beiträge werden direkt online gesendet.'
             : 'Offline. Gespeicherter Stand; Stimmen, Kommentare und Folgen sind nicht vorgemerkt.'
         }
-        state={model.online ? 'ready' : 'offline'}
+        state={writesBlocked ? 'attention' : model.online ? 'ready' : 'offline'}
       />
       {model.redirected ? (
         <Card
@@ -212,7 +264,7 @@ function ReadyState({
               ? 'Sendet deine Auswahl direkt an Crew.'
               : 'Online erforderlich. Es wird nichts vorgemerkt.'
           }
-          disabled={!model.online || model.working !== null}
+          disabled={!model.online || writesBlocked || model.working !== null}
           label={
             feedback.viewerHasVoted
               ? `Stimme entfernen · ${feedback.voteCount}`
@@ -229,7 +281,7 @@ function ReadyState({
               ? 'Sendet deine Auswahl direkt an Crew.'
               : 'Online erforderlich. Es wird nichts vorgemerkt.'
           }
-          disabled={!model.online || model.working !== null}
+          disabled={!model.online || writesBlocked || model.working !== null}
           label={feedback.followed ? 'Nicht mehr folgen' : 'Status folgen'}
           loading={model.working === 'follow'}
           onPress={() => onFollowChange(!feedback.followed)}
@@ -259,6 +311,18 @@ function ReadyState({
           Änderungen sind gespeichert.
         </Text>
       ) : null}
+      {model.manager && !writesBlocked ? (
+        <ManagerPanel
+          feedback={feedback}
+          manager={model.manager}
+          online={model.online}
+          onDuplicateSelect={onManagerDuplicateSelect}
+          onDuplicateSubmit={onManagerDuplicateSubmit}
+          onNoteChange={onManagerNoteChange}
+          onStatusChange={onManagerStatusChange}
+          working={model.working}
+        />
+      ) : null}
       <SectionTitle title={`KOMMENTARE · ${feedback.commentCount}`} />
       {feedback.comments.length > 0 ? (
         feedback.comments.map((comment, index) => (
@@ -277,10 +341,12 @@ function ReadyState({
       <TextField
         autoCapitalize="sentences"
         autoComplete="off"
-        disabled={!model.online || model.working !== null}
+        disabled={!model.online || writesBlocked || model.working !== null}
         error={model.commentError ?? undefined}
         helpText={
-          model.online
+          writesBlocked
+            ? 'Aktualisiere zuerst den sicheren Stand. Es wird nichts erneut gesendet.'
+            : model.online
             ? 'Höchstens 5’000 Zeichen. Der Kommentar wird direkt online gesendet.'
             : 'Online erforderlich. Eingaben werden nicht als Auftrag vorgemerkt.'
         }
@@ -309,7 +375,7 @@ function ReadyState({
           loading={model.working === 'refresh'}
           onPress={onRefresh}
           testID="community-feedback-item-refresh"
-          variant="surface"
+          variant={writesBlocked ? 'action' : 'surface'}
         />
         <Button
           label="Zur Feedback-Liste"
@@ -320,6 +386,181 @@ function ReadyState({
       </View>
     </>
   );
+}
+
+const managerStatuses: readonly CommunityFeedbackManagerStatus[] = [
+  'open',
+  'planned',
+  'in_progress',
+  'completed',
+  'declined',
+];
+
+function ManagerPanel({
+  feedback,
+  manager,
+  online,
+  onDuplicateSelect,
+  onDuplicateSubmit,
+  onNoteChange,
+  onStatusChange,
+  working,
+}: {
+  feedback: CommunityFeedbackItem;
+  manager: CommunityFeedbackManagerViewModel;
+  online: boolean;
+  onDuplicateSelect(feedbackId: string): void;
+  onDuplicateSubmit(): void;
+  onNoteChange(value: string): void;
+  onStatusChange(status: CommunityFeedbackManagerStatus): void;
+  working: CommunityFeedbackItemAction | null;
+}) {
+  const disabled = !online || working !== null;
+  const visibleStatuses = managerStatuses.filter(
+    status =>
+      status === feedback.status ||
+      managerStatusTransitionAllowed(feedback.status, status),
+  );
+  return (
+    <>
+      <SectionTitle title="TRIAGE" />
+      <Card style={styles.managerCard} tone="lavender">
+        <View style={styles.metaRow}>
+          <StatusChip label="ORGANISATION" tone="surface" />
+          <Text style={styles.managerRole}>
+            {manager.role === 'owner' ? 'Owner-Zugriff' : 'Organizer-Zugriff'}
+          </Text>
+        </View>
+        <Text style={styles.historyTitle}>Status sicher einordnen</Text>
+        <Text style={styles.supportCopy}>
+          Änderungen sind sofort für Eventmitglieder sichtbar und werden nicht
+          offline vorgemerkt.
+        </Text>
+        <TextField
+          autoCapitalize="sentences"
+          autoComplete="off"
+          disabled={disabled}
+          helpText="Optional, öffentlich im Statusverlauf · höchstens 1’000 Zeichen."
+          inputStyle={styles.managerNoteInput}
+          label="Öffentliche Notiz"
+          maxLength={1_000}
+          multiline
+          onChangeText={onNoteChange}
+          placeholder="Kurze Begründung zur Änderung"
+          testID="community-feedback-manager-note"
+          textAlignVertical="top"
+          value={manager.note}
+        />
+        <View style={styles.managerStatusList}>
+          {visibleStatuses.map(status => (
+            <Button
+              accessibilityHint={
+                online
+                  ? 'Ändert den Status direkt und veröffentlicht die optionale Notiz.'
+                  : 'Online erforderlich. Es wird nichts vorgemerkt.'
+              }
+              disabled={disabled || status === feedback.status}
+              key={status}
+              label={
+                status === feedback.status
+                  ? `${statusLabel(status)} · aktuell`
+                  : statusLabel(status)
+              }
+              onPress={() => onStatusChange(status)}
+              testID={`community-feedback-manager-status-${status}`}
+              variant={status === feedback.status ? 'action' : 'surface'}
+            />
+          ))}
+        </View>
+        <Text style={styles.historyTitle}>Ähnliche Meldung zusammenführen</Text>
+        {manager.candidatesState === 'loading' ? (
+          <View accessibilityLiveRegion="polite" style={styles.managerLoading}>
+            <ActivityIndicator
+              accessibilityLabel="Ähnliche Meldungen werden geprüft"
+              color={colors.textSecondary}
+            />
+            <Text style={styles.supportCopy}>
+              Bereinigte Meldungen aus diesem Event werden geprüft.
+            </Text>
+          </View>
+        ) : null}
+        {manager.candidatesState === 'error' ? (
+          <Text accessibilityRole="alert" style={styles.supportCopy}>
+            Ähnliche Meldungen konnten nicht geladen werden. Mit „Feedback
+            aktualisieren“ kannst du es erneut versuchen.
+          </Text>
+        ) : null}
+        {manager.candidatesState === 'ready' &&
+        manager.candidates.length === 0 ? (
+          <Text style={styles.supportCopy}>
+            Keine passende Meldung in diesem Event gefunden.
+          </Text>
+        ) : null}
+        {manager.candidates.length > 0 ? (
+          <View style={styles.duplicateList}>
+            {manager.candidates.map(candidate => {
+              const selected = manager.selectedDuplicateId === candidate.id;
+              return (
+                <Pressable
+                  accessibilityHint="Wählt diese bereinigte Meldung als kanonisches Ziel aus."
+                  accessibilityLabel={`${candidate.title}. ${statusLabel(
+                    candidate.status,
+                  )}. ${voteLabel(candidate.voteCount)}.`}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled, selected }}
+                  disabled={disabled}
+                  key={candidate.id}
+                  onPress={() => onDuplicateSelect(candidate.id)}
+                  style={({ pressed }) => [
+                    styles.duplicateChoice,
+                    elevations.compact,
+                    selected && styles.duplicateChoiceSelected,
+                    disabled && styles.disabled,
+                    pressed && styles.choicePressed,
+                  ]}
+                  testID={`community-feedback-manager-duplicate-${candidate.id}`}
+                >
+                  <Text style={styles.choiceTitle}>{candidate.title}</Text>
+                  <Text style={styles.supportCopy}>
+                    {statusLabel(candidate.status)} ·{' '}
+                    {voteLabel(candidate.voteCount)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        <Button
+          accessibilityHint="Führt die aktuelle Meldung direkt mit der ausgewählten Meldung zusammen."
+          disabled={disabled || manager.selectedDuplicateId === null}
+          label="Mit ausgewählter Meldung zusammenführen"
+          loading={working === 'duplicate'}
+          onPress={onDuplicateSubmit}
+          testID="community-feedback-manager-duplicate-submit"
+          variant="brand"
+        />
+        {!online ? (
+          <Text accessibilityRole="alert" style={styles.offlineTruth}>
+            Online erforderlich. Manager-Aktionen wurden nicht vorgemerkt.
+          </Text>
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
+function managerStatusTransitionAllowed(
+  from: CommunityFeedbackItem['status'],
+  to: CommunityFeedbackManagerStatus,
+): boolean {
+  if (from === 'completed' || from === 'declined') {
+    return to === 'open';
+  }
+  return from !== to;
+}
+
+function voteLabel(voteCount: number): string {
+  return `${voteCount} ${voteCount === 1 ? 'Stimme' : 'Stimmen'}`;
 }
 
 function StatusHistoryRow({
@@ -461,6 +702,34 @@ const styles = StyleSheet.create({
     ...typography.overline,
     color: colors.textSecondary,
   },
+  choicePressed: {
+    backgroundColor: colors.backgroundPressed,
+    transform: [{ translateX: 1 }, { translateY: 1 }],
+  },
+  choiceTitle: {
+    ...typography.bodyStrong,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  disabled: {
+    opacity: componentMetrics.control.disabledOpacity,
+  },
+  duplicateChoice: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    borderWidth: borders.chip,
+    gap: spacing.xs,
+    minHeight: componentMetrics.control.minimumTouchSize,
+    padding: spacing.md,
+  },
+  duplicateChoiceSelected: {
+    backgroundColor: colors.surfaceAction,
+    borderWidth: borders.strong,
+  },
+  duplicateList: {
+    gap: spacing.sm,
+  },
   feedbackBody: {
     ...typography.body,
     color: colors.text,
@@ -481,6 +750,25 @@ const styles = StyleSheet.create({
   loading: {
     alignItems: 'center',
     gap: spacing.md,
+  },
+  managerCard: {
+    gap: spacing.md,
+  },
+  managerLoading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  managerNoteInput: {
+    minHeight: 108,
+  },
+  managerRole: {
+    ...typography.label,
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
+  managerStatusList: {
+    gap: spacing.sm,
   },
   metaRow: {
     alignItems: 'center',

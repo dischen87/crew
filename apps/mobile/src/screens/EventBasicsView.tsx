@@ -1,7 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button, Card, StatusChip, TextField } from '../design/primitives';
-import { colors, spacing, typography } from '../design/theme';
+import { colors, radii, spacing, typography } from '../design/theme';
 import type { EventBasicsDelivery } from './EventBasicsRuntime';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   },
   currentPanel: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: radii.control,
     gap: spacing.xs,
     padding: spacing.md,
   },

@@ -1,6 +1,7 @@
 import type { GatewayClient } from '@crew/mobile-client';
 import {
   CommunityFeedbackController,
+  FeedbackDuplicateSuggestionController,
   LocalAttachmentStore,
   MobileDataStore,
   MobileSyncEngine,
@@ -24,6 +25,7 @@ export type CommunityFeedbackRuntimeOptions = {
  */
 export class CommunityFeedbackRuntime {
   readonly controller: CommunityFeedbackController;
+  readonly duplicateSuggestions: FeedbackDuplicateSuggestionController;
   readonly #data: MobileDataStore;
   readonly #sync: MobileSyncEngine;
 
@@ -31,6 +33,11 @@ export class CommunityFeedbackRuntime {
     this.controller = new CommunityFeedbackController(
       options.database,
       options.client as GatewayClient,
+    );
+    this.duplicateSuggestions = new FeedbackDuplicateSuggestionController(
+      options.database,
+      options.client as GatewayClient,
+      { activeAccountUserId: options.activeAccountUserId },
     );
     this.#data = new MobileDataStore(options.database);
     this.#sync = new MobileSyncEngine(options.database, options.client, {

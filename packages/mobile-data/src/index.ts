@@ -13,6 +13,9 @@ export type {
 	CommunityFeedbackControllerOptions,
 	CommunityFeedbackFilter,
 	CommunityFeedbackFollow,
+	CommunityFeedbackManagerRole,
+	CommunityFeedbackManagerStatus,
+	CommunityFeedbackManagerWriteOutcome,
 	CommunityFeedbackPage,
 	CommunityFeedbackPageQuery,
 	CommunityFeedbackResolution,
@@ -25,6 +28,8 @@ export type {
 export {
 	CommunityFeedbackAccountChangedError,
 	CommunityFeedbackController,
+	CommunityFeedbackDuplicateTargetUnavailableError,
+	CommunityFeedbackManagerUnavailableError,
 } from "./communityFeedback.ts";
 export type { SqlDatabase, SqlExecutor, SqlValue } from "./database.ts";
 export type {

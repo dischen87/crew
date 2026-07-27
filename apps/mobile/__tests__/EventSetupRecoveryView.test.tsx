@@ -14,6 +14,7 @@ const metrics = {
 const originalWindow = Dimensions.get('window');
 const originalScreen = Dimensions.get('screen');
 const onBack = jest.fn();
+const onCountryCodeChange = jest.fn();
 const onPlaceQueryChange = jest.fn();
 const onPrimaryAction = jest.fn();
 const onSelectPlace = jest.fn();
@@ -132,6 +133,34 @@ test('exposes exactly one place action while searching and while binding', async
   await ReactTestRenderer.act(() => binding.unmount());
 });
 
+test('does not submit or offer worldwide search for a one-character query', async () => {
+  const renderer = await render(
+    model({
+      placeQuery: ' A ',
+      placeSearchMiss: true,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+      worldwideCountryCode: 'TR',
+      worldwideExpanded: true,
+    }),
+  );
+
+  expect(
+    renderer.root.findAllByProps({ testID: 'event-setup-primary-action' }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-worldwide-start' }).props
+      .disabled,
+  ).toBe(true);
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'event-setup-place-query' })
+      .props.onSubmitEditing(),
+  );
+  expect(onPrimaryAction).not.toHaveBeenCalledWith('search_places');
+  expect(onPrimaryAction).not.toHaveBeenCalledWith('start_worldwide_search');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('explains enrichment progress, retry and provider fallback with a next action', async () => {
   const pending = await render(
     model({
@@ -191,6 +220,160 @@ test('explains enrichment progress, retry and provider fallback with a next acti
   await ReactTestRenderer.act(() => pending.unmount());
   await ReactTestRenderer.act(() => retry.unmount());
   await ReactTestRenderer.act(() => unavailable.unmount());
+});
+
+test('keeps worldwide search behind an empty-result disclosure and validates the visible country', async () => {
+  const empty = await render(
+    model({
+      placeQuery: 'Ocean Dunes',
+      placeSearchMiss: true,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+    }),
+  );
+  expect(textInside(empty)).toContain('Kein passender Ort gefunden.');
+  expect(
+    empty.root.findAllByProps({ testID: 'event-setup-worldwide-country' }),
+  ).toHaveLength(0);
+  await ReactTestRenderer.act(() =>
+    empty.root
+      .findByProps({ testID: 'event-setup-worldwide-open' })
+      .props.onPress(),
+  );
+  expect(onPrimaryAction).toHaveBeenCalledWith('open_worldwide_search');
+  await ReactTestRenderer.act(() => empty.unmount());
+
+  const invalidSnapshot = snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online');
+  invalidSnapshot.suggestedCountryCode = null;
+  const invalid = await render(
+    model({
+      placeQuery: 'Ocean Dunes',
+      placeSearchMiss: true,
+      snapshot: invalidSnapshot,
+      worldwideExpanded: true,
+    }),
+  );
+  expect(textInside(invalid)).toContain(
+    'Gib einen zweistelligen Ländercode wie CH oder DE ein.',
+  );
+  expect(
+    invalid.root.findByProps({ testID: 'event-setup-worldwide-start' }).props
+      .disabled,
+  ).toBe(true);
+  await ReactTestRenderer.act(() =>
+    invalid.root
+      .findByProps({ testID: 'event-setup-worldwide-country' })
+      .props.onChangeText('d'),
+  );
+  expect(onCountryCodeChange).toHaveBeenCalledWith('d');
+  await ReactTestRenderer.act(() => invalid.unmount());
+
+  const valid = await render(
+    model({
+      placeQuery: 'Ocean Dunes',
+      placeSearchMiss: true,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+      worldwideCountryCode: 'TR',
+      worldwideExpanded: true,
+    }),
+  );
+  expect(textInside(valid)).toContain(
+    'Aus den eindeutigen Orten dieses Events vorgeschlagen.',
+  );
+  const start = valid.root.findByProps({
+    testID: 'event-setup-worldwide-start',
+  });
+  expect(start.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => start.props.onPress());
+  expect(onPrimaryAction).toHaveBeenCalledWith('start_worldwide_search');
+  await ReactTestRenderer.act(() => valid.unmount());
+});
+
+test('renders only cited review fields with Large-Text-safe 48pt approve and reject controls', async () => {
+  setFontScale(2);
+  const renderer = await render(
+    model({
+      placeQuery: 'Ocean Dunes',
+      placeSearchMiss: true,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+      worldwideCountryCode: 'TR',
+      worldwideEnrichment: worldwideProjection('pending'),
+      worldwideExpanded: true,
+    }),
+  );
+  const text = textInside(renderer);
+  expect(text).toContain('Prüfe den weltweiten Vorschlag.');
+  expect(text).toContain('Ocean Dunes Golf Club');
+  expect(text).toContain('https://example.com/ocean-dunes');
+  expect(text).not.toMatch(/\bprompt\b|\bmodel\b|\bquery\b|\bjob\b/i);
+  const approve = renderer.root
+    .findAllByProps({ testID: 'event-setup-worldwide-approve' })
+    .find(node => typeof node.props.style === 'function');
+  const reject = renderer.root
+    .findAllByProps({ testID: 'event-setup-worldwide-reject' })
+    .find(node => typeof node.props.style === 'function');
+  if (!approve || !reject) throw new Error('Expected review controls');
+  expect(
+    StyleSheet.flatten(approve.props.style({ pressed: false })),
+  ).toMatchObject({
+    minHeight: 48,
+  });
+  expect(
+    StyleSheet.flatten(reject.props.style({ pressed: false })),
+  ).toMatchObject({
+    minHeight: 48,
+  });
+  expect(approve.props.accessibilityRole).toBe('button');
+  expect(reject.props.accessibilityRole).toBe('button');
+  const source = renderer.root
+    .findAllByType(Text)
+    .find(node =>
+      String(node.props.children).includes(
+        'Quelle: https://example.com/ocean-dunes',
+      ),
+    );
+  expect(source?.props.numberOfLines).toBeUndefined();
+  await ReactTestRenderer.act(() => approve.props.onPress());
+  await ReactTestRenderer.act(() => reject.props.onPress());
+  expect(onPrimaryAction).toHaveBeenCalledWith('approve_worldwide_place');
+  expect(onPrimaryAction).toHaveBeenCalledWith('reject_worldwide_place');
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('keeps query and country editable when review is permanently unavailable', async () => {
+  const renderer = await render(
+    model({
+      placeQuery: 'Ocean Dunes',
+      placeSearchMiss: true,
+      snapshot: snapshot('EVENT_CAPABILITY_PLACE_REQUIRED', 'online'),
+      worldwideCountryCode: 'TR',
+      worldwideEnrichment: worldwideProjection('pending'),
+      worldwideExpanded: true,
+      worldwideUnavailable: true,
+    }),
+  );
+
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-place-query' }).props
+      .disabled,
+  ).toBe(false);
+  expect(
+    renderer.root.findByProps({ testID: 'event-setup-worldwide-country' }).props
+      .disabled,
+  ).toBe(false);
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-approve',
+    }),
+  ).toHaveLength(0);
+  expect(
+    renderer.root.findAllByProps({
+      testID: 'event-setup-worldwide-reject',
+    }),
+  ).toHaveLength(0);
+  expect(textInside(renderer)).toContain(
+    'Dein Suchbegriff und das Land bleiben erhalten',
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
 });
 
 test('renders the typed capability recovery with one restore action', async () => {
@@ -414,6 +597,7 @@ async function render(viewModel: EventSetupRecoveryViewModel) {
         <EventSetupRecoveryView
           model={viewModel}
           onBack={onBack}
+          onCountryCodeChange={onCountryCodeChange}
           onPlaceQueryChange={onPlaceQueryChange}
           onPrimaryAction={onPrimaryAction}
           onSelectPlace={onSelectPlace}
@@ -437,9 +621,15 @@ function model(
     placeEnrichmentUnavailable: false,
     placeQuery: '',
     placeResults: [],
+    placeSearchMiss: false,
     selectedPlaceId: null,
     selectedTemplateId: null,
     snapshot: null,
+    worldwideCountryCode: '',
+    worldwideEnrichment: null,
+    worldwideExpanded: false,
+    worldwidePollingPaused: false,
+    worldwideUnavailable: false,
     ...overrides,
   };
 }
@@ -463,6 +653,7 @@ function snapshot(
     rootRevision: '12',
     rootVersion: 7,
     source,
+    suggestedCountryCode: 'TR',
     target:
       code === 'EVENT_TEMPLATE_REQUIRED'
         ? null
@@ -540,6 +731,61 @@ function enrichmentProjection(status: 'pending' | 'retry') {
       updatedAt: '2026-07-19T10:00:00.000Z',
     },
     place: null,
+    review: null,
+  };
+}
+
+function worldwideProjection(state: 'pending' | 'approved' | 'rejected') {
+  return {
+    enrichment: {
+      completedAt: '2026-07-19T10:01:00.000Z',
+      createdAt: '2026-07-19T10:00:00.000Z',
+      id: `pej_${'d'.repeat(64)}`,
+      pollAfterSeconds: null,
+      retryAllowed: false,
+      status: 'succeeded' as const,
+      updatedAt: '2026-07-19T10:01:00.000Z',
+    },
+    place:
+      state === 'approved'
+        ? {
+            address: 'Ocean Road 1',
+            countryCode: 'TR',
+            id: `gpl_${'d'.repeat(64)}`,
+            kind: 'golf_course' as const,
+            latitude: 36.86,
+            locality: 'Belek',
+            longitude: 31.05,
+            name: 'Ocean Dunes Golf Club',
+            region: 'Antalya',
+            sourceCandidateId: `pcd_${'e'.repeat(64)}`,
+            summary: 'A reviewed golf course.',
+            websiteUrl: 'https://example.com/ocean-dunes',
+          }
+        : null,
+    review: {
+      fields: [
+        {
+          name: 'name' as const,
+          provenance: {
+            observedAt: '2026-07-19T09:59:00.000Z',
+            sourceKind: 'exa_llm' as const,
+            sourceUrl: 'https://example.com/ocean-dunes',
+          },
+          value: 'Ocean Dunes Golf Club',
+        },
+        {
+          name: 'websiteUrl' as const,
+          provenance: {
+            observedAt: '2026-07-19T09:59:00.000Z',
+            sourceKind: 'exa_llm' as const,
+            sourceUrl: 'https://example.com/ocean-dunes',
+          },
+          value: 'https://example.com/ocean-dunes',
+        },
+      ],
+      state,
+    },
   };
 }
 

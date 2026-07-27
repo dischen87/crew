@@ -24,12 +24,13 @@ import {
   typography,
 } from '../design/theme';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
-import type {
-  EventSetupCapabilityType,
-  EventSetupPlaceCandidate,
-  EventSetupPlaceEnrichment,
-  EventSetupRecoverySnapshot,
-  EventSetupTemplateId,
+import {
+  isEventSetupPlaceQueryValid,
+  type EventSetupCapabilityType,
+  type EventSetupPlaceCandidate,
+  type EventSetupPlaceEnrichment,
+  type EventSetupRecoverySnapshot,
+  type EventSetupTemplateId,
 } from './EventSetupRecoveryRuntime';
 import { eventTemplateCopy } from './EventTemplateCopy';
 
@@ -46,12 +47,19 @@ const icons = {
 
 export type EventSetupRecoveryAction =
   | 'adopt_template'
+  | 'approve_worldwide_place'
   | 'bind_place'
+  | 'bind_reviewed_place'
+  | 'check_worldwide_search'
   | 'enrich_place'
+  | 'open_worldwide_search'
   | 'refresh'
+  | 'reject_worldwide_place'
   | 'restore_capability'
   | 'retry_enrichment'
-  | 'search_places';
+  | 'retry_worldwide_search'
+  | 'search_places'
+  | 'start_worldwide_search';
 
 export type EventSetupRecoveryViewModel = {
   busyAction: EventSetupRecoveryAction | null;
@@ -62,14 +70,21 @@ export type EventSetupRecoveryViewModel = {
   placeEnrichmentUnavailable: boolean;
   placeQuery: string;
   placeResults: readonly EventSetupPlaceCandidate[];
+  placeSearchMiss: boolean;
   selectedPlaceId: string | null;
   selectedTemplateId: EventSetupTemplateId | null;
   snapshot: EventSetupRecoverySnapshot | null;
+  worldwideCountryCode: string;
+  worldwideEnrichment: EventSetupPlaceEnrichment | null;
+  worldwideExpanded: boolean;
+  worldwidePollingPaused: boolean;
+  worldwideUnavailable: boolean;
 };
 
 export type EventSetupRecoveryViewProps = {
   model: EventSetupRecoveryViewModel;
   onBack(): void;
+  onCountryCodeChange(value: string): void;
   onPlaceQueryChange(value: string): void;
   onPrimaryAction(action: EventSetupRecoveryAction): void;
   onSelectPlace(id: string): void;
@@ -79,6 +94,7 @@ export type EventSetupRecoveryViewProps = {
 export function EventSetupRecoveryView({
   model,
   onBack,
+  onCountryCodeChange,
   onPlaceQueryChange,
   onPrimaryAction,
   onSelectPlace,
@@ -117,6 +133,7 @@ export function EventSetupRecoveryView({
         <ReadyState
           model={{ ...model, snapshot: model.snapshot }}
           onBack={onBack}
+          onCountryCodeChange={onCountryCodeChange}
           onPlaceQueryChange={onPlaceQueryChange}
           onPrimaryAction={onPrimaryAction}
           onSelectPlace={onSelectPlace}
@@ -198,6 +215,7 @@ function ResolvedState({
 function ReadyState({
   model,
   onBack,
+  onCountryCodeChange,
   onPlaceQueryChange,
   onPrimaryAction,
   onSelectPlace,
@@ -251,6 +269,7 @@ function ReadyState({
       {snapshot.intent.code === 'EVENT_CAPABILITY_PLACE_REQUIRED' ? (
         <PlaceRecovery
           model={model}
+          onCountryCodeChange={onCountryCodeChange}
           onPlaceQueryChange={onPlaceQueryChange}
           onPrimaryAction={onPrimaryAction}
           onSelectPlace={onSelectPlace}
@@ -374,6 +393,7 @@ function CapabilityRecovery({
 
 function PlaceRecovery({
   model,
+  onCountryCodeChange,
   onPlaceQueryChange,
   onPrimaryAction,
   onSelectPlace,
@@ -381,6 +401,7 @@ function PlaceRecovery({
   model: EventSetupRecoveryViewModel & {
     snapshot: EventSetupRecoverySnapshot;
   };
+  onCountryCodeChange(value: string): void;
   onPlaceQueryChange(value: string): void;
   onPrimaryAction(action: EventSetupRecoveryAction): void;
   onSelectPlace(id: string): void;
@@ -390,6 +411,7 @@ function PlaceRecovery({
   const selected = model.placeResults.find(
     result => result.id === model.selectedPlaceId,
   );
+  const formLocked = worldwideFormLocked(model);
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>
@@ -410,14 +432,18 @@ function PlaceRecovery({
         autoCapitalize="words"
         autoComplete="off"
         disabled={
-          model.snapshot.source !== 'online' || Boolean(model.busyAction)
+          model.snapshot.source !== 'online' ||
+          Boolean(model.busyAction) ||
+          formLocked
         }
         helpText="Suche nach Ort, Golfplatz oder Veranstaltungsort."
         label="Hauptort suchen"
         maxLength={120}
         onChangeText={onPlaceQueryChange}
         onSubmitEditing={() => {
-          if (model.placeQuery.trim()) onPrimaryAction('search_places');
+          if (isEventSetupPlaceQueryValid(model.placeQuery)) {
+            onPrimaryAction('search_places');
+          }
         }}
         placeholder={
           target.type === 'golf'
@@ -447,6 +473,13 @@ function PlaceRecovery({
           ))}
         </View>
       ) : null}
+      {model.placeSearchMiss ? (
+        <WorldwidePlaceRecovery
+          model={model}
+          onCountryCodeChange={onCountryCodeChange}
+          onPrimaryAction={onPrimaryAction}
+        />
+      ) : null}
       {selected ? (
         <PlaceEnrichmentStatus
           model={model}
@@ -455,6 +488,269 @@ function PlaceRecovery({
         />
       ) : null}
     </View>
+  );
+}
+
+function WorldwidePlaceRecovery({
+  model,
+  onCountryCodeChange,
+  onPrimaryAction,
+}: {
+  model: EventSetupRecoveryViewModel & {
+    snapshot: EventSetupRecoverySnapshot;
+  };
+  onCountryCodeChange(value: string): void;
+  onPrimaryAction(action: EventSetupRecoveryAction): void;
+}) {
+  const countryCode = model.worldwideCountryCode.trim().toUpperCase();
+  const countryValid = /^[A-Z]{2}$/.test(countryCode);
+  const formLocked = worldwideFormLocked(model);
+  return (
+    <Card
+      accessibilityLiveRegion="polite"
+      style={styles.worldwideCard}
+      testID="event-setup-worldwide"
+      tone="brand"
+    >
+      <StatusChip label="KEIN TREFFER" tone="surface" />
+      <Text style={styles.cardTitle}>Kein passender Ort gefunden.</Text>
+      <Text style={styles.body}>
+        Prüfe zuerst den Suchbegriff. Falls der Ort im Crew-Katalog fehlt,
+        kannst du danach eine begrenzte weltweite Suche starten.
+      </Text>
+      {!model.worldwideExpanded ? (
+        <Button
+          accessibilityHint="Öffnet die optionale weltweite Suche. Das Event wird noch nicht verändert."
+          disabled={Boolean(model.busyAction)}
+          label="Weltweit weitersuchen"
+          onPress={() => onPrimaryAction('open_worldwide_search')}
+          testID="event-setup-worldwide-open"
+          variant="surface"
+        />
+      ) : (
+        <View style={styles.worldwideContent}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>
+            Weltweite Suche
+          </Text>
+          <Text style={styles.body}>
+            Der Ländercode begrenzt die Suche. Ein Vorschlag wird nur aus
+            eindeutigen Orten dieses Events übernommen und bleibt sichtbar
+            prüfbar.
+          </Text>
+          <TextField
+            autoCapitalize="characters"
+            autoComplete="country"
+            disabled={
+              model.snapshot.source !== 'online' ||
+              Boolean(model.busyAction) ||
+              formLocked
+            }
+            error={
+              countryValid
+                ? undefined
+                : 'Gib einen zweistelligen Ländercode wie CH oder DE ein.'
+            }
+            helpText={
+              model.snapshot.suggestedCountryCode === countryCode
+                ? 'Aus den eindeutigen Orten dieses Events vorgeschlagen.'
+                : 'Zweistelliger ISO-Ländercode.'
+            }
+            label="Land"
+            maxLength={2}
+            onChangeText={onCountryCodeChange}
+            placeholder="CH"
+            testID="event-setup-worldwide-country"
+            value={model.worldwideCountryCode}
+          />
+          {!model.worldwideEnrichment ? (
+            <Button
+              accessibilityHint="Startet eine begrenzte weltweite Suche. Vor deiner Prüfung wird kein Ort angelegt."
+              disabled={
+                !countryValid ||
+                !isEventSetupPlaceQueryValid(model.placeQuery) ||
+                !model.online ||
+                Boolean(model.busyAction)
+              }
+              label={
+                model.worldwideUnavailable
+                  ? 'Weltweite Suche erneut versuchen'
+                  : 'Weltweite Suche starten'
+              }
+              loading={model.busyAction === 'start_worldwide_search'}
+              onPress={() => onPrimaryAction('start_worldwide_search')}
+              testID="event-setup-worldwide-start"
+              variant="surface"
+            />
+          ) : (
+            <WorldwideEnrichmentStatus
+              model={model}
+              onPrimaryAction={onPrimaryAction}
+            />
+          )}
+          {model.worldwideUnavailable ? (
+            <Text accessibilityRole="alert" style={styles.body}>
+              Die weltweite Suche oder Prüfung ist gerade nicht verfügbar. Dein
+              Suchbegriff und das Land bleiben erhalten; es wurde kein Erfolg
+              angenommen.
+            </Text>
+          ) : null}
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function WorldwideEnrichmentStatus({
+  model,
+  onPrimaryAction,
+}: {
+  model: EventSetupRecoveryViewModel;
+  onPrimaryAction(action: EventSetupRecoveryAction): void;
+}) {
+  const result = model.worldwideEnrichment;
+  if (!result) return null;
+  const status = result.enrichment.status;
+  const review = result.review;
+  if (status === 'pending' || status === 'processing') {
+    return (
+      <Card style={styles.notice} tone="lavender">
+        <StatusChip label="WELTWEITE SUCHE LÄUFT" tone="lavender" />
+        <Text style={styles.cardTitle}>Crew prüft passende Quellen.</Text>
+        <Text style={styles.body}>
+          Die Suche läuft im Hintergrund. Vor deiner Prüfung wird kein Ort
+          angelegt oder verbunden.
+        </Text>
+        {model.worldwidePollingPaused ? (
+          <Button
+            accessibilityHint="Fragt den aktuellen Stand einmalig beim Gateway ab."
+            disabled={!model.online || Boolean(model.busyAction)}
+            label="Status erneut prüfen"
+            loading={model.busyAction === 'check_worldwide_search'}
+            onPress={() => onPrimaryAction('check_worldwide_search')}
+            testID="event-setup-worldwide-check"
+            variant="surface"
+          />
+        ) : null}
+      </Card>
+    );
+  }
+  if (status === 'retry') {
+    return (
+      <Card accessibilityRole="alert" style={styles.notice} tone="brand">
+        <Text style={styles.cardTitle}>Ein neuer Versuch ist möglich.</Text>
+        <Text style={styles.body}>
+          Suchbegriff und Land bleiben erhalten. Es wurde kein Ort angelegt.
+        </Text>
+        <Button
+          accessibilityHint="Startet den serverseitig erlaubten neuen Versuch für dieselbe Suche."
+          disabled={!model.online || Boolean(model.busyAction)}
+          label="Weltweite Suche erneut versuchen"
+          loading={model.busyAction === 'retry_worldwide_search'}
+          onPress={() => onPrimaryAction('retry_worldwide_search')}
+          testID="event-setup-worldwide-retry"
+          variant="surface"
+        />
+      </Card>
+    );
+  }
+  if (status === 'failed' || status === 'dead') {
+    return (
+      <Card accessibilityRole="alert" style={styles.notice} tone="brand">
+        <Text style={styles.cardTitle}>
+          Die weltweite Suche konnte nicht abgeschlossen werden.
+        </Text>
+        <Text style={styles.body}>
+          Es wurde kein Ort angelegt. Passe Suchbegriff oder Land an, bevor du
+          einen neuen Versuch startest.
+        </Text>
+      </Card>
+    );
+  }
+  if (!review) return null;
+  return (
+    <Card
+      accessibilityLiveRegion="polite"
+      style={styles.reviewCard}
+      testID="event-setup-worldwide-review"
+      tone={review.state === 'pending' ? 'surface' : 'action'}
+    >
+      <StatusChip
+        label={
+          review.state === 'pending'
+            ? 'PRÜFUNG ERFORDERLICH'
+            : review.state === 'approved'
+            ? 'ORT FREIGEGEBEN'
+            : 'VORSCHLAG ABGELEHNT'
+        }
+        tone={review.state === 'pending' ? 'lavender' : 'action'}
+      />
+      <Text accessibilityRole="header" style={styles.cardTitle}>
+        {review.state === 'pending'
+          ? 'Prüfe den weltweiten Vorschlag.'
+          : review.state === 'approved'
+          ? 'Der Vorschlag ist freigegeben.'
+          : 'Der Vorschlag wurde abgelehnt.'}
+      </Text>
+      {review.state === 'rejected' ? (
+        <Text style={styles.body}>
+          Es wurde kein Ort angelegt oder mit dem Event verbunden.
+        </Text>
+      ) : (
+        <View style={styles.reviewFields}>
+          {review.fields.map(field => (
+            <View
+              accessible
+              accessibilityLabel={`${reviewFieldLabel(field.name)}: ${
+                field.value
+              }. Quelle: ${field.provenance.sourceUrl}`}
+              key={field.name}
+              style={styles.reviewField}
+            >
+              <Text style={styles.fieldLabel}>
+                {reviewFieldLabel(field.name)}
+              </Text>
+              <Text style={styles.body}>{field.value}</Text>
+              <Text style={styles.source}>
+                Quelle: {field.provenance.sourceUrl}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+      {review.state === 'pending' && !model.worldwideUnavailable ? (
+        <View style={styles.reviewActions}>
+          <Button
+            accessibilityHint="Gibt genau diesen geprüften Vorschlag frei und verbindet ihn danach über den bestehenden Event-Ort-Ablauf."
+            disabled={!model.online || Boolean(model.busyAction)}
+            label="Vorschlag freigeben"
+            loading={model.busyAction === 'approve_worldwide_place'}
+            onPress={() => onPrimaryAction('approve_worldwide_place')}
+            testID="event-setup-worldwide-approve"
+            variant="action"
+          />
+          <Button
+            accessibilityHint="Lehnt den Vorschlag ab. Es wird kein Ort angelegt oder verbunden."
+            disabled={!model.online || Boolean(model.busyAction)}
+            label="Vorschlag ablehnen"
+            loading={model.busyAction === 'reject_worldwide_place'}
+            onPress={() => onPrimaryAction('reject_worldwide_place')}
+            testID="event-setup-worldwide-reject"
+            variant="surface"
+          />
+        </View>
+      ) : null}
+      {review.state === 'approved' && result.place ? (
+        <Button
+          accessibilityHint="Wiederholt nur das sichere Verbinden des bereits freigegebenen Orts."
+          disabled={!model.online || Boolean(model.busyAction)}
+          label="Freigegebenen Ort verbinden"
+          loading={model.busyAction === 'bind_reviewed_place'}
+          onPress={() => onPrimaryAction('bind_reviewed_place')}
+          testID="event-setup-worldwide-bind"
+          variant="action"
+        />
+      ) : null}
+    </Card>
   );
 }
 
@@ -654,6 +950,38 @@ function RoundIcon({ source }: { source: ImageSourcePropType }) {
   );
 }
 
+function worldwideFormLocked(model: EventSetupRecoveryViewModel): boolean {
+  if (model.worldwideUnavailable) return false;
+  const result = model.worldwideEnrichment;
+  if (!result) return false;
+  if (
+    result.enrichment.status === 'pending' ||
+    result.enrichment.status === 'processing'
+  ) {
+    return true;
+  }
+  return (
+    result.enrichment.status === 'succeeded' &&
+    result.review?.state !== 'rejected'
+  );
+}
+
+function reviewFieldLabel(
+  name: NonNullable<
+    EventSetupPlaceEnrichment['review']
+  >['fields'][number]['name'],
+): string {
+  if (name === 'name') return 'Name';
+  if (name === 'locality') return 'Ort';
+  if (name === 'region') return 'Region';
+  if (name === 'countryCode') return 'Land';
+  if (name === 'latitude') return 'Breitengrad';
+  if (name === 'longitude') return 'Längengrad';
+  if (name === 'address') return 'Adresse';
+  if (name === 'websiteUrl') return 'Website';
+  return 'Kurzbeschreibung';
+}
+
 function primaryAction(model: EventSetupRecoveryViewModel): {
   action: EventSetupRecoveryAction;
   hint: string;
@@ -690,6 +1018,7 @@ function primaryAction(model: EventSetupRecoveryViewModel): {
     };
   }
   if (snapshot.intent.code === 'EVENT_CAPABILITY_PLACE_REQUIRED') {
+    if (worldwideFormLocked(model)) return null;
     if (model.selectedPlaceId) {
       return {
         action: 'bind_place',
@@ -698,7 +1027,7 @@ function primaryAction(model: EventSetupRecoveryViewModel): {
         label: 'Als Hauptort übernehmen',
       };
     }
-    if (model.placeQuery.trim()) {
+    if (isEventSetupPlaceQueryValid(model.placeQuery)) {
       return {
         action: 'search_places',
         hint: 'Sucht online nach passenden Orten, ohne das Event zu verändern.',
@@ -852,6 +1181,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     flex: 0,
   },
+  fieldLabel: {
+    ...typography.overline,
+    color: colors.textSecondary,
+  },
   iconImage: {
     height: 24,
     width: 24,
@@ -918,6 +1251,21 @@ const styles = StyleSheet.create({
     borderColor: colors.focus,
     borderWidth: borders.strong,
   },
+  reviewActions: {
+    gap: spacing.md,
+  },
+  reviewCard: {
+    gap: spacing.md,
+  },
+  reviewField: {
+    borderColor: colors.border,
+    borderTopWidth: borders.subtle,
+    gap: spacing.xs,
+    paddingTop: spacing.md,
+  },
+  reviewFields: {
+    gap: spacing.md,
+  },
   roundIcon: {
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -934,5 +1282,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.overline,
     color: colors.text,
+  },
+  source: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  worldwideCard: {
+    gap: spacing.md,
+  },
+  worldwideContent: {
+    gap: spacing.md,
   },
 });
