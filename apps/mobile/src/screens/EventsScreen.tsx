@@ -124,7 +124,7 @@ export function EventsScreen({ navigation }: Props) {
     logoutAccountRef.current = current.accountId;
     Alert.alert(
       'Abmelden?',
-      'Deine Sitzung wird beendet. Zurückgehaltene Feedback-Daten werden vorher von diesem Gerät entfernt.',
+      'Deine Sitzung wird beendet. Private Daten, die noch auf diesem Gerät gespeichert sind, werden vorher entfernt.',
       [
         {
           onPress: resetLogoutConfirmation,
