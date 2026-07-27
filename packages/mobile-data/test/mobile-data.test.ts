@@ -2801,6 +2801,7 @@ ORDER BY root_event_id, client_sequence`,
 		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
 			attentionCount: 1,
 			state: "needs_attention",
+			summary: "Aktion erforderlich",
 		});
 
 		await database.run(
@@ -3012,6 +3013,94 @@ WHERE account_user_id = ? AND root_event_id = 'evt_bound_create'`,
 });
 
 describe("durable optimistic mutation outbox", () => {
+	test("returns German summaries for every sync state", async () => {
+		const database = new BunDatabase();
+		await migrate(database);
+		await seedAccount(database, syncAccount);
+		const engine = testSyncEngine(database, syncAccount, noFetch, {
+			randomUUID: uuidSequence(960),
+		});
+
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "synced",
+			summary: "Synchronisiert",
+		});
+
+		const queued = await engine.enqueueMutation(
+			syncAccount,
+			"evt_trip",
+			syncDevice,
+			feedCreate("fed_german_sync_status", "Status"),
+			{},
+		);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "pending",
+			summary: "Wartet auf Verbindung",
+		});
+
+		const update = async (
+			state: "blocked" | "dead_letter" | "pending" | "sending",
+			lastErrorCode: "auth_required" | "blocked" | null,
+			nextAttemptAt: string | null,
+		) =>
+			database.run(
+				`UPDATE mutation_outbox
+SET state = ?, last_error_code = ?, next_attempt_at = ?
+WHERE account_user_id = ? AND client_mutation_id = ?`,
+				[
+					state,
+					lastErrorCode,
+					nextAttemptAt,
+					syncAccount,
+					queued.clientMutationId,
+				],
+			);
+
+		await update("pending", null, "2026-07-27T17:00:00.000Z");
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "waiting_retry",
+			summary: "Neuer Versuch geplant",
+		});
+
+		await update("sending", null, null);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "syncing",
+			summary: "Wird gespeichert",
+		});
+
+		await update("blocked", "blocked", null);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "blocked",
+			summary: "Wird abgeglichen",
+		});
+
+		await update("blocked", "auth_required", null);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "blocked",
+			summary: "Anmeldung erforderlich",
+		});
+
+		await update("dead_letter", null, null);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "needs_attention",
+			summary: "Aktion erforderlich",
+		});
+
+		await database.run(
+			`INSERT INTO sync_snapshot_staging (
+  account_user_id, root_event_id, snapshot_id, snapshot_revision,
+  authorization_scope_version, sync_cursor, next_page_cursor, base_pull_cursor
+) VALUES (?, 'evt_trip', 'snp_status', '1', '1', 'cursor-status', NULL, NULL)`,
+			[syncAccount],
+		);
+		expect(await engine.getStatus(syncAccount, "evt_trip")).toMatchObject({
+			state: "resetting",
+			summary: "Eventdaten werden aktualisiert",
+		});
+
+		database.close();
+	});
+
 	test("allocates a gap-free sequence atomically when an insert rolls back", async () => {
 		const database = new BunDatabase();
 		await migrate(database);
@@ -3322,7 +3411,11 @@ WHERE m.account_user_id = ? AND m.client_mutation_id = ?`;
 		);
 		const status = await secondEngine.syncRoot(syncAccount, "evt_trip");
 
-		expect(status).toMatchObject({ state: "synced", pendingCount: 0 });
+		expect(status).toMatchObject({
+			state: "synced",
+			summary: "Synchronisiert",
+			pendingCount: 0,
+		});
 		expect(attempts).toHaveLength(2);
 		expect(attempts[1]).toEqual(attempts[0]);
 		expect(serverEffects).toBe(1);
@@ -3406,7 +3499,7 @@ WHERE m.account_user_id = ? AND m.client_mutation_id = ?`;
 		const switched = await engine.syncRoot(syncAccount, "evt_trip");
 		expect(switched).toMatchObject({
 			state: "blocked",
-			summary: "Sign in to save changes",
+			summary: "Anmeldung erforderlich",
 			pendingCount: 1,
 		});
 		expect((await engine.listOutbox(syncAccount, "evt_trip"))[0]).toMatchObject(

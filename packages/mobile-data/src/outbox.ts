@@ -1242,7 +1242,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		if (Number(staging?.count ?? 0) > 0) {
 			return status(
 				"resetting",
-				"Refreshing event data",
+				"Eventdaten werden aktualisiert",
 				pendingCount,
 				attention,
 				counts?.next_attempt_at ?? null,
@@ -1251,25 +1251,19 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		if (attention > 0) {
 			return status(
 				"needs_attention",
-				"Some changes need attention",
+				"Aktion erforderlich",
 				pendingCount,
 				attention,
 				counts?.next_attempt_at ?? null,
 			);
 		}
 		if (auth > 0) {
-			return status(
-				"blocked",
-				"Sign in to save changes",
-				pendingCount,
-				0,
-				null,
-			);
+			return status("blocked", "Anmeldung erforderlich", pendingCount, 0, null);
 		}
 		if (blocked > 0) {
 			return status(
 				"blocked",
-				"Waiting to reconcile changes",
+				"Wird abgeglichen",
 				pendingCount,
 				0,
 				counts?.next_attempt_at ?? null,
@@ -1278,7 +1272,7 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		if (sending + awaiting > 0) {
 			return status(
 				"syncing",
-				"Saving changes",
+				"Wird gespeichert",
 				pendingCount,
 				0,
 				counts?.next_attempt_at ?? null,
@@ -1287,16 +1281,16 @@ WHERE account_user_id = ? AND root_event_id = ?`,
 		if (pending > 0 && counts?.next_attempt_at) {
 			return status(
 				"waiting_retry",
-				"Waiting to retry",
+				"Neuer Versuch geplant",
 				pendingCount,
 				0,
 				counts.next_attempt_at,
 			);
 		}
 		if (pending > 0) {
-			return status("pending", "Changes ready to save", pendingCount, 0, null);
+			return status("pending", "Wartet auf Verbindung", pendingCount, 0, null);
 		}
-		return status("synced", "All changes saved", 0, 0, null);
+		return status("synced", "Synchronisiert", 0, 0, null);
 	}
 
 	async retryNow(accountUserId: string, rootEventId: string): Promise<void> {

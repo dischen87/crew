@@ -323,6 +323,13 @@ test('plan identifies every unconfirmed local change before discard', async () =
     selectedItemId: null,
     snapshot: {
       ...snapshot,
+      syncStatus: {
+        attentionCount: 3,
+        nextAttemptAt: null,
+        pendingCount: 0,
+        state: 'needs_attention',
+        summary: 'Aktion erforderlich',
+      },
       issues: [
         {
           attempted: { ...transfer, title: 'Lokaler Transfer' },
@@ -362,6 +369,8 @@ test('plan identifies every unconfirmed local change before discard', async () =
   const thirdDiscard = renderer.root.findByProps({
     testID: `plan-discard-issue-${thirdMutationId}`,
   });
+  expect(textInside(renderer)).toContain('Aktion erforderlich');
+  expect(textInside(renderer)).not.toContain('Some changes need attention');
   expect(textInside(renderer)).toContain(
     'Berechtigung: Diese lokale Änderung wurde nicht übernommen.',
   );
