@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e simulator - iOS 26.2" tests="1" failures="0" errors="0" time="77.0">
+    <testcase id="ios-owner-plan-live-editor" name="ios-owner-plan-live-editor" classname="ios-owner-plan-live-editor" file="maestro/ios-owner-plan-live-editor.yaml" time="77.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

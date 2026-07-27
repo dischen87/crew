@@ -1,0 +1,23 @@
+appId: app.crew.next
+---
+- openLink: crewnext://events/evt_local_team_day_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- tapOn:
+    id: event-hub-tab-feed
+- extendedWaitUntil:
+    visible:
+      id: team-feed-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: team-feed-entry-queued
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible:
+    id: team-feed-entry-queued
+- assertVisible: 'Participant reconnect check: option B is ready.'
+- takeScreenshot: ${CAPTURE_DIR}/02-feed-queued-after-relaunch

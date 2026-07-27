@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" errors="0" time="6.0">
+    <testcase id="android-feed-converged" name="android-feed-converged" classname="android-feed-converged" file="maestro/android-feed-converged.yaml" time="6.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

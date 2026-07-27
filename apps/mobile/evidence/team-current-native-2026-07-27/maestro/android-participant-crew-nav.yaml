@@ -1,0 +1,24 @@
+appId: app.crew.next
+---
+- stopApp
+- openLink: crewnext://events/evt_local_team_day_2026
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- assertVisible:
+    id: event-hub-tab-crew
+- tapOn:
+    id: event-hub-tab-crew
+- extendedWaitUntil:
+    visible:
+      id: team-decision-view
+    timeout: 30000
+- assertVisible: Entscheidung
+- scrollUntilVisible:
+    element:
+      text: Was essen wir zum Abschluss?
+    direction: DOWN
+    timeout: 30000
+- assertVisible: Was essen wir zum Abschluss?
+- takeScreenshot: ${CAPTURE_DIR}/01-participant-team-decision-from-crew-tab

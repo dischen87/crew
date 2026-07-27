@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-27",
+  "source": {
+    "branch": "main",
+    "sha": "b3d56a21161c1764f7c5410cfff53da4db7ebaa5"
+  },
+  "runtime": {
+    "fixture": "evt_local_team_day_2026",
+    "gateway": "isolated local native E2E services",
+    "metroPort": 8082,
+    "foreignMetro8081Unchanged": true,
+    "productionBackend": false
+  },
+  "android": {
+    "appId": "app.crew.next",
+    "device": "Android API 36 emulator",
+    "os": "Android 16",
+    "apiLevel": 36,
+    "resolution": "1080x2400",
+    "fontScale": 1.0,
+    "artifact": "debug APK",
+    "apkSha256": "27e9a5026ed2c776159022dd1e0f9c4f541e0d395c2e65b5a0435d144f01da22",
+    "installedArtifactMatched": true,
+    "distributionSigning": false,
+    "runs": 5,
+    "failures": 0
+  },
+  "ios": {
+    "appId": "app.crew.next",
+    "device": "iPhone 16e simulator",
+    "os": "iOS 26.2",
+    "resolution": "1170x2532",
+    "contentSize": "large",
+    "artifact": "simulator debug executable",
+    "executableSha256": "c7cecfc6a945997ea665735f463483bbe3ba630c28180852b895f88149dee4b1",
+    "installedArtifactMatched": true,
+    "distributionSigning": false,
+    "runs": 3,
+    "failures": 0
+  },
+  "artifacts": {
+    "screenshots": 13,
+    "junitReports": 8,
+    "maestroFlows": 8,
+    "oracles": 3
+  }
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e simulator - iOS 26.2" tests="1" failures="0" errors="0" time="20.0">
+    <testcase id="ios-owner-crew-nav" name="ios-owner-crew-nav" classname="ios-owner-crew-nav" file="maestro/ios-owner-crew-nav.yaml" time="20.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

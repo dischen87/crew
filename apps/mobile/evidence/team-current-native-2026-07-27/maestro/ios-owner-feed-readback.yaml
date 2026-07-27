@@ -1,0 +1,8 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: team-feed-view
+- assertVisible:
+    id: team-feed-entry-converged
+- assertVisible: .*Participant reconnect check:.*
+- takeScreenshot: ${CAPTURE_DIR}/01-owner-feed-readback

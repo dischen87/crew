@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-27",
+  "environment": "isolated local native E2E services",
+  "fixture": {
+    "rootEventId": "evt_local_team_day_2026",
+    "bootstrapRecordCount": 37,
+    "feedEntryCount": 13,
+    "createdThroughPublicApis": true,
+    "legacyMigrationUsed": false
+  },
+  "verifiedSystemEvents": [
+    "team.assignments.published",
+    "team.decision.opened"
+  ],
+  "syncShape": {
+    "systemPayloadLocation": "payload.text",
+    "systemPayloadEncoding": "serialized JSON",
+    "topLevelSystemPayload": false
+  },
+  "verifiedJourneys": [
+    "owner team setup from Crew tab",
+    "owner team decision",
+    "participant team decision from Crew tab",
+    "participant offline feed convergence",
+    "owner feed readback"
+  ],
+  "privacy": {
+    "sanitized": true,
+    "userIdentifiersRetained": false,
+    "emailAddressesRetained": false,
+    "credentialValuesRetained": false
+  }
+}

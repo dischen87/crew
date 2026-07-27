@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-27",
+  "scenario": "participant feed write across transport loss, committed response loss, replay, and convergence",
+  "control": {
+    "transport": "attached",
+    "fault": "idle",
+    "setup": "ready",
+    "traceCount": 5
+  },
+  "request": {
+    "message": "Participant reconnect check: option B is ready.",
+    "bodyFingerprint": "sha256:a35791a8506b6d900b309ef3c1a3741e74fd08331e8b3a8e19eaa7d053f7b43e",
+    "idempotencyFingerprint": "sha256:6d09d95ad465534133896fac98ee877827955a0fb60307fe667877a29ab6f3f9"
+  },
+  "traces": [
+    {
+      "sequence": 1,
+      "mode": "transport-detached",
+      "facadeStatus": 503,
+      "downstreamStatus": null,
+      "replayed": false
+    },
+    {
+      "sequence": 2,
+      "mode": "transport-detached",
+      "facadeStatus": 503,
+      "downstreamStatus": null,
+      "replayed": false
+    },
+    {
+      "sequence": 3,
+      "mode": "transport-detached",
+      "facadeStatus": 503,
+      "downstreamStatus": null,
+      "replayed": false
+    },
+    {
+      "sequence": 4,
+      "mode": "success-suppressed",
+      "facadeStatus": 503,
+      "downstreamStatus": 200,
+      "replayed": false
+    },
+    {
+      "sequence": 5,
+      "mode": "forwarded",
+      "facadeStatus": 200,
+      "downstreamStatus": 200,
+      "replayed": true
+    }
+  ],
+  "result": {
+    "queuedAcrossRelaunch": true,
+    "retainedAfterCommittedResponseLoss": true,
+    "participantConverged": true,
+    "ownerReadbackVisible": true
+  },
+  "privacy": {
+    "sanitized": true,
+    "credentialValuesRetained": false,
+    "userIdentifiersRetained": false
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "status": "partial-native-acceptance",
+  "capturedAt": "2026-07-27",
+  "sourceSha": "b3d56a21161c1764f7c5410cfff53da4db7ebaa5",
+  "groups": [
+    {
+      "platform": "ios",
+      "role": "owner",
+      "journey": "plan-live-editor",
+      "textSetting": "large",
+      "screenshots": 5,
+      "reports": [
+        "runtime/reports/ios-owner-plan-live-editor.xml"
+      ]
+    },
+    {
+      "platform": "android",
+      "role": "participant",
+      "journey": "offline-feed-replay",
+      "textSetting": "1.0",
+      "screenshots": 4,
+      "reports": [
+        "runtime/reports/android-feed-queued.xml",
+        "runtime/reports/android-feed-after-relaunch.xml",
+        "runtime/reports/android-feed-response-loss.xml",
+        "runtime/reports/android-feed-converged.xml"
+      ]
+    },
+    {
+      "platform": "ios",
+      "role": "owner",
+      "journey": "feed-readback",
+      "textSetting": "large",
+      "screenshots": 1,
+      "reports": [
+        "runtime/reports/ios-owner-feed-readback.xml"
+      ]
+    },
+    {
+      "platform": "ios",
+      "role": "owner",
+      "journey": "crew-tab-navigation",
+      "textSetting": "large",
+      "screenshots": 2,
+      "reports": [
+        "runtime/reports/ios-owner-crew-nav.xml"
+      ]
+    },
+    {
+      "platform": "android",
+      "role": "participant",
+      "journey": "crew-tab-navigation",
+      "textSetting": "1.0",
+      "screenshots": 1,
+      "reports": [
+        "runtime/reports/android-participant-crew-nav.xml"
+      ]
+    }
+  ],
+  "totals": {
+    "screenshots": 13,
+    "tests": 8,
+    "failures": 0,
+    "errors": 0,
+    "reports": 8,
+    "maestroFlows": 8,
+    "oracles": 3
+  },
+  "privacy": {
+    "sanitized": true,
+    "credentialsRetained": false,
+    "uniqueDeviceIdentifiersRetained": false,
+    "absoluteLocalPathsRetained": false,
+    "emailAddressesRetained": false
+  },
+  "remainingBoundaries": [
+    "production deployment and signed distribution artifacts",
+    "physical devices",
+    "VoiceOver and TalkBack",
+    "native Create and Invite in this integrated run",
+    "queued, conflict and tombstone Plan visuals",
+    "external Figma handoff",
+    "feedback in this integrated run"
+  ]
+}

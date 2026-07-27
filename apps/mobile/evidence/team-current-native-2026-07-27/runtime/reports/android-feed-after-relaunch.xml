@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" errors="0" time="14.0">
+    <testcase id="android-feed-after-relaunch" name="android-feed-after-relaunch" classname="android-feed-after-relaunch" file="maestro/android-feed-after-relaunch.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

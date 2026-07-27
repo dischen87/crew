@@ -1,0 +1,19 @@
+appId: app.crew.next
+---
+- assertVisible:
+    id: team-feed-view
+- scrollUntilVisible:
+    element:
+      id: team-feed-refresh
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: team-feed-refresh
+- extendedWaitUntil:
+    visible:
+      id: team-feed-entry-queued
+    timeout: 30000
+- assertVisible:
+    id: team-feed-entry-queued
+- assertVisible: 'Participant reconnect check: option B is ready.'
+- takeScreenshot: ${CAPTURE_DIR}/03-feed-queued-after-committed-response-loss

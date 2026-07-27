@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Test Suite" device="Android API 36 emulator" tests="1" failures="0" errors="0" time="2.0">
+    <testcase id="android-feed-queued" name="android-feed-queued" classname="android-feed-queued" file="maestro/android-feed-queued.yaml" time="2.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>
