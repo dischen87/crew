@@ -7,7 +7,7 @@ Typed, dependency-free mobile client for the Crew API Gateway.
 The package byte-pins `services/api-gateway/openapi/openapi.json` and generates:
 
 - `src/generated/gateway.ts`: request, response, and component types;
-- `src/generated/routes.ts`: the deterministic 48-operation runtime manifest,
+- `src/generated/routes.ts`: the deterministic 81-operation runtime manifest,
   allowed success statuses/media types, and validation schemas;
 - `contracts/contract.lock.json`: SHA-256, byte count, version, and source provenance.
 
