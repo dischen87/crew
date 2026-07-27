@@ -98,10 +98,10 @@ const compatibilityConditionExpression = [
 	"$",
 	"{{ !inputs.reuse_stored_manifest && inputs.compatibility_from_sha != '' }}",
 ].join("");
-const auditedCompatibilityFromSha = "9e2d70c0cc367085d48cc80db5e739bc813580e7";
+const auditedCompatibilityFromSha = "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4";
 const auditedCompatibilityDigests = {
 	AUDITED_FROM_RUNTIME_CONTRACT_SHA:
-		"7d7a783b3bd0aa6c5bda2c2e5d036a4805967ff6e7350f96d8eedc71e7e35b41",
+		"0250b362d12b96b3034fdaefef82791b01b2812e795407f23f499d235c4d73d6",
 	AUDITED_TARGET_DATABASE_CONTRACT_SHA:
 		"25b18715f31538144e3e63f5b4b4c8bbf5901b3d245936601a7d79034bc07b17",
 	AUDITED_TARGET_GRANT_SHA:
@@ -197,6 +197,54 @@ describe("Crew Next GitHub Actions workflow", () => {
 			expect(drifted).not.toBe(stagingWorkflowSource);
 			expect(() => validateStagingCompatibilityWorkflow(drifted)).toThrow();
 		}
+	});
+
+	test("derives audited runtime contracts from their exact file contents", async () => {
+		const fromContractLines: string[] = [];
+		const targetContractLines: string[] = [];
+		for (const path of [
+			"compose.yaml",
+			"infra/Dockerfile",
+			"infra/provider-sink.ts",
+			"infra/redis/Dockerfile",
+			"infra/redis/start.sh",
+			"infra/staging/compose.staging.yaml",
+			"infra/staging/haproxy.cfg",
+		]) {
+			const gitShow = Bun.spawn(
+				["git", "show", `${auditedCompatibilityFromSha}:${path}`],
+				{
+					cwd: decodeURIComponent(repositoryRoot.pathname),
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+			const [fromContents, stderr, exitCode] = await Promise.all([
+				new Response(gitShow.stdout).arrayBuffer(),
+				new Response(gitShow.stderr).text(),
+				gitShow.exited,
+			]);
+			if (exitCode !== 0) throw new Error(stderr);
+			const targetContents = await Bun.file(
+				new URL(path, repositoryRoot),
+			).arrayBuffer();
+			fromContractLines.push(
+				`${new Bun.CryptoHasher("sha256").update(fromContents).digest("hex")}  ${path}\n`,
+			);
+			targetContractLines.push(
+				`${new Bun.CryptoHasher("sha256").update(targetContents).digest("hex")}  ${path}\n`,
+			);
+		}
+		expect(
+			new Bun.CryptoHasher("sha256")
+				.update(fromContractLines.join(""))
+				.digest("hex"),
+		).toBe(auditedCompatibilityDigests.AUDITED_FROM_RUNTIME_CONTRACT_SHA);
+		expect(
+			new Bun.CryptoHasher("sha256")
+				.update(targetContractLines.join(""))
+				.digest("hex"),
+		).toBe(auditedCompatibilityDigests.AUDITED_TARGET_RUNTIME_CONTRACT_SHA);
 	});
 
 	test("turns required command, environment and fail-closed drift red", () => {
