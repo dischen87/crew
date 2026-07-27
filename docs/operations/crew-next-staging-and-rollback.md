@@ -281,10 +281,73 @@ account must still register `app.crew.next` with Associated Domains and issue
 the matching distribution profile. A valid local certificate without that
 profile is not a signed-device or App Store artifact.
 
-Provider-backed place enrichment remains disabled without a real provider
-worker. Create/retry requests fail with the documented retryable `503`; exact
-completed idempotency replays remain available. E-mail and push delivery stay
-inside the provider sink until approved providers are configured.
+### Optional place-enrichment worker
+
+Provider-backed place enrichment is default-off. The generated external,
+root-owned mode-`0600` environment contains
+`EVENT_ENRICHMENT_ENABLED=false`; no provider credential belongs in Git, an
+image, a workflow artifact, or a release record. Create/retry requests fail
+with the documented retryable `503` while disabled, and exact completed
+idempotency replays remain available.
+
+After provider, privacy, and legal approval, populate every variable below in
+`/opt/crew-new/shared/environment` and change the flag to `true`:
+
+```text
+EVENT_DB_ENRICHMENT_WORKER_PASSWORD
+EVENT_ENRICHMENT_WORKER_POLL_INTERVAL_MS
+EVENT_ENRICHMENT_WORKER_LEASE_MS
+EVENT_ENRICHMENT_PIPELINE_VERSION
+EVENT_ENRICHMENT_LLM_MODEL
+EVENT_ENRICHMENT_PROMPT_VERSION
+EVENT_ENRICHMENT_MAX_ATTEMPTS
+EVENT_ENRICHMENT_MAX_EXA_CALLS
+EVENT_ENRICHMENT_MAX_LLM_CALLS
+EVENT_ENRICHMENT_MAX_INPUT_TOKENS
+EVENT_ENRICHMENT_MAX_OUTPUT_TOKENS
+EVENT_ENRICHMENT_MAX_COST_MICROS
+EVENT_ENRICHMENT_PROVIDER_TIMEOUT_MS
+EVENT_ENRICHMENT_MAX_RESPONSE_BYTES
+EVENT_ENRICHMENT_EXA_BASE_URL
+EVENT_ENRICHMENT_EXA_API_KEY
+EVENT_ENRICHMENT_EXA_MAX_RESULTS
+EVENT_ENRICHMENT_EXA_MAX_COST_MICROS_PER_CALL
+EVENT_ENRICHMENT_LLM_URL
+EVENT_ENRICHMENT_LLM_ALLOWED_ORIGIN
+EVENT_ENRICHMENT_LLM_API_KEY
+EVENT_ENRICHMENT_LLM_MAX_OUTPUT_TOKENS_PER_CALL
+EVENT_ENRICHMENT_LLM_INPUT_COST_MICROS_PER_MILLION
+EVENT_ENRICHMENT_LLM_OUTPUT_COST_MICROS_PER_MILLION
+EVENT_ENRICHMENT_MAX_EVIDENCE_CHARACTERS
+EVENT_ENRICHMENT_BASE_BACKOFF_MS
+EVENT_ENRICHMENT_MAX_BACKOFF_MS
+```
+
+An enabled release with a missing or duplicate value fails before checkout,
+image pulls, Caddy, containers, or database jobs change. Deployment then starts
+the worker from the release's exact Event Service digest, without a host port,
+clears any stale singleton heartbeat, and requires a current
+`staging-place-enrichment-<release-sha>` database heartbeat before starting
+the API runtimes. The release record reports `enabled-worker-healthy` only
+after that gate. Disabled releases remove the worker and heartbeat and report
+`disabled-no-provider-worker`.
+
+After the initial gate, failure cleanup remains armed through smoke checks,
+image verification, final current-heartbeat verification, record creation, and
+active-state publication. Any failure before successful activation stops and
+removes the worker and clears its heartbeat.
+
+A rollback target that predates this worker is explicitly fail-closed even
+when the external flag remains `true`: the executor removes the worker, clears
+the heartbeat, the old Event API retains its hard-disabled gate, and the record
+reports `disabled-target-release-unsupported`. E-mail and push delivery stay
+inside the provider sink until their approved providers are configured.
+
+Provider settings may remain in the external environment when the flag returns
+to `false`. In that state the executor overrides the enrichment database
+password to an empty Compose interpolation value, so the grants job leaves
+`crew_event_enrichment_worker` as `NOLOGIN`; the stored credential is passed
+only while enablement is explicitly requested.
 
 ## Verification
 

@@ -30,6 +30,13 @@ lock_file="${shared_dir}/deploy.lock"
 reset_staging_data=false
 rollback_compatibility=false
 forward_recovery=${CREW_FORWARD_RECOVERY:-none}
+place_enrichment_requested=false
+place_enrichment_enabled=false
+place_enrichment_feature_state=disabled-no-provider-worker
+place_enrichment_database_password=
+place_enrichment_cleanup_armed=false
+place_enrichment_cleanup_release_dir=
+place_enrichment_cleanup_running=false
 
 case "${action}" in
 	deploy | rollback) ;;
@@ -83,6 +90,63 @@ environment_value() {
 		exit 1
 	fi
 	printf '%s\n' "${value}"
+}
+
+load_place_enrichment_configuration() {
+	local count value
+	count=$(grep -c '^EVENT_ENRICHMENT_ENABLED=' "${environment_file}" || true)
+	if [[ "${count}" -eq 0 ]]; then
+		place_enrichment_requested=false
+		return
+	fi
+	if [[ "${count}" -ne 1 ]]; then
+		echo "Crew staging environment must contain at most one EVENT_ENRICHMENT_ENABLED" >&2
+		exit 1
+	fi
+	value=$(sed -n 's/^EVENT_ENRICHMENT_ENABLED=//p' "${environment_file}")
+	case "${value}" in
+		true) place_enrichment_requested=true ;;
+		false) place_enrichment_requested=false ;;
+		*)
+			echo "Crew staging EVENT_ENRICHMENT_ENABLED must be true or false" >&2
+			exit 1
+			;;
+	esac
+	if [[ "${place_enrichment_requested}" == false ]]; then
+		return
+	fi
+	place_enrichment_database_password=$(
+		environment_value EVENT_DB_ENRICHMENT_WORKER_PASSWORD
+	)
+	for name in \
+		EVENT_ENRICHMENT_WORKER_POLL_INTERVAL_MS \
+		EVENT_ENRICHMENT_WORKER_LEASE_MS \
+		EVENT_ENRICHMENT_PIPELINE_VERSION \
+		EVENT_ENRICHMENT_LLM_MODEL \
+		EVENT_ENRICHMENT_PROMPT_VERSION \
+		EVENT_ENRICHMENT_MAX_ATTEMPTS \
+		EVENT_ENRICHMENT_MAX_EXA_CALLS \
+		EVENT_ENRICHMENT_MAX_LLM_CALLS \
+		EVENT_ENRICHMENT_MAX_INPUT_TOKENS \
+		EVENT_ENRICHMENT_MAX_OUTPUT_TOKENS \
+		EVENT_ENRICHMENT_MAX_COST_MICROS \
+		EVENT_ENRICHMENT_PROVIDER_TIMEOUT_MS \
+		EVENT_ENRICHMENT_MAX_RESPONSE_BYTES \
+		EVENT_ENRICHMENT_EXA_BASE_URL \
+		EVENT_ENRICHMENT_EXA_API_KEY \
+		EVENT_ENRICHMENT_EXA_MAX_RESULTS \
+		EVENT_ENRICHMENT_EXA_MAX_COST_MICROS_PER_CALL \
+		EVENT_ENRICHMENT_LLM_URL \
+		EVENT_ENRICHMENT_LLM_ALLOWED_ORIGIN \
+		EVENT_ENRICHMENT_LLM_API_KEY \
+		EVENT_ENRICHMENT_LLM_MAX_OUTPUT_TOKENS_PER_CALL \
+		EVENT_ENRICHMENT_LLM_INPUT_COST_MICROS_PER_MILLION \
+		EVENT_ENRICHMENT_LLM_OUTPUT_COST_MICROS_PER_MILLION \
+		EVENT_ENRICHMENT_MAX_EVIDENCE_CHARACTERS \
+		EVENT_ENRICHMENT_BASE_BACKOFF_MS \
+		EVENT_ENRICHMENT_MAX_BACKOFF_MS; do
+		environment_value "${name}" >/dev/null
+	done
 }
 
 ensure_environment() {
@@ -144,6 +208,7 @@ ensure_environment() {
 		printf 'EVENT_NOTIFICATION_PAYLOAD_CURRENT_KEY=%s\n' "$(base64url)"
 		printf 'PLACE_CANDIDATE_SERVICE_CURRENT_KEY=%s\n' "$(base64url)"
 		printf 'PLACE_SEARCH_CURSOR_KEY=%s\n' "$(base64url)"
+		printf 'EVENT_ENRICHMENT_ENABLED=false\n'
 	} >"${temporary}"
 	chmod 0600 "${temporary}"
 	mv "${temporary}" "${environment_file}"
@@ -376,6 +441,7 @@ if rollback_compatibility is not None:
         "attachment-worker",
         "notification-worker",
         "recap-retention-worker",
+        "place-enrichment-default-off",
         "redis-rate-limit",
         "provider-sink",
         "fixture-bootstrap",
@@ -591,6 +657,12 @@ expected_images["internal-tls"] = (
 )
 if record.get("images") != expected_images:
     raise SystemExit("Release record image references differ from the manifest")
+if record.get("features") not in (
+    {"placeEnrichment": "disabled-no-provider-worker"},
+    {"placeEnrichment": "disabled-target-release-unsupported"},
+    {"placeEnrichment": "enabled-worker-healthy"},
+):
+    raise SystemExit("Release record place-enrichment state is invalid")
 local_ids = record.get("localImageIds")
 if not isinstance(local_ids, dict) or set(local_ids) != set(expected_images):
     raise SystemExit("Release record local image IDs are incomplete")
@@ -902,6 +974,7 @@ expected = {
     "testedServices": [
         "api-gateway", "user-api", "event-api", "magic-worker", "push-worker",
         "attachment-worker", "notification-worker", "recap-retention-worker",
+        "place-enrichment-default-off",
         "redis-rate-limit", "provider-sink", "fixture-bootstrap", "web",
     ],
     "githubActionsRunId": run_id,
@@ -1042,6 +1115,9 @@ services:
   recap-retention-worker:
     image: ${event_service_image}
     pull_policy: never
+  place-enrichment-worker:
+    image: ${event_service_image}
+    pull_policy: never
   api-gateway:
     image: ${api_gateway_image}
     pull_policy: never
@@ -1108,6 +1184,7 @@ compose_with_override() {
 	CREW_RELEASE_SHA="${release_sha}" \
 		CREW_DEPLOY_ASSET_DIR="${release_dir}/infra/staging" \
 		CREW_DEPLOY_SHARED_DIR="${shared_dir}" \
+		EVENT_DB_ENRICHMENT_WORKER_PASSWORD="${place_enrichment_database_password}" \
 		docker compose \
 		--project-name crew-next-staging \
 		--project-directory "${release_dir}" \
@@ -1931,6 +2008,170 @@ wait_for_service() {
 	exit 1
 }
 
+release_supports_place_enrichment() {
+	local release_dir=$1 overlay="${release_dir}/infra/staging/compose.staging.yaml"
+	[[ -f "${overlay}" ]] &&
+		grep -Fq '  place-enrichment-worker:' "${overlay}" &&
+		grep -Fq \
+			'EVENT_ENRICHMENT_ENABLED: ${EVENT_ENRICHMENT_ENABLED:-false}' \
+			"${overlay}"
+}
+
+set_place_enrichment_feature_state() {
+	local release_dir=$1
+	if [[ "${place_enrichment_requested}" == false ]]; then
+		place_enrichment_enabled=false
+		place_enrichment_feature_state=disabled-no-provider-worker
+	elif release_supports_place_enrichment "${release_dir}"; then
+		place_enrichment_enabled=true
+		place_enrichment_feature_state=enabled-worker-healthy
+	else
+		place_enrichment_enabled=false
+		place_enrichment_feature_state=disabled-target-release-unsupported
+	fi
+}
+
+remove_place_enrichment_worker() {
+	local release_dir=$1
+	if release_supports_place_enrichment "${release_dir}"; then
+		compose_command "${release_dir}" --profile enrichment \
+			rm --stop --force place-enrichment-worker
+	else
+		compose_command "${release_dir}" \
+			rm --stop --force place-enrichment-worker
+	fi
+}
+
+clear_place_enrichment_heartbeat() {
+	local release_dir=$1
+	compose_command "${release_dir}" exec -T postgres \
+		psql --username crew_local_admin --dbname crew_event \
+		--set ON_ERROR_STOP=1 --command \
+		"DELETE FROM place_enrichment_worker_health WHERE singleton;"
+}
+
+cleanup_place_enrichment_worker() {
+	local release_dir=$1 status=0
+	if ! remove_place_enrichment_worker "${release_dir}"; then
+		status=1
+	fi
+	if ! clear_place_enrichment_heartbeat "${release_dir}"; then
+		status=1
+	fi
+	return "${status}"
+}
+
+arm_place_enrichment_failure_cleanup() {
+	local release_dir=$1
+	if [[ "${place_enrichment_enabled}" == true ]]; then
+		place_enrichment_cleanup_release_dir=${release_dir}
+		place_enrichment_cleanup_armed=true
+	fi
+}
+
+disarm_place_enrichment_failure_cleanup() {
+	place_enrichment_cleanup_armed=false
+	place_enrichment_cleanup_release_dir=
+}
+
+place_enrichment_failure_cleanup() {
+	if [[ "${place_enrichment_cleanup_armed}" == true &&
+		"${place_enrichment_cleanup_running}" == false ]]; then
+		place_enrichment_cleanup_running=true
+		if ! cleanup_place_enrichment_worker \
+			"${place_enrichment_cleanup_release_dir}"; then
+			echo "Place-enrichment worker failure cleanup failed" >&2
+		fi
+		disarm_place_enrichment_failure_cleanup
+		place_enrichment_cleanup_running=false
+	fi
+}
+
+place_enrichment_exit_cleanup() {
+	local status=$1
+	if [[ "${status}" -ne 0 ]]; then
+		place_enrichment_failure_cleanup
+	fi
+}
+
+place_enrichment_runtime_is_current() {
+	local release_dir=$1 release_sha=$2
+	local worker_id container state actual heartbeat
+	worker_id="staging-place-enrichment-${release_sha}"
+	if ! container=$(compose_command "${release_dir}" --profile enrichment \
+		ps -q place-enrichment-worker); then
+		return 1
+	fi
+	[[ -n "${container}" ]] || return 1
+	if ! state=$(docker inspect --format '{{.State.Status}}' "${container}"); then
+		return 1
+	fi
+	[[ "${state}" == running ]] || return 1
+	if ! actual=$(docker inspect --format '{{.Config.Image}}' "${container}"); then
+		return 1
+	fi
+	[[ "${actual}" == "${event_service_image}" ]] || return 1
+	if ! heartbeat=$(compose_command "${release_dir}" exec -T postgres \
+		psql --username crew_local_admin --dbname crew_event \
+		--tuples-only --no-align --set ON_ERROR_STOP=1 --command \
+		"SELECT count(*) FROM place_enrichment_worker_health WHERE singleton AND worker_id = '${worker_id}' AND healthy_until > clock_timestamp();"); then
+		return 1
+	fi
+	[[ "${heartbeat}" == 1 ]]
+}
+
+verify_place_enrichment_release_state() {
+	local release_dir=$1 release_sha=$2 container
+	if [[ "${place_enrichment_enabled}" == true ]]; then
+		place_enrichment_runtime_is_current "${release_dir}" "${release_sha}" || {
+			echo "Place-enrichment worker runtime is not current for this release" >&2
+			return 1
+		}
+		return
+	fi
+	if ! container=$(compose_command "${release_dir}" --profile enrichment \
+		ps -q --all place-enrichment-worker); then
+		return 1
+	fi
+	if [[ -n "${container}" ]]; then
+		echo "Place-enrichment worker is running while the feature is disabled" >&2
+		return 1
+	fi
+}
+
+reconcile_place_enrichment_worker() {
+	local release_dir=$1
+	cleanup_place_enrichment_worker "${release_dir}"
+	set_place_enrichment_feature_state "${release_dir}"
+	if [[ "${place_enrichment_enabled}" == false ]]; then
+		return
+	fi
+	arm_place_enrichment_failure_cleanup "${release_dir}"
+	if ! compose_command "${release_dir}" --profile enrichment up -d \
+		--no-build --no-deps --force-recreate place-enrichment-worker; then
+		echo "Place-enrichment worker failed to start" >&2
+		if cleanup_place_enrichment_worker "${release_dir}"; then
+			disarm_place_enrichment_failure_cleanup
+		else
+			echo "Place-enrichment worker failure cleanup failed" >&2
+		fi
+		return 1
+	fi
+	for _ in $(seq 1 90); do
+		if place_enrichment_runtime_is_current "${release_dir}" "${target_sha}"; then
+			return
+		fi
+		sleep 2
+	done
+	echo "Place-enrichment worker did not become current for this release" >&2
+	if cleanup_place_enrichment_worker "${release_dir}"; then
+		disarm_place_enrichment_failure_cleanup
+	else
+		echo "Place-enrichment worker failure cleanup failed" >&2
+	fi
+	return 1
+}
+
 verify_service_image_references() {
 	local release_dir=$1 service expected container actual
 	while IFS='=' read -r service expected; do
@@ -1957,6 +2198,7 @@ recap-retention-worker=${event_service_image}
 api-gateway=${api_gateway_image}
 web=${web_image}
 EOF
+	verify_place_enrichment_release_state "${release_dir}" "${target_sha}"
 }
 
 ensure_typesense_search_key() {
@@ -2134,6 +2376,10 @@ record_release() {
 		"${internal_tls_reference}" --format '{{.Id}}')
 	local temporary="${records_dir}/.${target_sha}.${release_action}.tmp"
 	record="${records_dir}/${recorded_at//:/-}-${release_action}-${target_sha}.json"
+	if ! verify_place_enrichment_release_state \
+		"${release_dir}" "${target_sha}"; then
+		return 1
+	fi
 	printf '%s\n' \
 		'{' \
 		'  "schemaVersion": 2,' \
@@ -2146,7 +2392,7 @@ record_release() {
 		"  \"recordedAt\": \"${recorded_at}\"," \
 		'  "publicGatewayOrigin": "https://staging.crew-haus.com",' \
 		'  "mobileGatewayBaseUrl": "https://staging.crew-haus.com",' \
-		'  "features": {"placeEnrichment": "disabled-no-provider-worker"},' \
+		"  \"features\": {\"placeEnrichment\": \"${place_enrichment_feature_state}\"}," \
 		"  \"runtimeGrantSha256\": \"${grant_sha}\"," \
 		"  \"databaseCompatibilitySha256\": \"${contract_sha}\"," \
 		"  \"runtimeInfrastructureCompatibilitySha256\": \"${runtime_contract_sha}\"," \
@@ -2274,7 +2520,10 @@ activate_release_state() {
 	sync -f "${current_record_file}"
 }
 
+trap 'place_enrichment_failure_cleanup' ERR
+trap 'place_enrichment_exit_cleanup "$?"' EXIT
 ensure_environment
+load_place_enrichment_configuration
 release_dir=$(checkout_release)
 chmod -R a=rX -- "${release_dir}"
 load_target_image_manifest
@@ -2529,6 +2778,8 @@ if [[ "${abort_forward}" == true ]]; then
 	canonicalize_image_manifest \
 		"${source_manifest}" "${source_canonical}" "${source_environment}" \
 		"${compatibility_from_sha}" false
+	set_place_enrichment_feature_state "${compatibility_from_release_dir}"
+	arm_place_enrichment_failure_cleanup "${compatibility_from_release_dir}"
 	(
 		# Values are constrained by canonicalize_image_manifest.
 		source "${source_environment}"
@@ -2547,6 +2798,7 @@ if [[ "${abort_forward}" == true ]]; then
 		done
 		ensure_typesense_search_key
 		verify_typesense_search_key
+		reconcile_place_enrichment_worker "${release_dir}"
 		compose_command "${release_dir}" up -d --no-build --no-deps api-gateway
 		wait_for_service "${release_dir}" api-gateway
 		compose_command "${release_dir}" up -d --no-build --no-deps \
@@ -2581,6 +2833,7 @@ if [[ "${abort_forward}" == true ]]; then
 		"${source_canonical}" "${source_environment}"
 	activate_release_state \
 		"${compatibility_from_sha}" "${active_database_sha}" "${recovery_record}"
+	disarm_place_enrichment_failure_cleanup
 	complete_forward_intent
 	exit 0
 fi
@@ -2606,6 +2859,7 @@ if [[ "${action}" == deploy ]]; then
 		activate_release_state \
 			"${source_sha}" "${target_sha}" "${boundary_record}"
 	fi
+	reconcile_place_enrichment_worker "${release_dir}"
 
 	compose_command "${release_dir}" up -d --no-build \
 		user-api event-api magic-worker push-worker attachment-worker \
@@ -2635,6 +2889,7 @@ if [[ "${action}" == deploy ]]; then
 		"${release_action}" "${reset_from_sha:-${source_sha}}" "${target_sha}" \
 		"${compatibility_proof}")
 	activate_release_state "${target_sha}" "${target_sha}" "${release_record}"
+	disarm_place_enrichment_failure_cleanup
 	if [[ "${previous_runtime_compatibility}" == true ]]; then
 		complete_forward_intent
 	fi
@@ -2649,6 +2904,7 @@ else
 	done
 	ensure_typesense_search_key
 	verify_typesense_search_key
+	reconcile_place_enrichment_worker "${release_dir}"
 	compose_command "${release_dir}" up -d --no-build --no-deps api-gateway
 	wait_for_service "${release_dir}" api-gateway
 	compose_command "${release_dir}" up -d --no-build --no-deps \
@@ -2668,6 +2924,7 @@ else
 		rollback "${source_sha}" "${active_database_sha}" "${compatibility_proof}")
 	activate_release_state \
 		"${target_sha}" "${active_database_sha}" "${release_record}"
+	disarm_place_enrichment_failure_cleanup
 fi
 
 compose_command "${release_dir}" ps

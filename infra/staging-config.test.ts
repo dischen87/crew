@@ -53,6 +53,36 @@ if (result.error) {
 process.exit(result.status ?? 1);
 `;
 
+const placeEnrichmentRequiredVariables = [
+	"EVENT_DB_ENRICHMENT_WORKER_PASSWORD",
+	"EVENT_ENRICHMENT_WORKER_POLL_INTERVAL_MS",
+	"EVENT_ENRICHMENT_WORKER_LEASE_MS",
+	"EVENT_ENRICHMENT_PIPELINE_VERSION",
+	"EVENT_ENRICHMENT_LLM_MODEL",
+	"EVENT_ENRICHMENT_PROMPT_VERSION",
+	"EVENT_ENRICHMENT_MAX_ATTEMPTS",
+	"EVENT_ENRICHMENT_MAX_EXA_CALLS",
+	"EVENT_ENRICHMENT_MAX_LLM_CALLS",
+	"EVENT_ENRICHMENT_MAX_INPUT_TOKENS",
+	"EVENT_ENRICHMENT_MAX_OUTPUT_TOKENS",
+	"EVENT_ENRICHMENT_MAX_COST_MICROS",
+	"EVENT_ENRICHMENT_PROVIDER_TIMEOUT_MS",
+	"EVENT_ENRICHMENT_MAX_RESPONSE_BYTES",
+	"EVENT_ENRICHMENT_EXA_BASE_URL",
+	"EVENT_ENRICHMENT_EXA_API_KEY",
+	"EVENT_ENRICHMENT_EXA_MAX_RESULTS",
+	"EVENT_ENRICHMENT_EXA_MAX_COST_MICROS_PER_CALL",
+	"EVENT_ENRICHMENT_LLM_URL",
+	"EVENT_ENRICHMENT_LLM_ALLOWED_ORIGIN",
+	"EVENT_ENRICHMENT_LLM_API_KEY",
+	"EVENT_ENRICHMENT_LLM_MAX_OUTPUT_TOKENS_PER_CALL",
+	"EVENT_ENRICHMENT_LLM_INPUT_COST_MICROS_PER_MILLION",
+	"EVENT_ENRICHMENT_LLM_OUTPUT_COST_MICROS_PER_MILLION",
+	"EVENT_ENRICHMENT_MAX_EVIDENCE_CHARACTERS",
+	"EVENT_ENRICHMENT_BASE_BACKOFF_MS",
+	"EVENT_ENRICHMENT_MAX_BACKOFF_MS",
+] as const;
+
 test("staging overlay fails closed on immutable release inputs", () => {
 	expect(overlay.name).toBe("crew-next-staging");
 	for (const service of [
@@ -64,6 +94,7 @@ test("staging overlay fails closed on immutable release inputs", () => {
 		"attachment-worker",
 		"notification-worker",
 		"recap-retention-worker",
+		"place-enrichment-worker",
 		"place-golf-import",
 		"place-search-reindex",
 		"web",
@@ -81,6 +112,7 @@ test("staging overlay fails closed on immutable release inputs", () => {
 		"attachment-worker",
 		"notification-worker",
 		"recap-retention-worker",
+		"place-enrichment-worker",
 		"place-golf-import",
 		"place-search-reindex",
 	]) {
@@ -93,7 +125,32 @@ test("staging overlay fails closed on immutable release inputs", () => {
 	expect(
 		(services["event-api"]?.environment as Record<string, unknown>)
 			?.EVENT_ENRICHMENT_ENABLED,
-	).toBe("false");
+	).toBe(`\${EVENT_ENRICHMENT_ENABLED:-false}`);
+	const enrichmentWorker = services["place-enrichment-worker"] ?? {};
+	const enrichmentEnvironment =
+		(enrichmentWorker.environment as Record<string, unknown>) ?? {};
+	expect(enrichmentWorker.image).toBe(
+		`crew-next-event-service:\${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}`,
+	);
+	expect(enrichmentWorker.ports).toBeUndefined();
+	expect(composeSource).toContain(
+		"place-enrichment-worker:\n    <<: *bun-runtime\n    profiles: [enrichment]",
+	);
+	expect(enrichmentEnvironment.EVENT_ENRICHMENT_WORKER_ID).toBe(
+		`staging-place-enrichment-\${CREW_RELEASE_SHA:?CREW_RELEASE_SHA is required}`,
+	);
+	expect(enrichmentEnvironment.EVENT_ENRICHMENT_WORKER_DATABASE_URL).toBe(
+		`postgres://crew_event_enrichment_worker:\${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}@postgres:5432/crew_event`,
+	);
+	for (const variable of [
+		"EVENT_ENRICHMENT_EXA_BASE_URL",
+		"EVENT_ENRICHMENT_EXA_API_KEY",
+		"EVENT_ENRICHMENT_LLM_URL",
+		"EVENT_ENRICHMENT_LLM_ALLOWED_ORIGIN",
+		"EVENT_ENRICHMENT_LLM_API_KEY",
+	]) {
+		expect(enrichmentEnvironment[variable]).toBe(`\${${variable}:-}`);
+	}
 	expect(composeSource).toContain(
 		"PLACE_GOLF_IMPORT_OVERPASS_URL: http://provider-sink:3010/internal/fixtures/overpass/golf",
 	);
@@ -184,7 +241,7 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(hostDeploy).toContain("pull_release_images");
 	expect(hostDeploy).toContain("write_digest_override");
 	expect(hostDeploy).toContain(`--file "\${override}"`);
-	expect(hostDeploy.match(/pull_policy: never/g)?.length).toBe(17);
+	expect(hostDeploy.match(/pull_policy: never/g)?.length).toBe(18);
 	for (const repository of [
 		"ghcr.io/dischen87/crew-api-gateway",
 		"ghcr.io/dischen87/crew-user-service",
@@ -209,6 +266,20 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	]) {
 		expect(hostDeploy.lastIndexOf(preflight)).toBeLessThan(installCaddyIndex);
 	}
+	const ensureEnvironmentIndex = hostDeploy.indexOf("\nensure_environment\n");
+	const enrichmentPreflightIndex = hostDeploy.indexOf(
+		"\nload_place_enrichment_configuration\n",
+	);
+	expect(ensureEnvironmentIndex).toBeGreaterThan(-1);
+	expect(enrichmentPreflightIndex).toBeGreaterThan(ensureEnvironmentIndex);
+	expect(enrichmentPreflightIndex).toBeLessThan(
+		hostDeploy.indexOf("\nrelease_dir=$(checkout_release)\n"),
+	);
+	expect(
+		hostDeploy.match(
+			/^\s+reconcile_place_enrichment_worker "\$\{release_dir\}"$/gm,
+		)?.length,
+	).toBe(3);
 	expect(hostDeploy.indexOf("place-golf-import")).toBeLessThan(
 		hostDeploy.indexOf('\n\tsmoke "'),
 	);
@@ -360,6 +431,85 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(abortForward.lastIndexOf("activate_release_state")).toBeLessThan(
 		abortForward.indexOf("complete_forward_intent"),
 	);
+	expect(
+		abortForward.indexOf(
+			`arm_place_enrichment_failure_cleanup "\${compatibility_from_release_dir}"`,
+		),
+	).toBeLessThan(abortForward.indexOf("\n\t(\n"));
+	expect(abortForward.lastIndexOf("activate_release_state")).toBeLessThan(
+		abortForward.indexOf("disarm_place_enrichment_failure_cleanup"),
+	);
+	const deployRuntimeStart = hostDeploy.lastIndexOf(
+		`if [[ "\${action}" == deploy ]]; then`,
+	);
+	const rollbackRuntimeStart = hostDeploy.lastIndexOf(
+		`\nelse\n\tcompose_command "\${release_dir}" up -d --no-build --no-deps`,
+	);
+	const deployRuntime = hostDeploy.slice(
+		deployRuntimeStart,
+		rollbackRuntimeStart,
+	);
+	const rollbackRuntime = hostDeploy.slice(rollbackRuntimeStart);
+	for (const runtime of [deployRuntime, rollbackRuntime]) {
+		expect(runtime.indexOf("reconcile_place_enrichment_worker")).toBeLessThan(
+			runtime.indexOf(`\tsmoke "\${release_dir}"`),
+		);
+		expect(runtime.indexOf(`\tsmoke "\${release_dir}"`)).toBeLessThan(
+			runtime.indexOf("release_record=$(record_release"),
+		);
+		expect(runtime.indexOf("release_record=$(record_release")).toBeLessThan(
+			runtime.lastIndexOf("activate_release_state"),
+		);
+		expect(runtime.lastIndexOf("activate_release_state")).toBeLessThan(
+			runtime.indexOf("disarm_place_enrichment_failure_cleanup"),
+		);
+	}
+	const recordRelease = hostDeploy.slice(
+		hostDeploy.indexOf("record_release()"),
+		hostDeploy.indexOf("\nactivate_release_state()"),
+	);
+	const finalEnrichmentVerification = recordRelease.indexOf(
+		"verify_place_enrichment_release_state",
+	);
+	expect(recordRelease).toContain("if ! verify_place_enrichment_release_state");
+	expect(finalEnrichmentVerification).toBeGreaterThan(
+		recordRelease.indexOf("internal_tls_image_id=$(docker image inspect"),
+	);
+	expect(finalEnrichmentVerification).toBeLessThan(
+		recordRelease.indexOf("\n\tprintf '%s\\n'"),
+	);
+	const currentEnrichmentRuntime = hostDeploy.slice(
+		hostDeploy.indexOf("place_enrichment_runtime_is_current()"),
+		hostDeploy.indexOf("\nverify_place_enrichment_release_state()"),
+	);
+	expect(currentEnrichmentRuntime).not.toContain(
+		"ps -q --all place-enrichment-worker",
+	);
+	const verifyEnrichmentRuntime = hostDeploy.slice(
+		hostDeploy.indexOf("verify_place_enrichment_release_state()"),
+		hostDeploy.indexOf("\nreconcile_place_enrichment_worker()"),
+	);
+	expect(verifyEnrichmentRuntime).toContain(
+		"ps -q --all place-enrichment-worker",
+	);
+	const reconcileEnrichmentRuntime = hostDeploy.slice(
+		hostDeploy.indexOf("reconcile_place_enrichment_worker()"),
+		hostDeploy.indexOf("\nverify_service_image_references()"),
+	);
+	expect(
+		reconcileEnrichmentRuntime.indexOf(
+			`arm_place_enrichment_failure_cleanup "\${release_dir}"`,
+		),
+	).toBeLessThan(
+		reconcileEnrichmentRuntime.indexOf(
+			`if ! compose_command "\${release_dir}" --profile enrichment up -d`,
+		),
+	);
+	expect(
+		reconcileEnrichmentRuntime.match(
+			/^\tarm_place_enrichment_failure_cleanup/gm,
+		)?.length,
+	).toBe(1);
 	expect(hostDeploy).toContain("validate_current_state");
 	expect(hostDeploy).toContain("validate_compatibility_proof");
 	expect(hostDeploy).toContain(
@@ -386,7 +536,30 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 		hostDeploy.lastIndexOf(`\ninstall_caddy "\${release_dir}"`),
 	);
 	expect(hostDeploy).toContain(
-		'"features": {"placeEnrichment": "disabled-no-provider-worker"}',
+		`\\"features\\": {\\"placeEnrichment\\": \\"\${place_enrichment_feature_state}\\"}`,
+	);
+	for (const state of [
+		"disabled-no-provider-worker",
+		"disabled-target-release-unsupported",
+		"enabled-worker-healthy",
+	]) {
+		expect(hostDeploy).toContain(`{"placeEnrichment": "${state}"}`);
+	}
+	expect(hostDeploy).toContain(
+		`place-enrichment-worker:\n    image: \${event_service_image}\n    pull_policy: never`,
+	);
+	expect(hostDeploy).toContain(
+		"Place-enrichment worker runtime is not current for this release",
+	);
+	expect(hostDeploy).toContain(
+		"DELETE FROM place_enrichment_worker_health WHERE singleton;",
+	);
+	expect(hostDeploy).toContain(
+		`worker_id = '\${worker_id}' AND healthy_until > clock_timestamp()`,
+	);
+	expect(hostDeploy).toContain("disabled-target-release-unsupported");
+	expect(hostDeploy).toContain(
+		`EVENT_DB_ENRICHMENT_WORKER_PASSWORD="\${place_enrichment_database_password}"`,
 	);
 	expect(hostDeploy).toContain("infra/postgres/grant-runtime.sql");
 	expect(hostDeploy).not.toContain(`"crew-next-web:\${target_sha}"`);
@@ -920,9 +1093,13 @@ test("embedded host Python heredocs compile", () => {
 });
 
 test("staging activation keeps old committed pointers when current-release fails", () => {
+	const activateStart = hostDeploy.indexOf("activate_release_state()");
 	const activateRelease = hostDeploy.slice(
-		hostDeploy.indexOf("activate_release_state()"),
-		hostDeploy.indexOf("\nensure_environment\n"),
+		activateStart,
+		hostDeploy.indexOf(
+			"\ntrap 'place_enrichment_failure_cleanup'",
+			activateStart,
+		),
 	);
 	const directory = mkdtempSync(join(tmpdir(), "crew-reset-activation-"));
 	try {
@@ -1087,6 +1264,18 @@ test("staging release publishes six digests behind the reviewed environment", ()
 		"apps/mobile/evidence/event-hub-option-2/reference-390x844.png",
 	);
 	expect(releaseWorkflow).toContain("crew-staging-image-manifest.json");
+	expect(releaseWorkflow).toContain(
+		`"\${target_compose[@]}" --profile enrichment config --services`,
+	);
+	expect(releaseWorkflow).toContain(
+		"Place-enrichment worker must remain default-off",
+	);
+	expect(releaseWorkflow).toContain(
+		"Audited previous runtime unexpectedly contains place enrichment",
+	);
+	expect(releaseWorkflow.match(/"place-enrichment-default-off"/g)?.length).toBe(
+		2,
+	);
 	expect(releaseWorkflow).toContain("if: inputs.deploy");
 	expect(releaseWorkflow).toContain("reuse_stored_manifest:");
 	expect(releaseWorkflow).toContain("reset_staging_data:");
@@ -1169,6 +1358,472 @@ test("GitHub deploy key is constrained to the current main controller", () => {
 	expect(githubDeploy).not.toContain("/shared/environment");
 	expect(githubDeploy).not.toContain("eval ");
 	expect(githubDeploy).not.toContain("StrictHostKeyChecking=no");
+});
+
+test("place-enrichment enablement fails closed before release mutation", () => {
+	const configurationFunctions = hostDeploy.slice(
+		hostDeploy.indexOf("environment_value()"),
+		hostDeploy.indexOf("\nensure_environment()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-config-"));
+	try {
+		const script = join(directory, "enrichment-config.sh");
+		const environment = join(directory, "environment");
+		writeFileSync(
+			script,
+			`${configurationFunctions}
+set -Eeuo pipefail
+environment_file=$1
+place_enrichment_requested=false
+load_place_enrichment_configuration
+printf '%s\n' "$place_enrichment_requested"
+`,
+		);
+		const run = (lines: string[]) => {
+			writeFileSync(
+				environment,
+				lines.length > 0 ? `${lines.join("\n")}\n` : "",
+			);
+			return spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, environment],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+		};
+		for (const lines of [[], ["EVENT_ENRICHMENT_ENABLED=false"]]) {
+			const result = run(lines);
+			expect(result.status, result.stderr).toBe(0);
+		}
+		for (const lines of [
+			["EVENT_ENRICHMENT_ENABLED=yes"],
+			["EVENT_ENRICHMENT_ENABLED=true", "EVENT_ENRICHMENT_ENABLED=false"],
+			["EVENT_ENRICHMENT_ENABLED=true"],
+		]) {
+			const result = run(lines);
+			expect(result.status).not.toBe(0);
+		}
+		const complete = run([
+			"EVENT_ENRICHMENT_ENABLED=true",
+			...placeEnrichmentRequiredVariables.map((name) => `${name}=x`),
+		]);
+		expect(complete.status, complete.stderr).toBe(0);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("place-enrichment Compose password follows only validated enablement", () => {
+	const configurationFunctions = hostDeploy.slice(
+		hostDeploy.indexOf("environment_value()"),
+		hostDeploy.indexOf("\nensure_environment()"),
+	);
+	const composeWithOverride = hostDeploy.slice(
+		hostDeploy.indexOf("compose_with_override()"),
+		hostDeploy.indexOf("\ncompose_command()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-password-"));
+	try {
+		const script = join(directory, "compose-password.sh");
+		const environment = join(directory, "environment");
+		const output = join(directory, "password");
+		writeFileSync(
+			script,
+			`${configurationFunctions}
+${composeWithOverride}
+${String.raw`
+set -Eeuo pipefail
+environment_file=$1
+output=$2
+shared_dir=/shared
+place_enrichment_requested=false
+place_enrichment_database_password=
+docker() {
+	printf '%s' "$EVENT_DB_ENRICHMENT_WORKER_PASSWORD" >"$output"
+}
+load_place_enrichment_configuration
+compose_with_override \
+	/release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa /override config
+`}`,
+		);
+		const run = (lines: string[]) => {
+			writeFileSync(environment, `${lines.join("\n")}\n`);
+			writeFileSync(output, "not-called");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, environment, output],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			return { result, password: readFileSync(output, "utf8") };
+		};
+		const disabled = run([
+			"EVENT_ENRICHMENT_ENABLED=false",
+			"EVENT_DB_ENRICHMENT_WORKER_PASSWORD=retained-secret",
+		]);
+		expect(disabled.result.status, disabled.result.stderr).toBe(0);
+		expect(disabled.password).toBe("");
+		const enabled = run([
+			"EVENT_ENRICHMENT_ENABLED=true",
+			...placeEnrichmentRequiredVariables.map((name) =>
+				name === "EVENT_DB_ENRICHMENT_WORKER_PASSWORD"
+					? `${name}=validated-secret`
+					: `${name}=x`,
+			),
+		]);
+		expect(enabled.result.status, enabled.result.stderr).toBe(0);
+		expect(enabled.password).toBe("validated-secret");
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("place-enrichment start and initial-gate failures always remove runtime state", () => {
+	const runtimeFunctions = hostDeploy.slice(
+		hostDeploy.indexOf("release_supports_place_enrichment()"),
+		hostDeploy.indexOf("\nverify_service_image_references()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-start-"));
+	try {
+		const script = join(directory, "enrichment-start.sh");
+		writeFileSync(
+			script,
+			`${runtimeFunctions}
+${String.raw`
+set -Eeuo pipefail
+scenario=$1
+log=$2
+target_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+event_service_image=event-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+place_enrichment_requested=true
+place_enrichment_enabled=false
+place_enrichment_feature_state=disabled-no-provider-worker
+place_enrichment_cleanup_armed=false
+place_enrichment_cleanup_release_dir=
+place_enrichment_cleanup_running=false
+release_supports_place_enrichment() { return 0; }
+compose_command() {
+	printf '%s\n' "$*" >>"$log"
+	case "$*" in
+		*" up -d "*"place-enrichment-worker"*)
+			[[ "$scenario" != up-fail ]]
+			;;
+		*" ps -q place-enrichment-worker"*)
+			printf 'worker-container\n'
+			;;
+		*"SELECT count(*) FROM place_enrichment_worker_health"*)
+			printf '0\n'
+			;;
+	esac
+}
+docker() {
+	case "$3" in
+		'{{.State.Status}}')
+			if [[ "$scenario" == restarting ]]; then
+				printf 'restarting\n'
+			else
+				printf 'running\n'
+			fi
+			;;
+		'{{.Config.Image}}') printf '%s\n' "$event_service_image" ;;
+	esac
+}
+seq() { printf '1\n'; }
+sleep() {
+	if [[ "$scenario" == poll-abort ]]; then
+		return 9
+	fi
+}
+trap 'place_enrichment_failure_cleanup' ERR
+trap 'place_enrichment_exit_cleanup "$?"' EXIT
+if [[ "$scenario" == poll-abort ]]; then
+	reconcile_place_enrichment_worker /release
+	exit 99
+fi
+set +e
+reconcile_place_enrichment_worker /release
+status=$?
+set -e
+exit "$status"
+`}`,
+		);
+		for (const scenario of ["up-fail", "restarting", "stale", "poll-abort"]) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).not.toBe(0);
+			const calls = readFileSync(log, "utf8");
+			expect(
+				calls.match(/rm --stop --force place-enrichment-worker/g)?.length,
+			).toBe(2);
+			expect(
+				calls.match(
+					/DELETE FROM place_enrichment_worker_health WHERE singleton/g,
+				)?.length,
+			).toBe(2);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("place-enrichment final gate rejects non-current runtime state", () => {
+	const runtimeFunctions = hostDeploy.slice(
+		hostDeploy.indexOf("release_supports_place_enrichment()"),
+		hostDeploy.indexOf("\nverify_service_image_references()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-final-"));
+	try {
+		const script = join(directory, "enrichment-final.sh");
+		writeFileSync(
+			script,
+			`${runtimeFunctions}
+${String.raw`
+set -Eeuo pipefail
+scenario=$1
+place_enrichment_enabled=true
+if [[ "$scenario" == disabled-stopped ]]; then
+	place_enrichment_enabled=false
+fi
+event_service_image=event-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+compose_command() {
+	case "$*" in
+		*" ps -q --all place-enrichment-worker"*)
+			if [[ "$scenario" == disabled-stopped ]]; then
+				printf 'stopped-worker-container\n'
+			fi
+			;;
+		*" ps -q place-enrichment-worker"*) printf 'worker-container\n' ;;
+		*"SELECT count(*) FROM place_enrichment_worker_health"*)
+			if [[ "$scenario" == stale ]]; then
+				printf '0\n'
+			else
+				printf '1\n'
+			fi
+			;;
+	esac
+}
+docker() {
+	case "$3" in
+		'{{.State.Status}}')
+			case "$scenario" in
+				stopped) printf 'exited\n' ;;
+				restarting) printf 'restarting\n' ;;
+				*) printf 'running\n' ;;
+			esac
+			;;
+		'{{.Config.Image}}')
+			if [[ "$scenario" == wrong-image ]]; then
+				printf 'different@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
+			else
+				printf '%s\n' "$event_service_image"
+			fi
+			;;
+	esac
+}
+verify_place_enrichment_release_state \
+	/release aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`}`,
+		);
+		for (const [scenario, expectedStatus] of [
+			["healthy", 0],
+			["stopped", 1],
+			["restarting", 1],
+			["wrong-image", 1],
+			["stale", 1],
+			["disabled-stopped", 1],
+		] as const) {
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).toBe(
+				expectedStatus,
+			);
+		}
+		const recordRelease = hostDeploy.slice(
+			hostDeploy.indexOf("record_release()"),
+			hostDeploy.indexOf("\nactivate_release_state()"),
+		);
+		const recordScript = join(directory, "enrichment-record.sh");
+		writeFileSync(
+			recordScript,
+			`${runtimeFunctions}
+${recordRelease}
+${String.raw`
+set -Eeuo pipefail
+scenario=$1
+root=$2
+target_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+release_dir="$root/releases/$target_sha"
+releases_dir="$root/releases"
+records_dir="$root/records"
+mkdir -p "$release_dir/infra/postgres" "$records_dir"
+touch "$release_dir/infra/postgres/grant-runtime.sql"
+database_lineage_id=
+target_manifest_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+image_distribution_override_sha=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+api_gateway_image=api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+user_service_image=user@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+event_service_image=event@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+infra_image=infra@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+rate_limit_redis_image=redis@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+web_image=web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+place_enrichment_enabled=true
+place_enrichment_feature_state=enabled-worker-healthy
+if [[ "$scenario" == disabled-stopped ]]; then
+	place_enrichment_enabled=false
+	place_enrichment_feature_state=disabled-no-provider-worker
+fi
+runtime_grant_sha() { printf '%064d\n' 0; }
+database_contract_sha() { printf '%064d\n' 0; }
+runtime_infrastructure_contract_sha() { printf '%064d\n' 0; }
+compose_command() {
+	case "$*" in
+		*" ps -q --all place-enrichment-worker"*)
+			if [[ "$scenario" == disabled-stopped ]]; then
+				printf 'stopped-worker-container\n'
+			fi
+			;;
+		*" ps -q place-enrichment-worker"*) printf 'worker-container\n' ;;
+		*"SELECT count(*) FROM place_enrichment_worker_health"*)
+			printf '0\n'
+			;;
+	esac
+}
+docker() {
+	if [[ "$1" == image ]]; then
+		printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+		return
+	fi
+	case "$3" in
+		'{{.State.Status}}')
+			if [[ "$scenario" == stopped ]]; then
+				printf 'exited\n'
+			else
+				printf 'running\n'
+			fi
+			;;
+		'{{.Config.Image}}') printf '%s\n' "$event_service_image" ;;
+	esac
+}
+if output=$(record_release deploy "" "$target_sha"); then
+	echo "Non-current worker unexpectedly produced a release record" >&2
+	exit 1
+fi
+[[ -z "$output" ]]
+[[ -z $(find "$records_dir" -type f -print -quit) ]]
+`}`,
+		);
+		for (const scenario of ["stopped", "stale", "disabled-stopped"]) {
+			const result = spawnSync(
+				"node",
+				[
+					"-e",
+					nativeSpawn,
+					"/bin/bash",
+					recordScript,
+					scenario,
+					join(directory, scenario),
+				],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).toBe(0);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("place-enrichment late release failures trigger armed cleanup", () => {
+	const failureHelpers = hostDeploy.slice(
+		hostDeploy.indexOf("arm_place_enrichment_failure_cleanup()"),
+		hostDeploy.indexOf("\nplace_enrichment_runtime_is_current()"),
+	);
+	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-late-"));
+	try {
+		const script = join(directory, "enrichment-late.sh");
+		writeFileSync(
+			script,
+			`${failureHelpers}
+${String.raw`
+set -Eeuo pipefail
+scenario=$1
+log=$2
+place_enrichment_enabled=true
+place_enrichment_cleanup_armed=false
+place_enrichment_cleanup_release_dir=
+place_enrichment_cleanup_running=false
+cleanup_place_enrichment_worker() { printf 'cleanup\n' >>"$log"; }
+trap 'place_enrichment_failure_cleanup' ERR
+trap 'place_enrichment_exit_cleanup "$?"' EXIT
+arm_place_enrichment_failure_cleanup /release
+case "$scenario" in
+	smoke)
+		smoke_failure() { return 3; }
+		smoke_failure
+		;;
+	image)
+		image_failure() { exit 4; }
+		image_failure
+		;;
+	record)
+		record_failure() { return 5; }
+		record=$(record_failure)
+		;;
+	success)
+		disarm_place_enrichment_failure_cleanup
+		;;
+esac
+`}`,
+		);
+		for (const scenario of ["smoke", "image", "record"]) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).not.toBe(0);
+			expect(readFileSync(log, "utf8")).toContain("cleanup\n");
+		}
+		const successLog = join(directory, "success.log");
+		writeFileSync(successLog, "");
+		const success = spawnSync(
+			"node",
+			["-e", nativeSpawn, "/bin/bash", script, "success", successLog],
+			{
+				encoding: "utf8",
+				env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+			},
+		);
+		expect(success.status, success.stderr).toBe(0);
+		expect(readFileSync(successLog, "utf8")).toBe("");
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 });
 
 test("host release active record lookup survives strict shell", () => {

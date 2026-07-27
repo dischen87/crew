@@ -80,6 +80,7 @@ const compatibilityServices = [
 	"attachment-worker",
 	"notification-worker",
 	"recap-retention-worker",
+	"place-enrichment-default-off",
 	"redis-rate-limit",
 	"provider-sink",
 	"fixture-bootstrap",
@@ -106,7 +107,7 @@ const auditedCompatibilityDigests = {
 	AUDITED_TARGET_GRANT_SHA:
 		"4ac716f6ea109571d2ba1d6555a00349060f8702d6c5392b4fef3d0dcaf34957",
 	AUDITED_TARGET_RUNTIME_CONTRACT_SHA:
-		"0250b362d12b96b3034fdaefef82791b01b2812e795407f23f499d235c4d73d6",
+		"e7d60d942857e5c8c00a7dac1dd67b65f4a511e05871aa086d0ba22604c6a18c",
 } as const;
 const previousImageRepositories = {
 	"api-gateway": "ghcr.io/dischen87/crew-api-gateway",
@@ -629,6 +630,9 @@ function validateStagingCompatibilityWorkflow(source: string) {
 		'test "$TARGET_DATABASE_CONTRACT_SHA" = "$AUDITED_TARGET_DATABASE_CONTRACT_SHA"',
 		'test "$TARGET_GRANT_SHA" = "$AUDITED_TARGET_GRANT_SHA"',
 		'test "$TARGET_RUNTIME_CONTRACT_SHA" = "$AUDITED_TARGET_RUNTIME_CONTRACT_SHA"',
+		`"\${target_compose[@]}" --profile enrichment config --services`,
+		"Place-enrichment worker must remain default-off",
+		"Audited previous runtime unexpectedly contains place enrichment",
 		'docker pull "$tag" >&2',
 		"--format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}'",
 		"--format '{{index .Config.Labels \"org.opencontainers.image.source\"}}'",
