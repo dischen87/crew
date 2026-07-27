@@ -1,0 +1,63 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-title
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-title
+- inputText: Native Receipt Beleg
+- assertVisible:
+    id: feedback-compose-title
+    text: Native Receipt Beleg
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    enabled: true
+    point: 20%,20%
+- inputText: Lokaler SQLite Receipt nach expliziter Zustimmung.
+- assertVisible:
+    id: feedback-compose-body
+    text: Lokaler SQLite Receipt nach expliziter Zustimmung.
+    enabled: true
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-consent
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: false
+    enabled: true
+- tapOn:
+    id: feedback-screenshot-consent
+    enabled: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- extendedWaitUntil:
+    visible: Feedback mit Screenshot senden
+    timeout: 30000
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true

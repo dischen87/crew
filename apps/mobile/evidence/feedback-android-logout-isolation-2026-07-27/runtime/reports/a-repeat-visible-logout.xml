@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-emulator" tests="1" failures="0" time="6.0">
+    <testcase id="90-logout" name="90-logout" classname="90-logout" file="maestro/90-visible-logout.yaml" time="6.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

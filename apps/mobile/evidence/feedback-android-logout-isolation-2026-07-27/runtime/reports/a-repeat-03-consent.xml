@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-emulator" tests="1" failures="0" time="39.0">
+    <testcase id="03-fill-consent" name="03-fill-consent" classname="03-fill-consent" file="maestro/03-fill-consent.yaml" time="39.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

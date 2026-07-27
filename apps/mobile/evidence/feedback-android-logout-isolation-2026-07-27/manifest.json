@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "status": "current_sanitized",
+  "currentAcceptance": true,
+  "capturedAt": "2026-07-27",
+  "sourceHead": "903a02881553b21e51dc9cbf64731aaefd9817e4",
+  "platform": {
+    "device": "disposable Android emulator",
+    "os": "Android 16",
+    "apiLevel": 36,
+    "rawViewport": "1080x1920",
+    "logicalViewportApproxDp": "411x731",
+    "densityDpi": 420
+  },
+  "build": {
+    "applicationId": "app.crew.next",
+    "variant": "debug",
+    "localArtifactSha256": "101771f4940ffa9a37248751d9f6c5878b367e5acf78d9d9ecc544b5df2718ae",
+    "installedArtifactSha256": "101771f4940ffa9a37248751d9f6c5878b367e5acf78d9d9ecc544b5df2718ae",
+    "reactNativeVersion": "0.86",
+    "metroPort": 8082
+  },
+  "counts": {
+    "flowDefinitions": 6,
+    "reports": 17,
+    "tests": 17,
+    "failures": 0,
+    "errors": 0,
+    "oracles": 1,
+    "controlScripts": 2,
+    "rawImages": 7
+  },
+  "privacy": {
+    "accountDirectoryIdRetained": false,
+    "nativeFilenameRetained": false,
+    "absolutePrivatePathRetained": false,
+    "deviceSerialRetained": false,
+    "secretValueRetained": false,
+    "databaseUrlRetained": false,
+    "rawLogRetained": false
+  },
+  "diagnosticsExcluded": true,
+  "checksumFile": "SHA256SUMS",
+  "checksumSelfExcluded": true,
+  "reproduction": {
+    "authControlScript": "auth-control.mjs",
+    "transportControlScript": "transport-control.mjs",
+    "runner": "../../../../infra/native-e2e-runner.ts",
+    "fixtureRootEventId": "evt_publish_role_setup_final",
+    "freshIsolatedDatastoresRequired": true,
+    "attachmentDeliveryBackendConfigured": false
+  },
+  "boundaries": {
+    "physicalDeviceRun": false,
+    "signedDistributionBuildRun": false,
+    "talkBackRun": false,
+    "productionBackendRun": false,
+    "visualReferenceParityRun": false
+  }
+}

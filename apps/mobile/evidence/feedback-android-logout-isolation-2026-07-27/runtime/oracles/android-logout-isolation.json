@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "sourceHead": "903a02881553b21e51dc9cbf64731aaefd9817e4",
+  "artifactBinding": {
+    "localMatchesInstalled": true,
+    "sha256": "101771f4940ffa9a37248751d9f6c5878b367e5acf78d9d9ecc544b5df2718ae"
+  },
+  "runtime": {
+    "androidRelease": 16,
+    "apiLevel": 36,
+    "rawViewport": "1080x1920",
+    "densityDpi": 420,
+    "coldStartInteractive": true,
+    "isolatedDatastores": true,
+    "attachmentDeliveryBackendConfigured": false
+  },
+  "phases": [
+    {
+      "name": "a-pending",
+      "allowlisted": { "a": 1, "b": 0 },
+      "signedInAccount": "a"
+    },
+    {
+      "name": "after-switch-to-b",
+      "allowlisted": { "a": 1, "b": 0 },
+      "signedInAccount": "b",
+      "logoutObservedDuringSwitch": false
+    },
+    {
+      "name": "b-pending",
+      "allowlisted": { "a": 1, "b": 1 },
+      "signedInAccount": "b",
+      "validatedSingleLinkMedia": 2,
+      "symlinks": 0,
+      "nonSingleLinkMedia": 0
+    },
+    {
+      "name": "after-switch-back-to-a",
+      "allowlisted": { "a": 1, "b": 1 },
+      "signedInAccount": "a",
+      "logoutObservedDuringSwitch": false
+    },
+    {
+      "name": "after-visible-a-logout",
+      "allowlisted": { "a": 0, "b": 1 },
+      "signedOut": true,
+      "survivors": {
+        "aNonAllowlisted": true,
+        "bNonAllowlisted": true,
+        "external": true
+      }
+    },
+    {
+      "name": "a-missing-target-prepared",
+      "allowlisted": { "a": 0, "b": 1 },
+      "localReceiptCreatedBeforeExactFileRemoval": true,
+      "removedCandidateWasRegularNonSymlinkSingleLink": true
+    },
+    {
+      "name": "after-missing-target-visible-logout",
+      "allowlisted": { "a": 0, "b": 1 },
+      "signedOut": true,
+      "survivors": {
+        "aNonAllowlisted": true,
+        "bNonAllowlisted": true,
+        "external": true
+      }
+    }
+  ],
+  "privacy": {
+    "accountIdsRetained": false,
+    "nativeFilenamesRetained": false,
+    "privatePathsRetained": false,
+    "credentialsRetained": false
+  }
+}

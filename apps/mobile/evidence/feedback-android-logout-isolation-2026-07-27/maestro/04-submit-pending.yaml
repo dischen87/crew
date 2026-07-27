@@ -1,0 +1,33 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
+- assertVisible: Feedback mit Screenshot senden
+- tapOn:
+    id: feedback-compose-submit
+    enabled: true
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-return
+    timeout: 30000
+- extendedWaitUntil:
+    visible: WARTET AUF VERBINDUNG
+    timeout: 30000
+- scrollUntilVisible:
+    element: Text und Screenshot sind lokal gespeichert. Die Zustellung ist noch nicht bestätigt.
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: Text und Screenshot sind lokal gespeichert. Die Zustellung ist noch nicht bestätigt.
+- assertVisible:
+    id: feedback-compose-return
+    enabled: true

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-emulator" tests="1" failures="0" time="9.0">
+    <testcase id="04-submit-receipt" name="04-submit-receipt" classname="04-submit-receipt" file="maestro/04-submit-pending.yaml" time="9.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

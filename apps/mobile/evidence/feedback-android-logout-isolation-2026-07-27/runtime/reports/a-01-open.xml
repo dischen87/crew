@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-emulator" tests="1" failures="0" time="4.0">
+    <testcase id="01-open-feedback" name="01-open-feedback" classname="01-open-feedback" file="maestro/01-open-feedback.yaml" time="4.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

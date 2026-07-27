@@ -1,0 +1,24 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: events-logout
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: events-logout
+- extendedWaitUntil:
+    visible: Abmelden?
+    timeout: 10000
+- tapOn:
+    point: 70%,58%
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 30000
+- assertVisible: Bitte anmelden
