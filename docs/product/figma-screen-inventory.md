@@ -378,7 +378,7 @@ evidence remain pending.
 | State frames          | `ST-SCR-020`; owner and organizer permission frames are distinct                                                              |
 | Accessibility / focus | Focus `Invitations`; role, status, expiry, and remaining uses are announced per row                                           |
 | Deep link             | Organizer Gate only; participants/viewers return to hub with no management controls                                           |
-| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: owner/organizer manager, token-free cache, bounded pagination, revoke retry, permission concealment, and offline states are code/test current. Native/device visual evidence remains pending under `crew-paq.3.5.8.1`. |
+| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: owner/organizer manager, token-free cache, bounded pagination, revoke retry, permission concealment, and offline states are code/test current. Sanitized iOS/Android simulator evidence is current across 7/7 runs, including owner create/refresh, iOS Large Text, and the organizer manager at Android font scale 2.0. Physical distribution-signed devices, VoiceOver/TalkBack, native DST selection, share-sheet cancellation, and an external Figma update remain pending under `crew-paq.3.5.8.1`. |
 
 ### `SCR-021` - Invite editor
 
@@ -392,7 +392,7 @@ evidence remain pending.
 | State frames          | `ST-SCR-021`                                                                                                                                                                                               |
 | Accessibility / focus | Focus intended role; unavailable organizer role is absent for organizers, not disabled; errors retain policy fields                                                                                        |
 | Deep link             | Not externally addressable; expired local form route returns to manager without a token; a cancelled native share can be retried only while the once-returned token remains in the in-memory success state |
-| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: role policy, token-free local draft, stable create replay, and once-only in-memory native sharing are code/test current. The native expiry picker and two-platform design acceptance remain pending under `crew-paq.3.5.8.1`. |
+| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: role policy, token-free local draft, stable create replay, once-only in-memory sharing, and the system-native iOS/Android expiry picker are code/test current. Sanitized 7/7 simulator runs cover owner/organizer role behavior, picker cancel/confirm, create, iOS Large Text, and Android font scale 2.0. Physical distribution-signed devices, VoiceOver/TalkBack, native DST-overlap selection, share-sheet cancellation, and an external Figma update remain pending under `crew-paq.3.5.8.1`. |
 
 ### `SCR-022` - Invite preview
 

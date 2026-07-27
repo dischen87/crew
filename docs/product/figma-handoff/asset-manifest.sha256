@@ -79,6 +79,12 @@ fdf03d458d5bc082ea2dd7756198cddb532bf7d8038b3ff26c1ca335457acc7c  apps/mobile/ev
 267558f239bfe25407ccc52d6e15de54c1307334f466e80ebe35c129a1d15c48  apps/mobile/evidence/auth-option-2/comparison-reference-vs-access-recovery.png
 ce1add8e7766cc7fbf175af02b2c99c3d12ef266be867fd978c3984e751bd4a1  apps/mobile/evidence/auth-option-2/comparison-reference-vs-unavailable-accessibility-extra-large.png
 05cd473565ff66d04b6078d7008c560627162e354a8b5bf321161bd892b6c19b  apps/mobile/evidence/auth-option-2/design-qa.md
+e36f342fa6a45a954e229b11ad9f637f6131bf413dc25d8b0a6bd8863745ab68  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/ios-owner-manager-after-create.png
+4aa00302fa1f3945e38e4011081fb6b0f69d4ae7a5c092d36403db442791a937  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/ios-owner-manager-large-text.png
+d4336f960f93759f3b6ed0c7695908454cd316e8670fb5c7a6299124db314bc9  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/ios-owner-editor-picker-roundtrip.png
+ec554bbbf19deae41173b5fd307f3de3cca65a5b37f331aeb2be1f1baf60060a  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/android-organizer-manager-font-2.png
+62560e372c40cf9913d3c8fc37984867f3bd5bfe80a3f52ffc9fa1f471a2632d  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/android-organizer-editor-role-region-font-2.png
+dea71957cdc459c5f82a62018d84ef63282ff0df2bc9098501af8960561501a3  apps/mobile/evidence/native-invite-manager-2026-07-27/runtime/logical/android-organizer-editor-picker-roundtrip.png
 b964e7313049592a273ae78dfef582f0f7ee0d51fefdcc18534b5b01451d3dc4  apps/mobile/evidence/team-production-routes/01-team-setup-production-390x844.png
 a928a149e34829c73730d9eec0992499a85d01b2bc229d8466291450ff35fb31  apps/mobile/evidence/team-production-routes/02-decision-production-390x844.png
 b5bf6f6befefbd184b1bf1d50a6c838edb14c076ae3dcc60271fde92fe56e0f2  apps/mobile/evidence/team-production-routes/03-team-draft-production-390x844.png
