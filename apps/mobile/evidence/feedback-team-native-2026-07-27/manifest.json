@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "current_sanitized",
+  "capturedAt": "2026-07-27",
+  "latestExtension": {
+    "sourceHead": "a21a6739a2ad5dfd94ef0492b7ccf52803504099",
+    "platform": "iOS 26.2 simulator",
+    "build": {
+      "applicationId": "app.crew.next",
+      "configuration": "Debug",
+      "executableSha256": "be55ceb73798b5cf8f34547cd38b4caaa0ccd1c00dbc1531f62d638a7591fdca",
+      "metroPort": 8082
+    },
+    "flow": "ios/maestro/07-storage-denial-text-recovery.yaml",
+    "report": "ios/reports/07-storage-denial-text-recovery.xml",
+    "oracle": "ios/oracles/storage-denial-text-recovery.json",
+    "tests": 1,
+    "failures": 0
+  },
+  "counts": {
+    "flowDefinitions": 12,
+    "reports": 12,
+    "tests": 12,
+    "failures": 0,
+    "oracles": 3,
+    "screenshots": 11
+  },
+  "privacy": {
+    "accountIdentifierRetained": false,
+    "nativeFilenameRetained": false,
+    "absolutePrivatePathRetained": false,
+    "deviceIdentifierRetained": false,
+    "secretValueRetained": false,
+    "rawLogRetained": false
+  },
+  "independentAccountSwitchEvidence": {
+    "platform": "Android API 36 emulator",
+    "packet": "../feedback-android-logout-isolation-2026-07-27",
+    "freshIosClaim": false
+  },
+  "boundaries": {
+    "physicalDeviceRun": false,
+    "productionSigningRun": false,
+    "productionDeploymentRun": false,
+    "iosOsScreenCapturePermissionDenialAvailable": false,
+    "freshIosAccountSwitchClaim": false
+  },
+  "checksumFile": "SHA256SUMS",
+  "checksumSelfExcluded": true
+}

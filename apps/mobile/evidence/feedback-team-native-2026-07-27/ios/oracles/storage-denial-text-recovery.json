@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-27",
+  "sourceHead": "a21a6739a2ad5dfd94ef0492b7ccf52803504099",
+  "platform": {
+    "device": "disposable iPhone 16e simulator",
+    "os": "iOS 26.2"
+  },
+  "failureInjection": {
+    "class": "real simulator filesystem write denial",
+    "target": "active account-private attachment directory",
+    "injectedMode": "0500",
+    "restoredMode": "0700",
+    "productFixtureOrMock": false
+  },
+  "result": {
+    "safeFailureCopyVisible": true,
+    "textComposeRemainedEnabled": true,
+    "screenshotPreviewVisible": false,
+    "textOnlySubmissionServerDelivered": true,
+    "retainedFilesBefore": 0,
+    "retainedFilesAfterFailure": 0,
+    "temporaryFilesAfterFailure": 0
+  },
+  "privacy": {
+    "accountIdentifierRetained": false,
+    "nativeFilenameRetained": false,
+    "absolutePrivatePathRetained": false,
+    "deviceIdentifierRetained": false,
+    "rawLogRetained": false,
+    "credentialRetained": false
+  },
+  "boundaries": {
+    "osScreenCapturePermissionDenialAvailable": false,
+    "backgroundCaptureFailureRun": false,
+    "secureWindowFailureRun": false,
+    "physicalDeviceRun": false
+  }
+}

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iOS 26.2 Simulator" tests="1" failures="0" time="33.0">
+    <testcase id="07-storage-denial-text-recovery" name="07-storage-denial-text-recovery" classname="07-storage-denial-text-recovery" file="apps/mobile/evidence/feedback-team-native-2026-07-27/ios/maestro/07-storage-denial-text-recovery.yaml" time="33.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

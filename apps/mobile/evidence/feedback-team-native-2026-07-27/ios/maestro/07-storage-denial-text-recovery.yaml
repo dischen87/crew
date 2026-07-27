@@ -1,0 +1,62 @@
+appId: ${APP_ID}
+---
+- tapOn:
+    id: community-feedback-compose-screenshot
+- extendedWaitUntil:
+    visible: Screenshot konnte nicht hinzugefügt werden. Du kannst weiterhin Text-Feedback geben.
+    timeout: 30000
+- assertVisible:
+    id: community-feedback-compose
+    enabled: true
+- assertVisible:
+    id: community-feedback-compose-screenshot
+    enabled: true
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/ios/screenshots/07-native-storage-denial-text-available
+- tapOn:
+    id: community-feedback-compose
+- extendedWaitUntil:
+    visible:
+      id: feedback-compose-view
+    timeout: 30000
+- assertNotVisible:
+    id: feedback-screenshot-preview
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-title
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-title
+- inputText: iOS Text Recovery 0727
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    point: 20%,20%
+- inputText: Text bleibt nach nativer Speicherablehnung zustellbar.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible: Feedback senden
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
+- tapOn:
+    id: feedback-compose-submit
+- extendedWaitUntil:
+    visible: ZUGESTELLT
+    timeout: 60000
+- assertVisible: Die Zustellung wurde vom Server bestätigt.
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/ios/screenshots/08-text-only-delivered-after-denial
