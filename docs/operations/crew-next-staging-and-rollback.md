@@ -227,6 +227,27 @@ Android Release signing accepts only the complete external Gradle-property set
 `ORG_GRADLE_PROJECT_*` environment variables and keep the keystore outside Git.
 The `releaseEvidence` variant explicitly carries no production signing config.
 
+The secure Android handoff is:
+
+1. register `app.crew.next` in Play Console, enable Play App Signing, and keep
+   the separate upload keystore in the approved secret manager;
+2. inject the four `ORG_GRADLE_PROJECT_crewRelease*` values only into the
+   approved bundle job and verify the resulting AAB signature;
+3. copy the SHA-256 **app signing key certificate** fingerprint from Play
+   Console, not the local upload-key fingerprint; include every certificate
+   that still signs installs during a signing-key upgrade;
+4. add the uppercase, colon-delimited fingerprints for `app.crew.next` to
+   `apps/web/public/.well-known/assetlinks.json`, change the Caddy and staging
+   contracts from fail-closed `404` to direct `200 application/json`, then
+   deploy through the reviewed Environment;
+5. reverify the domain on a physical Android device and exercise every
+   cold/warm/restart link journey before Release acceptance.
+
+For iOS, Xcode uses automatic signing for Team `WFSHGY54TA`; the Developer
+account must still register `app.crew.next` with Associated Domains and issue
+the matching distribution profile. A valid local certificate without that
+profile is not a signed-device or App Store artifact.
+
 Provider-backed place enrichment remains disabled without a real provider
 worker. Create/retry requests fail with the documented retryable `503`; exact
 completed idempotency replays remain available. E-mail and push delivery stay
@@ -247,6 +268,11 @@ After a deploy or rollback, verify externally:
 
 ```sh
 curl --fail https://crew-haus.com/
+curl --fail --location --max-redirs 0 \
+  https://crew-haus.com/.well-known/apple-app-site-association
+test "$(curl --silent --show-error --location --max-redirs 0 \
+  --output /dev/null --write-out '%{http_code}' \
+  https://crew-haus.com/.well-known/assetlinks.json)" = 404
 curl --fail https://staging.crew-haus.com/internal/ready
 curl --fail https://staging.crew-haus.com/docs/openapi.json
 curl --fail https://staging.crew-haus.com:8444/minio/health/ready

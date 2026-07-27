@@ -39,6 +39,15 @@ test('registers and forwards the Crew Next custom URL scheme', () => {
   expect(androidManifest).toContain('android:host="crew-haus.com"');
   expect(androidManifest).toContain('android:path="/auth/redeem"');
   expect(androidManifest).toContain('android:pathPrefix="/join/"');
+  expect(androidManifest).toContain('android:path="/events"');
+  expect(androidManifest).toContain('android:pathPrefix="/events/"');
+  expect(androidManifest).toContain('android:pathPrefix="/feedback/"');
   expect(project.match(/CODE_SIGN_ENTITLEMENTS/g)).toHaveLength(2);
+  expect(project.match(/CODE_SIGN_STYLE = Automatic;/g)).toHaveLength(2);
   expect(project.match(/DEVELOPMENT_TEAM = WFSHGY54TA;/g)).toHaveLength(2);
+  expect(
+    project.match(/PRODUCT_BUNDLE_IDENTIFIER = app\.crew\.next;/g),
+  ).toHaveLength(2);
+  expect(project).toContain('DevelopmentTeam = WFSHGY54TA;');
+  expect(project).toContain('ProvisioningStyle = Automatic;');
 });

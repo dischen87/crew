@@ -1706,6 +1706,33 @@ verify_typesense_search_key() {
 	fi
 }
 
+verify_public_associations() {
+	local release_dir=$1
+	local apple_response apple_content_type apple_body android_status
+	apple_response=$(curl --fail --silent --show-error --retry 6 \
+		--location --max-redirs 0 \
+		--write-out $'\n%{content_type}' \
+		https://crew-haus.com/.well-known/apple-app-site-association)
+	apple_content_type=${apple_response##*$'\n'}
+	apple_body=${apple_response%$'\n'*}
+	[[ "${apple_content_type}" == application/json ]] || {
+		echo "Crew AASA is not served as application/json" >&2
+		exit 1
+	}
+	python3 -c \
+		'import json,sys; expected=json.load(open(sys.argv[1])); actual=json.load(sys.stdin); raise SystemExit(expected != actual)' \
+		"${release_dir}/apps/web/public/.well-known/apple-app-site-association" \
+		<<<"${apple_body}"
+	android_status=$(curl --silent --show-error --retry 6 \
+		--location --max-redirs 0 --output /dev/null \
+		--write-out '%{http_code}' \
+		https://crew-haus.com/.well-known/assetlinks.json)
+	[[ "${android_status}" == 404 ]] || {
+		echo "Crew Android association must remain unpublished until signing is verified" >&2
+		exit 1
+	}
+}
+
 smoke() {
 	local release_dir=$1
 	local readiness openapi auth_run_id
@@ -1719,6 +1746,7 @@ smoke() {
 	curl --fail --silent --show-error --retry 6 \
 		--retry-delay 2 https://crew-haus.com/ |
 		grep -Fq 'Der gemeinsame Plan für eure Gruppe.'
+	verify_public_associations "${release_dir}"
 	curl --fail --silent --show-error --retry 6 \
 		https://staging.crew-haus.com:8444/minio/health/ready >/dev/null
 
@@ -1826,7 +1854,7 @@ record_release() {
 		"    \"web\": \"${web_image_id}\"," \
 		"    \"internal-tls\": \"${internal_tls_image_id}\"" \
 		'  },' \
-		'  "smoke": ["ready", "openapi-3.1", "public-web", "https-object-store", "tls-search", "golf-fixture", "team-fixture", "feedback-attachment-e2e"]' \
+		'  "smoke": ["ready", "openapi-3.1", "public-web", "apple-app-site-association", "android-assetlinks-fail-closed", "https-object-store", "tls-search", "golf-fixture", "team-fixture", "feedback-attachment-e2e"]' \
 		'}' >"${temporary}"
 	chmod 0600 "${temporary}"
 	mv "${temporary}" "${record}"

@@ -269,6 +269,16 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 		hostDeploy.lastIndexOf("--no-build --no-deps api-gateway"),
 	);
 	expect(hostDeploy).toContain('"public-web"');
+	expect(hostDeploy).toContain("verify_public_associations");
+	expect(hostDeploy).toContain("--location --max-redirs 0");
+	expect(hostDeploy).toContain(
+		`[[ "\${apple_content_type}" == application/json ]]`,
+	);
+	expect(hostDeploy).toContain(
+		'"Crew Android association must remain unpublished until signing is verified"',
+	);
+	expect(hostDeploy).toContain('"apple-app-site-association"');
+	expect(hostDeploy).toContain('"android-assetlinks-fail-closed"');
 	expect(hostDeploy).toContain('"smoke"');
 	expect(hostDeploy).toContain('"feedback-attachment-e2e"');
 	expect(hostDeploy).toContain("auth_run_id=$(openssl rand -hex 12)");
@@ -1119,6 +1129,19 @@ test("public Caddy routes only the web and canonical Gateway surfaces", () => {
 	expect(appleAssociation.applinks.details[0]?.appIDs).toEqual([
 		"WFSHGY54TA.app.crew.next",
 	]);
+	const canonicalAppLinkPaths = [
+		"/join/*",
+		"/auth/redeem",
+		"/events",
+		"/events/*",
+		"/feedback/*",
+	];
+	expect(appleAssociation.applinks.details[0]?.paths).toEqual(
+		canonicalAppLinkPaths,
+	);
+	expect(appleAssociation.applinks.details[0]?.components).toEqual(
+		canonicalAppLinkPaths.map((path) => ({ "/": path })),
+	);
 	expect(androidAssociationExists).toBe(false);
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:3000");
 	expect(caddy).toContain("reverse_proxy 127.0.0.1:8080");
