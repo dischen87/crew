@@ -1,6 +1,6 @@
 /**
  * Generated from contracts/event-service.openapi.json.
- * Pin: sha256:e3bfde8a5dce4713b15a5ff5c12dce8d061201ef3b6f871254f8a993d2052e77
+ * Pin: sha256:7f0cbbbc01c37152115950145dc60438ff60a7645fe865365a87ca044c3f5683
  * Generator: openapi-typescript 7.13.0. Do not edit.
  */
 export type paths = {
@@ -979,6 +979,26 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/places/enrichment-jobs/{jobId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or reject cited search-miss place facts
+         * @description Reviews a completed search-miss job without provider work. Approval atomically materializes one reusable candidate and global place; rejection materializes neither.
+         */
+        post: operations["placeEnrichmentJobsReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/places/search": {
         parameters: {
             query?: never;
@@ -1916,6 +1936,23 @@ export type components = {
             /** Format: date-time */
             updatedAt: string;
         };
+        PlaceEnrichmentReview: {
+            fields: {
+                /** @enum {string} */
+                name: "name" | "locality" | "region" | "countryCode" | "latitude" | "longitude" | "address" | "websiteUrl" | "summary";
+                provenance: {
+                    /** Format: date-time */
+                    observedAt: string;
+                    /** @enum {string} */
+                    sourceKind: "exa_llm";
+                    /** Format: uri */
+                    sourceUrl: string;
+                };
+                value: string;
+            }[];
+            /** @enum {string} */
+            state: "pending" | "approved" | "rejected";
+        } | null;
         PlaceSearchResult: {
             attribution: string;
             confidence: number;
@@ -10566,6 +10603,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["PlaceEnrichment"];
                         place: components["schemas"]["EnrichedPlace"];
+                        review: components["schemas"]["PlaceEnrichmentReview"];
                     };
                 };
             };
@@ -10667,6 +10705,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["PlaceEnrichment"];
                         place: components["schemas"]["EnrichedPlace"];
+                        review: components["schemas"]["PlaceEnrichmentReview"];
                     };
                 };
             };
@@ -10737,6 +10776,7 @@ export interface operations {
                     "application/json": {
                         enrichment: components["schemas"]["PlaceEnrichment"];
                         place: components["schemas"]["EnrichedPlace"];
+                        review: components["schemas"]["PlaceEnrichmentReview"];
                     };
                 };
             };
@@ -10791,6 +10831,108 @@ export interface operations {
                 headers: {
                     /** @description Seconds until the request may be retried */
                     "Retry-After"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    placeEnrichmentJobsReview: {
+        parameters: {
+            query?: never;
+            header: {
+                "idempotency-key": string;
+            };
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    capabilityType: "travel" | "lodging" | "transport" | "golf" | "team";
+                    /** @enum {string} */
+                    decision: "approve" | "reject";
+                    eventId: string;
+                    rootEventId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Search-miss review decision applied */
+            200: {
+                headers: {
+                    /** @description Sensitive responses must not be stored by HTTP caches */
+                    "Cache-Control"?: "private, no-store";
+                    /** @description True when the stored idempotent response was replayed */
+                    "Idempotency-Replayed"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enrichment: components["schemas"]["PlaceEnrichment"];
+                        place: components["schemas"]["EnrichedPlace"];
+                        review: components["schemas"]["PlaceEnrichmentReview"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    /** @description Seconds until the request may be retried */
+                    "Retry-After"?: string;
+                    /** @description Crew request correlation identifier */
+                    "X-Request-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unexpected failure */
+            500: {
+                headers: {
                     /** @description Crew request correlation identifier */
                     "X-Request-ID"?: string;
                     [name: string]: unknown;
