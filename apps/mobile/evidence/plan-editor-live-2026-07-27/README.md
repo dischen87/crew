@@ -23,6 +23,48 @@ The screenshots are under `runtime/screenshots`; JUnit reports are under
 `runtime/reports`. `SHA256SUMS` binds every retained artifact. The sanitized
 runtime oracle is `runtime/oracles/build-and-runtime.json`.
 
+## Supplemental Plan-state run
+
+A second, bounded iOS run used current `main` source
+`fecd688a79a6fc2801774c5d1d0c74721825656b`, the same deterministic fixture,
+and a freshly erased iPhone 16e simulator. Its built and installed Debug
+executable hashes both equal
+`c10d78e881e40579f872fe6fc8b6c3d85e9e2d021be7f41a25ad8a4f5407f0e5`.
+
+This run retained two genuine production-path states:
+
+- `runtime/screenshots/state-matrix/ios/01-queued.png` shows the offline
+  Gloria edit preserved in Plan with its `Lokal gespeichert` delivery badge.
+- `runtime/screenshots/state-matrix/ios/02-conflict.png` shows the same local
+  edit preserved after an independent production itinerary `PATCH` advanced
+  the server item from version `1` to `2`; Plan identifies the conflict and
+  offers the local discard action.
+
+The retained local title is visibly concatenated because Maestro's native
+`eraseText` did not clear the pre-filled title. It is evidence of state
+preservation, not a polished-copy or text-entry claim.
+
+`runtime/reports/ios-plan-open.xml` is the sanitized, zero-failure JUnit for
+opening the production Plan route in this run. It is intentionally not
+described as a state-specific assertion report: Maestro's exact-text
+orchestration reports were red because native accessibility combined adjacent
+labels, so those reports and all ambiguous screenshots were excluded. Both
+retained state screenshots were inspected directly. Exact provenance and the
+stop boundary are recorded in
+`runtime/oracles/plan-state-partial.json`.
+
+The agreed stop gate then fired: the one allowed tombstone-preparation flow
+reached a blank native frame before the discard action. No tombstone artifact
+was retained, and no Android state run was started after that gate. The
+Android debug build completed, but build completion is not claimed as Android
+state evidence.
+
+Cleanup was verified after capture: the Crew app was removed, the owned iPhone
+simulator was erased and shut down, no Android device remained connected,
+ports `3000`, `3101`, `5433`, `6380`, and `8082` were closed, the foreign
+listener on `8081` was unchanged, `Podfile.lock` matched `HEAD`, and generated
+build/runtime artifacts were moved to Trash.
+
 ## Bound builds
 
 | Platform | Runtime | Build proof | Text sizes |
@@ -48,6 +90,8 @@ visibility polling can misclassify fully rendered bottom actions.
 ## Explicit remaining boundaries
 
 This package does not claim distribution-signed builds, physical-device
-execution, VoiceOver or TalkBack traversal, queued/conflict/tombstone visual
-states, or an updated external Figma file. Those acceptance gates remain open
-in `crew-paq.3.21`.
+execution, VoiceOver or TalkBack traversal, Android queued/conflict/tombstone
+states, iOS tombstone state, state-specific passing JUnit, or an updated
+external Figma file. iOS queued and conflict are the only newly evidenced
+state transitions. The other acceptance gates remain open in
+`crew-paq.3.21`.

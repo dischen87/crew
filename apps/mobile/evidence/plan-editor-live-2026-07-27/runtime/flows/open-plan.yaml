@@ -1,0 +1,27 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_local_turkey_golf_2026
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn:
+    id: event-hub-tab-plan
+    retryTapIfNoChange: true
+- runFlow:
+    when:
+      visible:
+        id: event-hub
+    commands:
+      - tapOn:
+          id: event-hub-tab-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-view
+    timeout: 30000

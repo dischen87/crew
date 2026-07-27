@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e - iOS 26.2" tests="1" failures="0" time="17.0">
+    <testcase id="open-plan" name="open-plan" classname="open-plan" file="apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/open-plan.yaml" time="17.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

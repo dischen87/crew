@@ -26,11 +26,25 @@
       "textSetting": "accessibility-extra-large",
       "screenshots": 5,
       "report": "runtime/reports/ios-large.xml"
+    },
+    {
+      "platform": "ios",
+      "textSetting": "default-after-erase",
+      "sourceSha": "fecd688a79a6fc2801774c5d1d0c74721825656b",
+      "screenshots": 2,
+      "states": [
+        "queued",
+        "conflict"
+      ],
+      "report": "runtime/reports/ios-plan-open.xml",
+      "reportScope": "plan-route-open",
+      "stateSpecificJUnit": false,
+      "oracle": "runtime/oracles/plan-state-partial.json"
     }
   ],
   "totals": {
-    "screenshots": 20,
-    "tests": 4,
+    "screenshots": 22,
+    "tests": 5,
     "failures": 0,
     "errors": 0
   },
@@ -38,13 +52,16 @@
     "sanitized": true,
     "credentialsRetained": false,
     "uniqueDeviceIdentifiersRetained": false,
-    "absoluteLocalPathsRetained": false
+    "absoluteLocalPathsRetained": false,
+    "failedOrAmbiguousRunsRetained": false
   },
   "remainingBoundaries": [
     "distribution signing",
     "physical devices",
     "VoiceOver and TalkBack",
-    "queued, conflict and tombstone visual states",
+    "Android queued, conflict and tombstone visual states",
+    "iOS tombstone visual state",
+    "state-specific passing JUnit",
     "external Figma handoff"
   ]
 }

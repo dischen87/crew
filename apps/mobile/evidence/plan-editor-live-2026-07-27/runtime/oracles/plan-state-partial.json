@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "capturedOn": "2026-07-27",
+  "status": "partial-stop-gate",
+  "source": {
+    "branch": "main",
+    "sha": "fecd688a79a6fc2801774c5d1d0c74721825656b",
+    "originMainSha": "0dc6bc15e95d0b9dc79c4c60773ad7265f1b600d",
+    "planProductSourceUnchangedSinceOriginalPackage": true
+  },
+  "runtime": {
+    "fixture": "evt_local_turkey_golf_2026",
+    "gateway": "isolated native-e2e-runner",
+    "metroPort": 8082,
+    "transportControl": "isolated native runner",
+    "remoteMutationRoute": "production event itinerary PATCH"
+  },
+  "ios": {
+    "appId": "app.crew.next",
+    "device": "iPhone 16e",
+    "osVersion": "26.2",
+    "resolution": "1170x2532",
+    "signing": "simulator debug",
+    "sourceBuildSha256": "c10d78e881e40579f872fe6fc8b6c3d85e9e2d021be7f41a25ad8a4f5407f0e5",
+    "installedBuildSha256": "c10d78e881e40579f872fe6fc8b6c3d85e9e2d021be7f41a25ad8a4f5407f0e5",
+    "installedArtifactMatched": true,
+    "greenJUnit": {
+      "report": "runtime/reports/ios-plan-open.xml",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    "states": [
+      {
+        "state": "queued",
+        "entityId": "iti_local_turkey_golf_round_gloria",
+        "screenshot": "runtime/screenshots/state-matrix/ios/01-queued.png",
+        "proof": "The rendered Plan row contains the local title and the Lokal gespeichert delivery badge while transport is detached."
+      },
+      {
+        "state": "conflict",
+        "entityId": "iti_local_turkey_golf_round_gloria",
+        "remoteVersionBefore": 1,
+        "remoteVersionAfter": 2,
+        "screenshot": "runtime/screenshots/state-matrix/ios/02-conflict.png",
+        "proof": "After an independent production-route PATCH, the rendered Plan attention card preserves the local title and identifies a server conflict."
+      }
+    ]
+  },
+  "notCaptured": {
+    "iosTombstone": "Stop gate: the one allowed preparation flow reached a blank native frame before the discard action; no tombstone artifact was retained.",
+    "androidStates": "The current debug build completed, but no Android state run was started after the iOS stop gate."
+  },
+  "excluded": {
+    "failedOrchestrationReports": true,
+    "ambiguousScreenshots": true,
+    "credentials": true,
+    "uniqueDeviceIdentifiers": true,
+    "absoluteLocalPaths": true
+  },
+  "cleanupVerified": {
+    "iosAppRemoved": true,
+    "iosSimulatorErasedAndShutdown": true,
+    "androidDevicesConnected": 0,
+    "ownedPortsClosed": [
+      3000,
+      3101,
+      5433,
+      6380,
+      8082
+    ],
+    "foreignMetro8081Unchanged": true,
+    "podfileLockMatchesHead": true,
+    "generatedBuildAndTemporaryArtifactsMovedToTrash": true
+  }
+}

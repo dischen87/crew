@@ -1,11 +1,14 @@
-eae9e983f5e3c3cc5a46e44349384a44c065d0109e6364266ff0308160340b2c  ./README.md
+f4bd67907c7ece5573fa708b9939120f81e79565864c3017d004badec1a4be06  ./README.md
 66ac050d7a5019330dbb8221453dbf7015aa774cd51666fe9b28a64e6f35eb2e  ./maestro/plan-live-editor.yaml
-ae82f3d67a168d427d81bae8004d5d644ac210db783b8fca1df28a884a6b2f31  ./manifest.json
+f6d6f8de3327f6f68a17fc750d3605c6ed42a90d79d778f71a78134698481209  ./manifest.json
+ffefc372636e0df2c0cda30f080e0e500cb33095fcbe6587ae738c5326f64c3e  ./runtime/flows/open-plan.yaml
 3fd082e8532a1b1d69f3e1fe81494a4f2a716a453c401c5ce1838825fefde59e  ./runtime/oracles/build-and-runtime.json
+a3a57f7af311ed7b1e662ff24cfe504757469d438edfe9835f1c9beb894cd4e3  ./runtime/oracles/plan-state-partial.json
 4e92664350c6834f632d86667861f8538b654ab07be89d053869ea607f0f71e8  ./runtime/reports/android-200.xml
 50eda0d2e65acbf8f5e41a63a2750928827964a8616d5ba541b4ac6a79d1b764  ./runtime/reports/android-normal.xml
 5f42dd3e75659da014197cdaf475dc639e44b09ce892bde372747aec0367b42c  ./runtime/reports/ios-large.xml
 48c0ef3ac35ab838e8f524afcf65c921acb515053b4b5730b5598345479187e6  ./runtime/reports/ios-normal.xml
+48078597d8e72eb49c2e2c2987f52ef1b08d47032d2e355e58a484ae78688c51  ./runtime/reports/ios-plan-open.xml
 72fc3697b8757871f8abee2a69ed15dc9bc66b5ecfa20892dbecbd4fd9b384ef  ./runtime/screenshots/android-200/01-plan.png
 7a6cad68f097e93ad6598b4ad235b8e3aca50295a775bf5177b0004a4c1775ad  ./runtime/screenshots/android-200/02-live-top.png
 151506809d5c5d90efd45cb0be9b5b6e3d2181bb845967b6bbaa215047c155e6  ./runtime/screenshots/android-200/03-live-action.png
@@ -26,3 +29,5 @@ e05a0d6a35a18ed63e11927dd4eb7da6b1c823b0f46a22b44f6246d89e622dd2  ./runtime/scre
 11f05acf7bdaad54578303a6259fb540297dff5acbd2b36346570ab23377e2b3  ./runtime/screenshots/ios-normal/03-live-action.png
 456d896a17cb6125b774d39db29873b5c14e3fe77e8c624ef299f285b7d7d077  ./runtime/screenshots/ios-normal/04-editor-top.png
 76620302339ff928ac6a7829e64c4c66c88b81e83ff6544d5ea7758d7b820244  ./runtime/screenshots/ios-normal/05-editor-action.png
+034d4c7bb4cfb412fe99e5e0d3528ee1847748ab63c03058a493151a7bcb6724  ./runtime/screenshots/state-matrix/ios/01-queued.png
+663275da3f1c6c9fc0f524948db4ad367b0c93ff8066d9c228b0585145222cbb  ./runtime/screenshots/state-matrix/ios/02-conflict.png
