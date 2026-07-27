@@ -798,7 +798,7 @@ test('retries an item route and replaces it with the exact account/root-scoped L
   client.clear();
 });
 
-test('routes a removed item target to the updated authorized plan', async () => {
+test('shows a privacy-safe removed-item recovery before opening the updated plan', async () => {
   mockLifecycle.accountId = accountId;
   mockLifecycle.status = 'ready';
   mockPrivateDatabase.database.all.mockResolvedValue([]);
@@ -838,16 +838,26 @@ test('routes a removed item target to the updated authorized plan', async () => 
     await flush();
   });
 
-  expect(replace).toHaveBeenCalledWith('Plan', {
-    rootEventId: 'evt_private_root',
-  });
+  expect(replace).not.toHaveBeenCalled();
   expect(replace).not.toHaveBeenCalledWith(
     'LiveItem',
     expect.objectContaining({ itemId: 'iti_removed_item' }),
   );
+  expect(textInside(renderer!)).toContain(
+    'Programmpunkt geändert oder entfernt',
+  );
+  expect(textInside(renderer!)).toContain('Aktualisierten Plan ansehen');
   expect(textInside(renderer!)).not.toMatch(
     /Sommerfest|evt_private_root|iti_removed_item|request-authorized-root/,
   );
+  await ReactTestRenderer.act(async () => {
+    renderer!.root
+      .findByProps({ testID: 'inbound-gate-updated-plan' })
+      .props.onPress();
+  });
+  expect(replace).toHaveBeenCalledWith('Plan', {
+    rootEventId: 'evt_private_root',
+  });
 
   await ReactTestRenderer.act(async () => renderer!.unmount());
   client.clear();

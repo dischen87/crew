@@ -5,6 +5,7 @@ import type {
   MembershipRecord,
   OutboxItem,
   SyncMutation,
+  SyncMutationDraft,
   SyncStatus,
 } from '@crew/mobile-data';
 import {
@@ -24,6 +25,7 @@ const mockListOutbox = jest.fn();
 const mockGetStatus = jest.fn();
 const mockEnqueueMutation = jest.fn();
 const mockDiscardDeadLetter = jest.fn();
+const mockRetryExhausted = jest.fn();
 const mockSyncRoot = jest.fn();
 const mockDeviceId = jest.fn();
 const mockSecureUuid = jest.fn(() => '00000000-0000-4000-8000-000000000001');
@@ -46,6 +48,7 @@ jest.mock('@crew/mobile-data', () => ({
     enqueueMutation = mockEnqueueMutation;
     getStatus = mockGetStatus;
     listOutbox = mockListOutbox;
+    retryExhausted = mockRetryExhausted;
     syncRoot = mockSyncRoot;
   },
 }));
@@ -78,6 +81,7 @@ const rootEventId = 'evt_plan_root';
 const childEventId = 'evt_plan_day';
 const itemId = 'iti_plan_item';
 const createdItemId = 'iti_00000000-0000-4000-8000-000000000001';
+const createdEventId = 'evt_00000000-0000-4000-8000-000000000001';
 const deviceId = `dvc_${'1'.repeat(8)}-${'2'.repeat(4)}-4${'3'.repeat(
   3,
 )}-8${'4'.repeat(3)}-${'5'.repeat(12)}`;
@@ -102,6 +106,19 @@ beforeEach(() => {
   mockGetStatus.mockResolvedValue(syncedStatus());
   mockDeviceId.mockResolvedValue(deviceId);
   mockSyncRoot.mockResolvedValue(syncedStatus());
+  mockRetryExhausted.mockImplementation(async () => {
+    mockOutbox = mockOutbox.map(item =>
+      item.state === 'dead_letter' &&
+      item.lastError?.code === 'retry_exhausted'
+        ? {
+            ...item,
+            attempts: 0,
+            lastError: null,
+            state: 'pending',
+          }
+        : item,
+    );
+  });
   mockDiscardDeadLetter.mockImplementation(
     async (_accountUserId: string, mutationId: string) => {
       mockOutbox = mockOutbox.filter(
@@ -114,14 +131,14 @@ beforeEach(() => {
       accountUserId: string,
       rootId: string,
       queuedDeviceId: string,
-      draft: ItineraryDraft,
+      draft: SyncMutationDraft,
       optimisticOverlay: unknown,
     ) => {
       const command = {
         ...draft,
         clientMutationId: queuedMutationId,
         clientSequence: mockOutbox.length + 1,
-      } as ItineraryMutation;
+      } as SyncMutation;
       const item = outboxItem(command, {
         accountUserId,
         deviceId: queuedDeviceId,
@@ -210,6 +227,298 @@ test('durably queues a normalized offline create and restores its optimistic row
       expect.objectContaining({ delivery: 'queued', id: createdItemId }),
     ]),
   );
+});
+
+test('durably authors an optimistic child event through the sync mutation stream', async () => {
+  const runtime = makeRuntime({ online: false });
+
+  const snapshot = await runtime.createChildEvent(
+    rootEventId,
+    childEventId,
+    {
+      description: '  ',
+      endsAt: '2026-09-20T18:00:00+02:00',
+      kind: 'activity',
+      startsAt: '2026-09-20T16:00:00+02:00',
+      status: 'draft',
+      timeZone: 'Europe/Zurich',
+      title: '  Abschluss  ',
+    },
+  );
+
+  expect(snapshot.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        depth: 2,
+        id: createdEventId,
+        parentEventId: childEventId,
+        startsAt: '2026-09-20T14:00:00.000Z',
+        title: 'Abschluss',
+        version: 0,
+      }),
+    ]),
+  );
+  expect(mockEnqueueMutation).toHaveBeenCalledWith(
+    accountA,
+    rootEventId,
+    deviceId,
+    {
+      entityId: createdEventId,
+      kind: 'event.create',
+      payload: {
+        description: '  ',
+        endsAt: '2026-09-20T16:00:00.000Z',
+        kind: 'activity',
+        parentEventId: childEventId,
+        startsAt: '2026-09-20T14:00:00.000Z',
+        status: 'draft',
+        timeZone: 'Europe/Zurich',
+        title: 'Abschluss',
+      },
+    },
+    expect.objectContaining({
+      eventId: createdEventId,
+      kind: 'plan.event',
+      parentEventId: childEventId,
+      rootEventId,
+    }),
+  );
+  expect(mockSyncRoot).not.toHaveBeenCalled();
+});
+
+test('keeps a rejected child event visible until the manager discards it', async () => {
+  const runtime = makeRuntime({ online: false });
+  await runtime.createChildEvent(rootEventId, childEventId, {
+    description: null,
+    endsAt: null,
+    kind: 'activity',
+    startsAt: null,
+    status: 'draft',
+    timeZone: 'Europe/Zurich',
+    title: 'Lokaler Unterbereich',
+  });
+  const dependentValues = {
+    ...changedValues('Abhängiger Programmpunkt'),
+    eventId: createdEventId,
+  };
+  mockOutbox.push(
+    outboxItem(createMutation(dependentValues, failedMutationId), {
+      optimisticOverlay: overlay(dependentValues, createdItemId),
+    }),
+  );
+  mockOutbox = mockOutbox.map(item =>
+    item.command.kind === 'event.create'
+      ? {
+          ...item,
+          lastError: {
+            authoritativeOrder: null,
+            code: 'permission',
+            currentVersion: null,
+            requestId: 'req_event_denied',
+          },
+          serverConsumed: true,
+          state: 'dead_letter',
+        }
+      : item,
+  );
+
+  const rejected = await runtime.load(rootEventId);
+  expect(rejected).toMatchObject({
+    events: expect.arrayContaining([
+      expect.objectContaining({
+        id: createdEventId,
+        title: 'Lokaler Unterbereich',
+        version: 0,
+      }),
+    ]),
+    issues: [
+      {
+        attempted: null,
+        code: 'permission',
+        eventAttempted: {
+          parentEventId: childEventId,
+          title: 'Lokaler Unterbereich',
+        },
+        itemId: createdEventId,
+        mutationId: queuedMutationId,
+      },
+    ],
+  });
+  await expect(
+    runtime.createItem(rootEventId, {
+      ...changedValues('Nicht erlaubt'),
+      eventId: createdEventId,
+    }),
+  ).rejects.toBeInstanceOf(PlanPendingError);
+  await expect(
+    runtime.createChildEvent(rootEventId, createdEventId, {
+      description: null,
+      endsAt: null,
+      kind: 'activity',
+      startsAt: null,
+      status: 'draft',
+      timeZone: 'Europe/Zurich',
+      title: 'Nicht erlaubt',
+    }),
+  ).rejects.toBeInstanceOf(PlanPendingError);
+
+  await expect(
+    runtime.discardIssue(rootEventId, queuedMutationId),
+  ).resolves.toMatchObject({
+    events: expect.not.arrayContaining([
+      expect.objectContaining({ id: createdEventId }),
+    ]),
+    items: expect.not.arrayContaining([
+      expect.objectContaining({ id: createdItemId }),
+    ]),
+    issues: [],
+  });
+  expect(mockDiscardDeadLetter).toHaveBeenCalledWith(
+    accountA,
+    queuedMutationId,
+  );
+});
+
+test('surfaces and discards a rejected itinerary reorder', async () => {
+  mockTimeline = [
+    itineraryRecord(),
+    itineraryRecord({
+      id: 'iti_plan_item_two',
+      sortKey: '2048',
+      title: 'Zweiter Punkt',
+    }),
+  ];
+  const runtime = makeRuntime({ online: false });
+  await runtime.moveItineraryItem(rootEventId, itemId, 'down');
+  mockOutbox = mockOutbox.map(item => ({
+    ...item,
+    lastError: {
+      authoritativeOrder: null,
+      code: 'conflict',
+      currentVersion: 2,
+      requestId: 'req_order_conflict',
+    },
+    serverConsumed: true,
+    state: 'dead_letter',
+  }));
+
+  await expect(runtime.load(rootEventId)).resolves.toMatchObject({
+    issues: [
+      {
+        code: 'conflict',
+        mutationId: queuedMutationId,
+        orderAttempted: {
+          entityId: childEventId,
+          kind: 'plan.itinerary-order',
+          orderedIds: ['iti_plan_item_two', itemId],
+        },
+      },
+    ],
+  });
+  await expect(
+    runtime.discardIssue(rootEventId, queuedMutationId),
+  ).resolves.toMatchObject({ issues: [] });
+});
+
+test('retries an exhausted unconsumed plan mutation instead of discarding it', async () => {
+  mockTimeline = [
+    itineraryRecord(),
+    itineraryRecord({
+      id: 'iti_plan_item_two',
+      sortKey: '2048',
+      title: 'Zweiter Punkt',
+    }),
+  ];
+  const runtime = makeRuntime({ online: false });
+  await runtime.moveItineraryItem(rootEventId, itemId, 'down');
+  mockOutbox = mockOutbox.map(item => ({
+    ...item,
+    lastError: {
+      authoritativeOrder: null,
+      code: 'retry_exhausted',
+      currentVersion: null,
+      requestId: 'req_order_retry',
+    },
+    serverConsumed: false,
+    state: 'dead_letter',
+  }));
+
+  await expect(runtime.load(rootEventId)).resolves.toMatchObject({
+    issues: [
+      {
+        mutationId: queuedMutationId,
+        resolution: 'retry',
+      },
+    ],
+  });
+  await expect(
+    runtime.discardIssue(rootEventId, queuedMutationId),
+  ).rejects.toBeInstanceOf(PlanUnavailableError);
+  await expect(
+    runtime.moveItineraryItem(rootEventId, itemId, 'down'),
+  ).rejects.toBeInstanceOf(PlanPendingError);
+  await expect(
+    runtime.retryIssue(rootEventId, queuedMutationId),
+  ).resolves.toMatchObject({ issues: [] });
+  expect(mockRetryExhausted).toHaveBeenCalledWith(accountA, rootEventId);
+});
+
+test('queues explicit sibling and itinerary order mutations with optimistic order', async () => {
+  const secondEventId = 'evt_plan_day_two';
+  mockEvents = [
+    { ...eventNode(rootEventId, null, 0), childOrderVersion: '7' },
+    { ...eventNode(childEventId, rootEventId, 1), sortKey: '1' },
+    {
+      ...eventNode(secondEventId, rootEventId, 1),
+      id: secondEventId,
+      sortKey: '2',
+      title: 'Tag zwei',
+    },
+  ];
+  const runtime = makeRuntime({ online: false });
+
+  const eventSnapshot = await runtime.moveChildEvent(
+    rootEventId,
+    childEventId,
+    'down',
+  );
+  expect(mockEnqueueMutation.mock.calls[0]?.[3]).toEqual({
+    baseVersion: 7,
+    entityId: rootEventId,
+    kind: 'event.children.reorder',
+    payload: { orderedIds: [secondEventId, childEventId] },
+  });
+  expect(eventSnapshot.events.map(event => event.id)).toEqual([
+    rootEventId,
+    secondEventId,
+    childEventId,
+  ]);
+
+  mockOutbox = [];
+  mockTimeline = [
+    itineraryRecord(),
+    itineraryRecord({
+      id: 'iti_plan_item_two',
+      sortKey: '2048',
+      title: 'Zweiter Punkt',
+    }),
+  ];
+  const itemSnapshot = await runtime.moveItineraryItem(
+    rootEventId,
+    itemId,
+    'down',
+  );
+  expect(mockEnqueueMutation.mock.calls[1]?.[3]).toEqual({
+    baseVersion: 1,
+    entityId: childEventId,
+    kind: 'itinerary.reorder',
+    payload: { orderedIds: ['iti_plan_item_two', itemId] },
+  });
+  expect(
+    itemSnapshot.items
+      .filter(item => item.values.eventId === childEventId)
+      .map(item => item.id),
+  ).toEqual(['iti_plan_item_two', itemId]);
 });
 
 test('queues one versioned update and rejects a second mutation for the same item', async () => {
@@ -410,14 +719,6 @@ test('refuses a wrong root or mutation id without discarding anything', async ()
   expect(mockDiscardDeadLetter).not.toHaveBeenCalled();
 });
 
-type ItineraryMutation = Extract<
-  SyncMutation,
-  { kind: 'itinerary.create' | 'itinerary.update' }
->;
-type ItineraryDraft = ItineraryMutation extends unknown
-  ? Omit<ItineraryMutation, 'clientMutationId' | 'clientSequence'>
-  : never;
-
 function makeRuntime(options?: {
   activeAccount?: () => string | null;
   online?: boolean;
@@ -495,7 +796,9 @@ function membership(role: MembershipRecord['role']): MembershipRecord {
   };
 }
 
-function itineraryRecord(): ItineraryRecord {
+function itineraryRecord(
+  overrides: Partial<ItineraryRecord> = {},
+): ItineraryRecord {
   const values = canonicalValues();
   return {
     accountUserId: accountA,
@@ -518,6 +821,7 @@ function itineraryRecord(): ItineraryRecord {
     title: values.title,
     updatedAt: '2026-07-20T08:00:00.000Z',
     version: 4,
+    ...overrides,
   };
 }
 
@@ -594,7 +898,7 @@ function overlay(
 }
 
 function outboxItem(
-  command: ItineraryMutation,
+  command: SyncMutation,
   overrides: Partial<OutboxItem> = {},
 ): OutboxItem {
   return {

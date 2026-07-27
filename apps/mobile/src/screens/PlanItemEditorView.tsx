@@ -17,6 +17,7 @@ import {
   spacing,
   typography,
 } from '../design/theme';
+import type { EventSetupPlaceCandidate } from './EventSetupRecoveryRuntime';
 import type { PlanItemDetails, PlanItemSnapshot } from './PlanRuntime';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
@@ -57,6 +58,11 @@ export type PlanItemEditorField =
   | 'timeZone'
   | 'title';
 
+export type PlanItemPlaceField = Extract<
+  PlanItemEditorField,
+  'destinationPlaceId' | 'originPlaceId' | 'placeId'
+>;
+
 export type PlanItemEditorForm = Record<PlanItemEditorField, string> & {
   allDay: boolean;
   status: PlanItemStatus;
@@ -76,6 +82,13 @@ export type PlanItemEditorViewModel = {
   mode: 'create' | 'edit';
   online: boolean;
   phase: 'concealed' | 'loading' | 'ready';
+  placeSearch: {
+    action: 'create' | 'search' | null;
+    message: string | null;
+    query: string;
+    results: readonly EventSetupPlaceCandidate[];
+    target: PlanItemPlaceField | null;
+  };
   places: readonly { id: string; label: string }[];
   refreshing: boolean;
   role: 'organizer' | 'owner' | null;
@@ -87,7 +100,12 @@ export type PlanItemEditorViewProps = {
   onAllDayChange(value: boolean): void;
   onBack(): void;
   onChange(field: PlanItemEditorField, value: string): void;
+  onClosePlaceSearch(): void;
+  onCreatePlace(candidateId: string): void;
+  onOpenPlaceSearch(target: PlanItemPlaceField): void;
+  onPlaceQueryChange(value: string): void;
   onPrimaryAction(): void;
+  onSearchPlaces(): void;
   onStatusChange(value: PlanItemStatus): void;
   onTypeChange(value: PlanItemType): void;
 };
@@ -115,7 +133,12 @@ export function PlanItemEditorView({
   onAllDayChange,
   onBack,
   onChange,
+  onClosePlaceSearch,
+  onCreatePlace,
+  onOpenPlaceSearch,
+  onPlaceQueryChange,
   onPrimaryAction,
+  onSearchPlaces,
   onStatusChange,
   onTypeChange,
 }: PlanItemEditorViewProps) {
@@ -143,7 +166,9 @@ export function PlanItemEditorView({
         title="Editor nicht verfügbar"
         tone="brand"
       >
-        {model.message ? <Text style={styles.body}>{model.message}</Text> : null}
+        {model.message ? (
+          <Text style={styles.body}>{model.message}</Text>
+        ) : null}
         <Button
           label="Zurück zum Plan"
           onPress={onBack}
@@ -158,6 +183,7 @@ export function PlanItemEditorView({
     model.busy ||
     model.refreshing ||
     model.saved ||
+    model.placeSearch.action !== null ||
     (model.issue !== null && model.issue !== 'conflict') ||
     model.delivery === 'syncing' ||
     model.delivery === 'attention';
@@ -165,12 +191,16 @@ export function PlanItemEditorView({
   return (
     <ScreenFrame
       description={model.eventTitle}
-      eyebrow={model.mode === 'create' ? 'ZUM PLAN HINZUFÜGEN' : 'PLAN BEARBEITEN'}
+      eyebrow={
+        model.mode === 'create' ? 'ZUM PLAN HINZUFÜGEN' : 'PLAN BEARBEITEN'
+      }
       icon={model.issue ? icons.flag : typeIcon(model.form.type)}
       liveRegion="polite"
       statusLabel={editorStatus(model)}
       testID="plan-item-editor-view"
-      title={model.mode === 'create' ? 'Neuer Programmpunkt' : 'Programmpunkt ändern'}
+      title={
+        model.mode === 'create' ? 'Neuer Programmpunkt' : 'Programmpunkt ändern'
+      }
       tone={model.issue ? 'brand' : 'surface'}
     >
       <View style={styles.metaRow}>
@@ -278,7 +308,10 @@ export function PlanItemEditorView({
           </View>
           <Switch
             accessibilityLabel="Ganztägig"
-            accessibilityState={{ checked: model.form.allDay, disabled: locked }}
+            accessibilityState={{
+              checked: model.form.allDay,
+              disabled: locked,
+            }}
             disabled={locked}
             ios_backgroundColor={colors.surface}
             onValueChange={onAllDayChange}
@@ -337,7 +370,14 @@ export function PlanItemEditorView({
         disabled={locked}
         errors={model.errors}
         form={model.form}
+        online={model.online}
         onChange={onChange}
+        onClosePlaceSearch={onClosePlaceSearch}
+        onCreatePlace={onCreatePlace}
+        onOpenPlaceSearch={onOpenPlaceSearch}
+        onPlaceQueryChange={onPlaceQueryChange}
+        onSearchPlaces={onSearchPlaces}
+        placeSearch={model.placeSearch}
         places={model.places}
       />
 
@@ -348,9 +388,17 @@ export function PlanItemEditorView({
         <PlaceSelector
           disabled={locked}
           error={model.errors.placeId}
+          field="placeId"
           label="Ort"
+          online={model.online}
           onChange={value => onChange('placeId', value)}
+          onClosePlaceSearch={onClosePlaceSearch}
+          onCreatePlace={onCreatePlace}
+          onOpenPlaceSearch={onOpenPlaceSearch}
+          onPlaceQueryChange={onPlaceQueryChange}
+          onSearchPlaces={onSearchPlaces}
           optional
+          placeSearch={model.placeSearch}
           places={model.places}
           testID="plan-item-place-id"
           value={model.form.placeId}
@@ -378,8 +426,7 @@ export function PlanItemEditorView({
               : 'Speichert genau diese Änderung dauerhaft. Online wird sie anschliessend synchronisiert.'
           }
           disabled={
-            !primaryIsBack &&
-            (!model.canSubmit || !model.dirty || locked)
+            !primaryIsBack && (!model.canSubmit || !model.dirty || locked)
           }
           icon={
             <ScreenIcon
@@ -410,13 +457,27 @@ function DetailsFields({
   disabled,
   errors,
   form,
+  online,
   onChange,
+  onClosePlaceSearch,
+  onCreatePlace,
+  onOpenPlaceSearch,
+  onPlaceQueryChange,
+  onSearchPlaces,
+  placeSearch,
   places,
 }: {
   disabled: boolean;
   errors: PlanItemEditorViewModel['errors'];
   form: PlanItemEditorForm;
+  online: boolean;
   onChange(field: PlanItemEditorField, value: string): void;
+  onClosePlaceSearch(): void;
+  onCreatePlace(candidateId: string): void;
+  onOpenPlaceSearch(target: PlanItemPlaceField): void;
+  onPlaceQueryChange(value: string): void;
+  onSearchPlaces(): void;
+  placeSearch: PlanItemEditorViewModel['placeSearch'];
   places: PlanItemEditorViewModel['places'];
 }) {
   const field = (
@@ -464,9 +525,17 @@ function DetailsFields({
       <PlaceSelector
         disabled={disabled}
         error={errors.originPlaceId}
+        field="originPlaceId"
         key="originPlaceId"
         label="Startort"
+        online={online}
         onChange={value => onChange('originPlaceId', value)}
+        onClosePlaceSearch={onClosePlaceSearch}
+        onCreatePlace={onCreatePlace}
+        onOpenPlaceSearch={onOpenPlaceSearch}
+        onPlaceQueryChange={onPlaceQueryChange}
+        onSearchPlaces={onSearchPlaces}
+        placeSearch={placeSearch}
         places={places}
         testID="plan-item-origin-place"
         value={form.originPlaceId}
@@ -474,9 +543,17 @@ function DetailsFields({
       <PlaceSelector
         disabled={disabled}
         error={errors.destinationPlaceId}
+        field="destinationPlaceId"
         key="destinationPlaceId"
         label="Zielort"
+        online={online}
         onChange={value => onChange('destinationPlaceId', value)}
+        onClosePlaceSearch={onClosePlaceSearch}
+        onCreatePlace={onCreatePlace}
+        onOpenPlaceSearch={onOpenPlaceSearch}
+        onPlaceQueryChange={onPlaceQueryChange}
+        onSearchPlaces={onSearchPlaces}
+        placeSearch={placeSearch}
         places={places}
         testID="plan-item-destination-place"
         value={form.destinationPlaceId}
@@ -571,18 +648,34 @@ function DetailsFields({
 function PlaceSelector({
   disabled,
   error,
+  field,
   label,
+  online,
   onChange,
+  onClosePlaceSearch,
+  onCreatePlace,
+  onOpenPlaceSearch,
+  onPlaceQueryChange,
+  onSearchPlaces,
   optional = false,
+  placeSearch,
   places,
   testID,
   value,
 }: {
   disabled: boolean;
   error?: string;
+  field: PlanItemPlaceField;
   label: string;
+  online: boolean;
   onChange(value: string): void;
+  onClosePlaceSearch(): void;
+  onCreatePlace(candidateId: string): void;
+  onOpenPlaceSearch(target: PlanItemPlaceField): void;
+  onPlaceQueryChange(value: string): void;
+  onSearchPlaces(): void;
   optional?: boolean;
+  placeSearch: PlanItemEditorViewModel['placeSearch'];
   places: PlanItemEditorViewModel['places'];
   testID: string;
   value: string;
@@ -612,9 +705,7 @@ function PlaceSelector({
         ))}
       </View>
       {options.length === 0 ? (
-        <Text style={styles.help}>
-          Im Event ist noch kein Ort gespeichert.
-        </Text>
+        <Text style={styles.help}>Im Event ist noch kein Ort gespeichert.</Text>
       ) : null}
       {error ? (
         <Text
@@ -631,8 +722,160 @@ function PlaceSelector({
             : 'Wähle einen im Event gespeicherten Ort.'}
         </Text>
       )}
+      <Button
+        accessibilityHint="Öffnet die Suche nach gespeicherten und neuen Orten direkt in diesem Editor."
+        disabled={disabled}
+        label={`${label} suchen oder hinzufügen`}
+        onPress={() => onOpenPlaceSearch(field)}
+        testID={`${testID}-open-search`}
+        variant="surface"
+      />
+      {placeSearch.target === field ? (
+        <PlaceSearchPanel
+          disabled={disabled}
+          label={label}
+          online={online}
+          onChange={onChange}
+          onClose={onClosePlaceSearch}
+          onCreatePlace={onCreatePlace}
+          onPlaceQueryChange={onPlaceQueryChange}
+          onSearchPlaces={onSearchPlaces}
+          placeSearch={placeSearch}
+          places={places}
+          testID={testID}
+        />
+      ) : null}
     </View>
   );
+}
+
+function PlaceSearchPanel({
+  disabled,
+  label,
+  online,
+  onChange,
+  onClose,
+  onCreatePlace,
+  onPlaceQueryChange,
+  onSearchPlaces,
+  placeSearch,
+  places,
+  testID,
+}: {
+  disabled: boolean;
+  label: string;
+  online: boolean;
+  onChange(value: string): void;
+  onClose(): void;
+  onCreatePlace(candidateId: string): void;
+  onPlaceQueryChange(value: string): void;
+  onSearchPlaces(): void;
+  placeSearch: PlanItemEditorViewModel['placeSearch'];
+  places: PlanItemEditorViewModel['places'];
+  testID: string;
+}) {
+  const query = placeSearch.query.trim().toLocaleLowerCase('de-CH');
+  const cached = query
+    ? places.filter(place =>
+        place.label.toLocaleLowerCase('de-CH').includes(query),
+      )
+    : [];
+  return (
+    <Card style={styles.placeSearchCard} tone="lavender">
+      <Text accessibilityRole="header" style={styles.cardTitle}>
+        {label} finden
+      </Text>
+      <Text style={styles.body}>
+        Gespeicherte Orte erscheinen sofort. Neue Orte werden erst nach deiner
+        Auswahl im Event angelegt.
+      </Text>
+      <TextField
+        autoCapitalize="words"
+        autoComplete="off"
+        disabled={disabled}
+        helpText={
+          online
+            ? 'Suche nach Ort, Golfplatz oder Veranstaltungsort.'
+            : 'Offline bleiben gespeicherte Orte wählbar. Neue Orte brauchen eine Verbindung.'
+        }
+        label={`${label} suchen`}
+        maxLength={120}
+        onChangeText={onPlaceQueryChange}
+        onSubmitEditing={onSearchPlaces}
+        placeholder="Zum Beispiel: Zürich"
+        returnKeyType="search"
+        testID={`${testID}-search-query`}
+        value={placeSearch.query}
+      />
+      {cached.length > 0 ? (
+        <View style={styles.placeSearchResults}>
+          <Text style={styles.fieldLabel}>Im Event gespeichert</Text>
+          {cached.map((place, index) => (
+            <Button
+              accessibilityHint="Wählt diesen bereits gespeicherten Ort aus."
+              disabled={disabled}
+              key={place.id}
+              label={`${place.label} auswählen`}
+              onPress={() => onChange(place.id)}
+              testID={`${testID}-cached-result-${index}`}
+              variant="surface"
+            />
+          ))}
+        </View>
+      ) : null}
+      {placeSearch.results.length > 0 ? (
+        <View style={styles.placeSearchResults}>
+          <Text style={styles.fieldLabel}>Neue Orte</Text>
+          {placeSearch.results.map((place, index) => (
+            <Button
+              accessibilityHint={`${placeSubtitle(
+                place,
+              )}. Legt diesen Ort im Event an und wählt ihn aus.`}
+              disabled={disabled || !online}
+              key={place.id}
+              label={`${place.name} hinzufügen`}
+              loading={placeSearch.action === 'create'}
+              onPress={() => onCreatePlace(place.id)}
+              testID={`${testID}-remote-result-${index}`}
+              variant="surface"
+            />
+          ))}
+        </View>
+      ) : null}
+      {placeSearch.message ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+          style={styles.help}
+        >
+          {placeSearch.message}
+        </Text>
+      ) : null}
+      <View style={styles.placeSearchActions}>
+        <Button
+          disabled={
+            disabled || !online || placeSearch.query.trim().length === 0
+          }
+          label="Neue Orte suchen"
+          loading={placeSearch.action === 'search'}
+          onPress={onSearchPlaces}
+          testID={`${testID}-search-submit`}
+          variant="action"
+        />
+        <Button
+          disabled={Boolean(placeSearch.action)}
+          label="Suche schliessen"
+          onPress={onClose}
+          testID={`${testID}-search-close`}
+          variant="surface"
+        />
+      </View>
+    </Card>
+  );
+}
+
+function placeSubtitle(place: EventSetupPlaceCandidate) {
+  return [place.locality, place.countryCode].filter(Boolean).join(', ');
 }
 
 function ChoiceCard({
@@ -845,6 +1088,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   placeSelector: {
+    gap: spacing.sm,
+  },
+  placeSearchActions: {
+    gap: spacing.sm,
+  },
+  placeSearchCard: {
+    gap: spacing.md,
+  },
+  placeSearchResults: {
     gap: spacing.sm,
   },
   section: {

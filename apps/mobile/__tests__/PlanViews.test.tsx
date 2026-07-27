@@ -6,6 +6,7 @@ import type {
   PlanItemSnapshot,
   PlanSnapshot,
 } from '../src/screens/PlanRuntime';
+import { ChildEventEditorView } from '../src/screens/ChildEventEditorView';
 import {
   PlanItemEditorView,
   type PlanItemEditorForm,
@@ -81,6 +82,230 @@ test('manager plan exposes recursive structure, ordered itinerary and one add ac
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('manager gets explicit accessible structure and itinerary reorder controls', async () => {
+  const callbacks = planCallbacks();
+  const snapshot = planSnapshot('organizer');
+  const secondChild = eventNode({
+    depth: 1,
+    id: 'evt_dinner',
+    kind: 'activity',
+    parentEventId: 'evt_root',
+    rootEventId: 'evt_root',
+    sortKey: 'b',
+    title: 'Abendprogramm',
+  });
+  const secondRoundItem = item({
+    eventId: 'evt_round',
+    id: 'iti_round_two',
+    startsAt: '2026-09-21T07:30:00.000Z',
+    title: 'Zweite Runde',
+    type: 'golf_round',
+  });
+  const renderer = await render(
+    <PlanView
+      {...callbacks}
+      model={{
+        message: null,
+        online: false,
+        phase: 'ready',
+        refreshing: false,
+        selectedEventId: 'evt_round',
+        selectedItemId: null,
+        snapshot: {
+          ...snapshot,
+          events: [...snapshot.events, secondChild],
+          items: [...snapshot.items, secondRoundItem],
+        },
+      }}
+    />,
+  );
+
+  const childDown = renderer.root.findByProps({
+    testID: 'plan-event-move-down-evt_round',
+  });
+  expect(childDown.props.accessibilityLabel).toBe(
+    'Carya Golf nach unten verschieben',
+  );
+  expect(childDown.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => childDown.props.onPress());
+  expect(callbacks.onMoveChildEvent).toHaveBeenCalledWith('evt_round', 'down');
+
+  const itemDown = renderer.root.findByProps({
+    testID: 'plan-item-move-down-iti_round',
+  });
+  expect(itemDown.props.accessibilityHint).toContain('Carya Golf');
+  expect(itemDown.props.disabled).toBe(false);
+  await ReactTestRenderer.act(() => itemDown.props.onPress());
+  expect(callbacks.onMoveItem).toHaveBeenCalledWith('iti_round', 'down');
+
+  const addChild = renderer.root.findByProps({
+    testID: 'plan-add-child-event',
+  });
+  await ReactTestRenderer.act(() => addChild.props.onPress());
+  expect(callbacks.onAddChildEvent).toHaveBeenCalledWith('evt_round');
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('plan renders itinerary rows in the order changed by the manager', async () => {
+  const snapshot = planSnapshot('owner');
+  const first = {
+    ...item({
+      eventId: 'evt_round',
+      id: 'iti_first',
+      startsAt: '2026-09-21T07:30:00.000Z',
+      title: 'Chronologisch zuerst',
+      type: 'golf_round',
+    }),
+    sortKey: 'b',
+  };
+  const second = {
+    ...item({
+      eventId: 'evt_round',
+      id: 'iti_second',
+      startsAt: '2026-09-21T08:30:00.000Z',
+      title: 'Im Plan zuerst',
+      type: 'golf_round',
+    }),
+    sortKey: 'a',
+  };
+  const renderer = await render(
+    <PlanView
+      {...planCallbacks()}
+      model={{
+        message: null,
+        online: true,
+        phase: 'ready',
+        refreshing: false,
+        selectedEventId: 'evt_round',
+        selectedItemId: null,
+        snapshot: {
+          ...snapshot,
+          items: [first, second],
+        },
+      }}
+    />,
+  );
+
+  expect(
+    [
+      ...new Set(
+        renderer.root
+          .findAll(
+            node =>
+              node.props.testID === 'plan-item-iti_first' ||
+              node.props.testID === 'plan-item-iti_second',
+          )
+          .map(node => node.props.testID),
+      ),
+    ],
+  ).toEqual(['plan-item-iti_second', 'plan-item-iti_first']);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('child-event authoring exposes labeled kind and durable offline action', async () => {
+  const onChange = jest.fn();
+  const onSubmit = jest.fn();
+  const renderer = await render(
+    <ChildEventEditorView
+      busy={false}
+      errors={{}}
+      form={{
+        description: '',
+        endsAt: '',
+        kind: 'day',
+        startsAt: '',
+        timeZone: 'Europe/Zurich',
+        title: 'Tag zwei',
+      }}
+      message={null}
+      online={false}
+      parentTitle="Turkey Golf Tour"
+      onBack={jest.fn()}
+      onChange={onChange}
+      onSubmit={onSubmit}
+    />,
+  );
+
+  const kind = renderer.root.findByProps({
+    testID: 'child-event-kind-session',
+  });
+  expect(kind.props.accessibilityRole).toBe('radio');
+  expect(kind.props.accessibilityState.checked).toBe(false);
+  await ReactTestRenderer.act(() => kind.props.onPress());
+  expect(onChange).toHaveBeenCalledWith('kind', 'session');
+  expect(textInside(renderer)).toContain('Wird lokal vorgemerkt');
+
+  const save = renderer.root.findByProps({
+    testID: 'child-event-primary-action',
+  });
+  expect(save.props.accessibilityHint).toContain('Warteschlange');
+  await ReactTestRenderer.act(() => save.props.onPress());
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('rejected local child remains reviewable but cannot accept dependent work', async () => {
+  const callbacks = planCallbacks();
+  const snapshot = planSnapshot('owner');
+  const mutationId = '33333333-3333-4333-8333-333333333333';
+  const renderer = await render(
+    <PlanView
+      {...callbacks}
+      model={{
+        message: null,
+        online: true,
+        phase: 'ready',
+        refreshing: false,
+        selectedEventId: 'evt_round',
+        selectedItemId: null,
+        snapshot: {
+          ...snapshot,
+          events: snapshot.events.map(event =>
+            event.id === 'evt_round' ? { ...event, version: 0 } : event,
+          ),
+          issues: [
+            {
+              attempted: null,
+              code: 'permission',
+              current: null,
+              eventAttempted: {
+                description: null,
+                endsAt: null,
+                kind: 'golf',
+                parentEventId: 'evt_root',
+                startsAt: null,
+                status: 'draft',
+                timeZone: 'Europe/Zurich',
+                title: 'Carya Golf',
+              },
+              itemId: 'evt_round',
+              mutationId,
+              resolution: 'discard',
+            },
+          ],
+        },
+      }}
+    />,
+  );
+
+  expect(
+    renderer.root.findByProps({ testID: 'plan-primary-action' }).props.disabled,
+  ).toBe(true);
+  expect(
+    renderer.root.findByProps({ testID: 'plan-add-child-event' }).props.disabled,
+  ).toBe(true);
+  const discard = renderer.root.findByProps({
+    testID: `plan-discard-issue-${mutationId}`,
+  });
+  await ReactTestRenderer.act(() => discard.props.onPress());
+  expect(callbacks.onDiscardIssue).toHaveBeenCalledWith(mutationId);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('plan identifies every unconfirmed local change before discard', async () => {
   const callbacks = planCallbacks();
   const firstMutationId = '11111111-1111-4111-8111-111111111111';
@@ -104,6 +329,7 @@ test('plan identifies every unconfirmed local change before discard', async () =
           current: transfer,
           itemId: 'iti_denied',
           mutationId: firstMutationId,
+          resolution: 'discard',
         },
         {
           attempted: { ...round, title: 'Lokale Golfrunde' },
@@ -111,6 +337,7 @@ test('plan identifies every unconfirmed local change before discard', async () =
           current: round,
           itemId: 'iti_conflict',
           mutationId: secondMutationId,
+          resolution: 'retry',
         },
       ],
     },
@@ -130,16 +357,11 @@ test('plan identifies every unconfirmed local change before discard', async () =
   expect(textInside(renderer)).toContain('Lokale Golfrunde · Carya Golf');
   expect(firstDiscard.props.accessibilityLabel).toContain('Lokaler Transfer');
   expect(secondDiscard.props.accessibilityLabel).toContain('Lokale Golfrunde');
+  expect(secondDiscard.props.label).toBe('Erneut versuchen');
   await ReactTestRenderer.act(() => firstDiscard.props.onPress());
   await ReactTestRenderer.act(() => secondDiscard.props.onPress());
-  expect(callbacks.onDiscardIssue).toHaveBeenNthCalledWith(
-    1,
-    firstMutationId,
-  );
-  expect(callbacks.onDiscardIssue).toHaveBeenNthCalledWith(
-    2,
-    secondMutationId,
-  );
+  expect(callbacks.onDiscardIssue).toHaveBeenCalledWith(firstMutationId);
+  expect(callbacks.onRetryIssue).toHaveBeenCalledWith(secondMutationId);
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -425,6 +647,92 @@ test('place selectors preserve unknown saved places without exposing editable ra
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('place search selects cached matches and creates remote matches without showing ids', async () => {
+  const callbacks = editorCallbacks();
+  const renderer = await render(
+    <PlanItemEditorView
+      model={editorModel({
+        form: {
+          ...emptyEditorForm(),
+          destinationPlaceId: 'plc_zrh',
+          originPlaceId: '',
+          title: 'Hinreise',
+          type: 'flight',
+        },
+        placeSearch: {
+          action: null,
+          message: null,
+          query: 'Genf',
+          results: [placeCandidate()],
+          target: 'originPlaceId',
+        },
+      })}
+      {...callbacks}
+    />,
+  );
+
+  const text = textInside(renderer);
+  expect(text).toContain('Flughafen Genf auswählen');
+  expect(text).toContain('Genève-Cornavin hinzufügen');
+  expect(text).not.toContain('plc_gva');
+  expect(text).not.toContain('candidate_venue');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-origin-place-cached-result-0' })
+      .props.onPress(),
+  );
+  expect(callbacks.onChange).toHaveBeenCalledWith('originPlaceId', 'plc_gva');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-origin-place-remote-result-0' })
+      .props.onPress(),
+  );
+  expect(callbacks.onCreatePlace).toHaveBeenCalledWith('candidate_venue');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-origin-place-search-submit' })
+      .props.onPress(),
+  );
+  expect(callbacks.onSearchPlaces).toHaveBeenCalledTimes(1);
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-origin-place-search-close' })
+      .props.onPress(),
+  );
+  expect(callbacks.onClosePlaceSearch).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('remote place creation is disabled when connectivity drops', async () => {
+  const renderer = await render(
+    <PlanItemEditorView
+      model={editorModel({
+        online: false,
+        placeSearch: {
+          action: null,
+          message: null,
+          query: 'Genf',
+          results: [placeCandidate()],
+          target: 'placeId',
+        },
+      })}
+      {...editorCallbacks()}
+    />,
+  );
+
+  expect(
+    renderer.root.findByProps({
+      testID: 'plan-item-place-id-remote-result-0',
+    }).props.disabled,
+  ).toBe(true);
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('editor keeps controls reachable and labels untruncated at 200 percent text', async () => {
   setFontScale(2);
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
@@ -439,6 +747,19 @@ test('editor keeps controls reachable and labels untruncated at 200 percent text
             timeZone: 'Europe/Zurich',
             title: 'Erste gemeinsame Golfrunde',
             type: 'golf_round',
+          },
+          placeSearch: {
+            action: null,
+            message: null,
+            query: 'Alpine',
+            results: [
+              {
+                ...placeCandidate(),
+                kind: 'golf_course',
+                name: 'Alpine Golf Club mit sehr langem zugänglichem Namen',
+              },
+            ],
+            target: 'placeId',
           },
         })}
         {...editorCallbacks()}
@@ -467,6 +788,14 @@ test('editor keeps controls reachable and labels untruncated at 200 percent text
       .findAllByType(Text)
       .find(node => node.props.children === 'Flughafen Genf');
     expect(placeLabel?.props.numberOfLines).toBeUndefined();
+    const remotePlaceLabel = renderer.root
+      .findAllByType(Text)
+      .find(
+        node =>
+          node.props.children ===
+          'Alpine Golf Club mit sehr langem zugänglichem Namen hinzufügen',
+      );
+    expect(remotePlaceLabel?.props.numberOfLines).toBeUndefined();
     expect(renderer.root.findByType(ScrollView)).toBeTruthy();
     expect(
       renderer.root.findAll(
@@ -642,12 +971,16 @@ function item({
 
 function planCallbacks() {
   return {
+    onAddChildEvent: jest.fn(),
     onAddItem: jest.fn(),
     onBack: jest.fn(),
     onDiscardIssue: jest.fn(),
     onEditItem: jest.fn(),
     onOpenItem: jest.fn(),
+    onMoveChildEvent: jest.fn(),
+    onMoveItem: jest.fn(),
     onRefresh: jest.fn(),
+    onRetryIssue: jest.fn(),
     onSelectEvent: jest.fn(),
     onSelectItem: jest.fn(),
   };
@@ -669,6 +1002,13 @@ function editorModel(
     mode: 'create',
     online: true,
     phase: 'ready',
+    placeSearch: {
+      action: null,
+      message: null,
+      query: '',
+      results: [],
+      target: null,
+    },
     places: [
       { id: 'plc_gva', label: 'Flughafen Genf' },
       { id: 'plc_zrh', label: 'Flughafen Zürich' },
@@ -713,9 +1053,36 @@ function editorCallbacks() {
     onAllDayChange: jest.fn(),
     onBack: jest.fn(),
     onChange: jest.fn(),
+    onClosePlaceSearch: jest.fn(),
+    onCreatePlace: jest.fn(),
+    onOpenPlaceSearch: jest.fn(),
+    onPlaceQueryChange: jest.fn(),
     onPrimaryAction: jest.fn(),
+    onSearchPlaces: jest.fn(),
     onStatusChange: jest.fn(),
     onTypeChange: jest.fn(),
+  };
+}
+
+function placeCandidate() {
+  return {
+    attribution: 'Crew places',
+    confidence: 0.9,
+    countryCode: 'CH',
+    id: 'candidate_venue',
+    kind: 'venue' as const,
+    latitude: 46.21,
+    licenseCode: 'first-party',
+    licenseUrl: null,
+    locality: 'Genève',
+    longitude: 6.14,
+    name: 'Genève-Cornavin',
+    region: 'GE',
+    retrievedAt: '2026-07-27T08:00:00.000Z',
+    source: 'crew',
+    sourceRecordUrl: null,
+    status: 'enriched' as const,
+    version: 1,
   };
 }
 

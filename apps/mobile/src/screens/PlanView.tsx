@@ -9,7 +9,11 @@ import {
   spacing,
   typography,
 } from '../design/theme';
-import type { PlanItemSnapshot, PlanSnapshot } from './PlanRuntime';
+import type {
+  PlanItemSnapshot,
+  PlanMoveDirection,
+  PlanSnapshot,
+} from './PlanRuntime';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
 
 const icons = {
@@ -36,25 +40,33 @@ export type PlanViewModel = {
 };
 
 export type PlanViewProps = {
+  onAddChildEvent(eventId: string): void;
   model: PlanViewModel;
   onAddItem(eventId: string): void;
   onBack(): void;
   onDiscardIssue(mutationId: string): void;
   onEditItem(eventId: string, itemId: string): void;
   onOpenItem(itemId: string): void;
+  onMoveChildEvent(eventId: string, direction: PlanMoveDirection): void;
+  onMoveItem(itemId: string, direction: PlanMoveDirection): void;
   onRefresh(): void;
+  onRetryIssue(mutationId: string): void;
   onSelectEvent(eventId: string): void;
   onSelectItem(itemId: string): void;
 };
 
 export function PlanView({
   model,
+  onAddChildEvent,
   onAddItem,
   onBack,
   onDiscardIssue,
   onEditItem,
   onOpenItem,
+  onMoveChildEvent,
+  onMoveItem,
   onRefresh,
+  onRetryIssue,
   onSelectEvent,
   onSelectItem,
 }: PlanViewProps) {
@@ -115,12 +127,21 @@ export function PlanView({
   const selectedEventIds = selectedEvent
     ? eventSubtreeIds(snapshot.events, selectedEvent.id)
     : new Set<string>();
-  const items =
-    !selectedEvent || selectedEvent.depth === 0
+  const eventPositions = new Map(
+    snapshot.events.map((event, index) => [event.id, index]),
+  );
+  const items = [
+    ...(!selectedEvent || selectedEvent.depth === 0
       ? snapshot.items
       : snapshot.items.filter(item =>
           selectedEventIds.has(item.values.eventId),
-        );
+        )),
+  ].sort((left, right) => {
+    const eventPosition =
+      (eventPositions.get(left.values.eventId) ?? Number.MAX_SAFE_INTEGER) -
+      (eventPositions.get(right.values.eventId) ?? Number.MAX_SAFE_INTEGER);
+    return eventPosition || compareItemOrder(left, right);
+  });
   const manager = snapshot.canEdit;
   const selectedItem = snapshot.items.find(
     item => item.id === model.selectedItemId,
@@ -169,16 +190,25 @@ export function PlanView({
           <Text style={styles.cardTitle}>Änderungen prüfen</Text>
           <Text style={styles.body}>
             {snapshot.issues.length === 1
-              ? 'Ein Programmpunkt braucht deine Aufmerksamkeit. Deine lokale Änderung bleibt erhalten.'
-              : `${snapshot.issues.length} Programmpunkte brauchen deine Aufmerksamkeit. Deine lokalen Änderungen bleiben erhalten.`}
+              ? 'Eine lokale Änderung braucht deine Aufmerksamkeit und bleibt erhalten.'
+              : `${snapshot.issues.length} lokale Änderungen brauchen deine Aufmerksamkeit und bleiben erhalten.`}
           </Text>
           {snapshot.issues.map(issue => {
             const title =
-              issue.attempted?.title ??
-              issue.current?.title ??
-              'Unbekannter Programmpunkt';
+              issue.orderAttempted?.kind === 'plan.event-order'
+                ? 'Reihenfolge der Unterbereiche'
+                : issue.orderAttempted?.kind === 'plan.itinerary-order'
+                  ? 'Reihenfolge der Programmpunkte'
+                  : issue.eventAttempted?.title ??
+                    issue.attempted?.title ??
+                    issue.current?.title ??
+                    'Unbekannter Programmpunkt';
             const eventId =
-              issue.attempted?.eventId ?? issue.current?.eventId ?? null;
+              issue.orderAttempted?.entityId ??
+              issue.eventAttempted?.parentEventId ??
+              issue.attempted?.eventId ??
+              issue.current?.eventId ??
+              null;
             const eventTitle =
               snapshot.events.find(event => event.id === eventId)?.title ?? null;
             const context = eventTitle ? `${title} · ${eventTitle}` : title;
@@ -187,9 +217,21 @@ export function PlanView({
                 <Text style={styles.cardTitle}>{context}</Text>
                 <Text style={styles.body}>{issueLabel(issue.code)}</Text>
                 <Button
-                  accessibilityLabel={`Lokale Änderung für ${context} verwerfen`}
-                  label="Lokale Änderung verwerfen"
-                  onPress={() => onDiscardIssue(issue.mutationId)}
+                  accessibilityLabel={
+                    issue.resolution === 'retry'
+                      ? `Lokale Änderung für ${context} erneut versuchen`
+                      : `Lokale Änderung für ${context} verwerfen`
+                  }
+                  label={
+                    issue.resolution === 'retry'
+                      ? 'Erneut versuchen'
+                      : 'Lokale Änderung verwerfen'
+                  }
+                  onPress={() =>
+                    issue.resolution === 'retry'
+                      ? onRetryIssue(issue.mutationId)
+                      : onDiscardIssue(issue.mutationId)
+                  }
                   testID={`plan-discard-issue-${issue.mutationId}`}
                   variant="surface"
                 />
@@ -217,15 +259,44 @@ export function PlanView({
           auch vorgelesen.
         </Text>
         <View accessibilityRole="list" style={styles.tree}>
-          {snapshot.events.map(event => (
-            <EventTreeRow
-              event={event}
-              events={snapshot.events}
-              key={event.id}
-              onPress={() => onSelectEvent(event.id)}
-              selected={event.id === selectedEvent?.id}
-            />
-          ))}
+          {snapshot.events.map(event => {
+            const siblings = snapshot.events.filter(
+              candidate => candidate.parentEventId === event.parentEventId,
+            );
+            const orderBlocked = snapshot.issues.some(
+              issue =>
+                issue.orderAttempted?.kind === 'plan.event-order' &&
+                issue.orderAttempted.entityId === event.parentEventId,
+            );
+            const position = siblings.findIndex(
+              candidate => candidate.id === event.id,
+            );
+            return (
+              <EventTreeRow
+                canMoveDown={
+                  manager &&
+                  event.parentEventId !== null &&
+                  event.version > 0 &&
+                  !orderBlocked &&
+                  position < siblings.length - 1
+                }
+                canMoveUp={
+                  manager &&
+                  event.parentEventId !== null &&
+                  event.version > 0 &&
+                  !orderBlocked &&
+                  position > 0
+                }
+                event={event}
+                events={snapshot.events}
+                key={event.id}
+                onMove={direction => onMoveChildEvent(event.id, direction)}
+                onPress={() => onSelectEvent(event.id)}
+                selected={event.id === selectedEvent?.id}
+                showOrderControls={manager && event.parentEventId !== null}
+              />
+            );
+          })}
         </View>
       </View>
 
@@ -237,7 +308,7 @@ export function PlanView({
             </Text>
             <Text style={styles.body}>
               {selectedEvent?.depth === 0
-                ? 'Alle Programmpunkte in chronologischer Reihenfolge'
+                ? 'Alle Programmpunkte in Planreihenfolge'
                 : selectedEvent?.title ?? 'Gewählter Bereich'}
             </Text>
           </View>
@@ -253,29 +324,60 @@ export function PlanView({
             accessibilityRole={manager ? 'list' : 'radiogroup'}
             style={styles.itemList}
           >
-            {items.map(item => (
-              <PlanItemRow
-                editable={
-                  manager && item.delivery === 'clean' && item.version !== null
-                }
-                eventTitle={
-                  snapshot.events.find(
-                    event => event.id === item.values.eventId,
-                  )?.title ?? 'Event'
-                }
-                item={item}
-                key={item.id}
-                manager={manager}
-                onPress={() =>
-                  manager
-                    ? item.delivery === 'clean' && item.version !== null
-                      ? onEditItem(item.values.eventId, item.id)
-                      : onOpenItem(item.id)
-                    : onSelectItem(item.id)
-                }
-                selected={item.id === selectedItem?.id}
-              />
-            ))}
+            {items.map(item => {
+              const siblings = snapshot.items
+                .filter(
+                  candidate =>
+                    candidate.values.eventId === item.values.eventId,
+                )
+                .sort(compareItemOrder);
+              const position = siblings.findIndex(
+                candidate => candidate.id === item.id,
+              );
+              const orderReady =
+                manager &&
+                item.delivery === 'clean' &&
+                item.version !== null &&
+                !snapshot.issues.some(
+                  issue =>
+                    issue.orderAttempted?.kind === 'plan.itinerary-order' &&
+                    issue.orderAttempted.entityId === item.values.eventId,
+                ) &&
+                siblings.every(
+                  candidate =>
+                    candidate.delivery === 'clean' &&
+                    candidate.version !== null,
+                );
+              return (
+                <PlanItemRow
+                  canMoveDown={orderReady && position < siblings.length - 1}
+                  canMoveUp={orderReady && position > 0}
+                  editable={
+                    manager &&
+                    item.delivery === 'clean' &&
+                    item.version !== null
+                  }
+                  eventTitle={
+                    snapshot.events.find(
+                      event => event.id === item.values.eventId,
+                    )?.title ?? 'Event'
+                  }
+                  item={item}
+                  key={item.id}
+                  manager={manager}
+                  onMove={direction => onMoveItem(item.id, direction)}
+                  onPress={() =>
+                    manager
+                      ? item.delivery === 'clean' && item.version !== null
+                        ? onEditItem(item.values.eventId, item.id)
+                        : onOpenItem(item.id)
+                      : onSelectItem(item.id)
+                  }
+                  selected={item.id === selectedItem?.id}
+                  showOrderControls={manager && siblings.length > 1}
+                />
+              );
+            })}
           </View>
         ) : (
           <Card tone="lavender">
@@ -291,14 +393,25 @@ export function PlanView({
 
       <View style={styles.actions}>
         {manager && selectedEvent ? (
-          <Button
-            accessibilityHint={`Fügt einen Programmpunkt unter ${selectedEvent.title} hinzu.`}
-            icon={<ScreenIcon source={icons.arrowRight} />}
-            label={addLabel(selectedEvent)}
-            onPress={() => onAddItem(selectedEvent.id)}
-            testID="plan-primary-action"
-            variant="action"
-          />
+          <>
+            <Button
+              accessibilityHint={`Fügt einen Programmpunkt unter ${selectedEvent.title} hinzu.`}
+              disabled={selectedEvent.version === 0}
+              icon={<ScreenIcon source={icons.arrowRight} />}
+              label={addLabel(selectedEvent)}
+              onPress={() => onAddItem(selectedEvent.id)}
+              testID="plan-primary-action"
+              variant="action"
+            />
+            <Button
+              accessibilityHint={`Erstellt einen untergeordneten Bereich in ${selectedEvent.title}.`}
+              disabled={selectedEvent.version === 0}
+              label="Unterbereich hinzufügen"
+              onPress={() => onAddChildEvent(selectedEvent.id)}
+              testID="plan-add-child-event"
+              variant="surface"
+            />
+          </>
         ) : (
           <Button
             accessibilityHint="Öffnet den ausgewählten Programmpunkt mit Zeit, Ort und Hinweisen."
@@ -324,15 +437,23 @@ export function PlanView({
 }
 
 function EventTreeRow({
+  canMoveDown,
+  canMoveUp,
   event,
   events,
+  onMove,
   onPress,
   selected,
+  showOrderControls,
 }: {
+  canMoveDown: boolean;
+  canMoveUp: boolean;
   event: EventTreeNode;
   events: readonly EventTreeNode[];
+  onMove(direction: PlanMoveDirection): void;
   onPress(): void;
   selected: boolean;
+  showOrderControls: boolean;
 }) {
   const parent = events.find(candidate => candidate.id === event.parentEventId);
   const siblings = events.filter(
@@ -346,129 +467,191 @@ function EventTreeRow({
   const level = event.depth + 1;
   const hierarchy = parent ? `unter ${parent.title}` : 'oberste Ebene';
   return (
-    <Pressable
-      accessibilityHint="Wählt diesen Bereich für den Zeitplan."
-      accessibilityLabel={`${event.title}, ${kindLabel(
-        event.kind,
-      )}, ${eventStatusLabel(
-        event.status,
-      )}, Ebene ${level}, ${hierarchy}, Position ${position} von ${
-        siblings.length
-      }, ${childCount > 0 ? 'geöffnet' : 'ohne Unterbereiche'}`}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: childCount > 0, selected }}
-      onPress={onPress}
-      style={styles.pressable}
-      testID={`plan-event-${event.id}`}
-    >
-      {({ pressed }) => (
-        <Card
-          elevated
-          style={[
-            styles.treeCard,
-            { marginLeft: Math.min(event.depth, 3) * spacing.md },
-            selected && styles.selectedCard,
-            pressed && styles.pressedCard,
-            pressed && elevations.pressed,
-          ]}
-          tone={selected ? 'action' : 'surface'}
+    <View style={styles.orderedRow}>
+      <Pressable
+        accessibilityHint="Wählt diesen Bereich für den Zeitplan."
+        accessibilityLabel={`${event.title}, ${kindLabel(
+          event.kind,
+        )}, ${eventStatusLabel(
+          event.status,
+        )}, Ebene ${level}, ${hierarchy}, Position ${position} von ${
+          siblings.length
+        }, ${childCount > 0 ? 'geöffnet' : 'ohne Unterbereiche'}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: childCount > 0, selected }}
+        onPress={onPress}
+        style={styles.pressable}
+        testID={`plan-event-${event.id}`}
+      >
+        {({ pressed }) => (
+          <Card
+            elevated
+            style={[
+              styles.treeCard,
+              { marginLeft: Math.min(event.depth, 3) * spacing.md },
+              selected && styles.selectedCard,
+              pressed && styles.pressedCard,
+              pressed && elevations.pressed,
+            ]}
+            tone={selected ? 'action' : 'surface'}
+          >
+            <View style={styles.treeHeading}>
+              <View style={styles.roundIcon}>
+                <ScreenIcon source={eventIcon(event.kind)} />
+              </View>
+              <View style={styles.flex}>
+                <Text accessibilityRole="header" style={styles.cardTitle}>
+                  {event.title}
+                </Text>
+                <Text style={styles.caption}>
+                  Ebene {level} · {hierarchy} · {position}/{siblings.length}
+                </Text>
+                <StatusChip
+                  label={eventStatusLabel(event.status)}
+                  tone={event.status === 'cancelled' ? 'brand' : 'surface'}
+                />
+              </View>
+            </View>
+          </Card>
+        )}
+      </Pressable>
+      {showOrderControls ? (
+        <View
+          accessibilityLabel={`Reihenfolge für ${event.title}`}
+          style={styles.orderActions}
         >
-          <View style={styles.treeHeading}>
-            <View style={styles.roundIcon}>
-              <ScreenIcon source={eventIcon(event.kind)} />
-            </View>
-            <View style={styles.flex}>
-              <Text accessibilityRole="header" style={styles.cardTitle}>
-                {event.title}
-              </Text>
-              <Text style={styles.caption}>
-                Ebene {level} · {hierarchy} · {position}/{siblings.length}
-              </Text>
-              <StatusChip
-                label={eventStatusLabel(event.status)}
-                tone={event.status === 'cancelled' ? 'brand' : 'surface'}
-              />
-            </View>
-          </View>
-        </Card>
-      )}
-    </Pressable>
+          <Button
+            accessibilityHint="Verschiebt diesen Bereich innerhalb derselben Ebene."
+            accessibilityLabel={`${event.title} nach oben verschieben`}
+            disabled={!canMoveUp}
+            label="Nach oben"
+            onPress={() => onMove('up')}
+            testID={`plan-event-move-up-${event.id}`}
+            variant="surface"
+          />
+          <Button
+            accessibilityHint="Verschiebt diesen Bereich innerhalb derselben Ebene."
+            accessibilityLabel={`${event.title} nach unten verschieben`}
+            disabled={!canMoveDown}
+            label="Nach unten"
+            onPress={() => onMove('down')}
+            testID={`plan-event-move-down-${event.id}`}
+            variant="surface"
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 function PlanItemRow({
+  canMoveDown,
+  canMoveUp,
   editable,
   eventTitle,
   item,
   manager,
+  onMove,
   onPress,
   selected,
+  showOrderControls,
 }: {
+  canMoveDown: boolean;
+  canMoveUp: boolean;
   editable: boolean;
   eventTitle: string;
   item: PlanItemSnapshot;
   manager: boolean;
+  onMove(direction: PlanMoveDirection): void;
   onPress(): void;
   selected: boolean;
+  showOrderControls: boolean;
 }) {
   const type = item.values.details.type;
   const time = itemTime(item);
   const state = itemStateLabel(item);
   return (
-    <Pressable
-      accessibilityHint={
-        manager
-          ? editable
-            ? 'Öffnet diesen Programmpunkt zum Bearbeiten.'
-            : 'Öffnet den lokal gespeicherten Programmpunkt ohne weitere Änderung.'
-          : 'Wählt diesen Programmpunkt. Öffne ihn danach mit der Hauptaktion.'
-      }
-      accessibilityLabel={`${time}. ${item.values.title}. ${typeLabel(
-        type,
-      )}. ${eventTitle}. ${state}.`}
-      accessibilityRole={manager ? 'button' : 'radio'}
-      accessibilityState={manager ? undefined : { checked: selected }}
-      onPress={onPress}
-      style={styles.pressable}
-      testID={`plan-item-${item.id}`}
-    >
-      {({ pressed }) => (
-        <Card
-          elevated
-          style={[
-            styles.itemCard,
-            selected && styles.selectedCard,
-            pressed && styles.pressedCard,
-            pressed && elevations.pressed,
-          ]}
-          tone={selected ? 'action' : itemTone(item)}
+    <View style={styles.orderedRow}>
+      <Pressable
+        accessibilityHint={
+          manager
+            ? editable
+              ? 'Öffnet diesen Programmpunkt zum Bearbeiten.'
+              : 'Öffnet den lokal gespeicherten Programmpunkt ohne weitere Änderung.'
+            : 'Wählt diesen Programmpunkt. Öffne ihn danach mit der Hauptaktion.'
+        }
+        accessibilityLabel={`${time}. ${item.values.title}. ${typeLabel(
+          type,
+        )}. ${eventTitle}. ${state}.`}
+        accessibilityRole={manager ? 'button' : 'radio'}
+        accessibilityState={manager ? undefined : { checked: selected }}
+        onPress={onPress}
+        style={styles.pressable}
+        testID={`plan-item-${item.id}`}
+      >
+        {({ pressed }) => (
+          <Card
+            elevated
+            style={[
+              styles.itemCard,
+              selected && styles.selectedCard,
+              pressed && styles.pressedCard,
+              pressed && elevations.pressed,
+            ]}
+            tone={selected ? 'action' : itemTone(item)}
+          >
+            <View style={styles.itemHeading}>
+              <View style={styles.roundIcon}>
+                <ScreenIcon source={itemIcon(type)} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.itemTime}>{time}</Text>
+                <Text style={styles.cardTitle}>{item.values.title}</Text>
+                <Text style={styles.caption}>
+                  {eventTitle} · {typeLabel(type)} · {item.values.timeZone}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.metaRow}>
+              <StatusChip label={state} tone={itemTone(item)} />
+              {manager ? (
+                <StatusChip
+                  label={editable ? 'Bearbeiten' : 'Details'}
+                  tone="surface"
+                />
+              ) : selected ? (
+                <StatusChip label="Ausgewählt" tone="brand" />
+              ) : null}
+            </View>
+          </Card>
+        )}
+      </Pressable>
+      {showOrderControls ? (
+        <View
+          accessibilityLabel={`Reihenfolge für ${item.values.title}`}
+          style={styles.orderActions}
         >
-          <View style={styles.itemHeading}>
-            <View style={styles.roundIcon}>
-              <ScreenIcon source={itemIcon(type)} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={styles.itemTime}>{time}</Text>
-              <Text style={styles.cardTitle}>{item.values.title}</Text>
-              <Text style={styles.caption}>
-                {eventTitle} · {typeLabel(type)} · {item.values.timeZone}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.metaRow}>
-            <StatusChip label={state} tone={itemTone(item)} />
-            {manager ? (
-              <StatusChip
-                label={editable ? 'Bearbeiten' : 'Details'}
-                tone="surface"
-              />
-            ) : selected ? (
-              <StatusChip label="Ausgewählt" tone="brand" />
-            ) : null}
-          </View>
-        </Card>
-      )}
-    </Pressable>
+          <Button
+            accessibilityHint={`Verschiebt den Programmpunkt innerhalb von ${eventTitle}.`}
+            accessibilityLabel={`${item.values.title} nach oben verschieben`}
+            disabled={!canMoveUp}
+            label="Nach oben"
+            onPress={() => onMove('up')}
+            testID={`plan-item-move-up-${item.id}`}
+            variant="surface"
+          />
+          <Button
+            accessibilityHint={`Verschiebt den Programmpunkt innerhalb von ${eventTitle}.`}
+            accessibilityLabel={`${item.values.title} nach unten verschieben`}
+            disabled={!canMoveDown}
+            label="Nach unten"
+            onPress={() => onMove('down')}
+            testID={`plan-item-move-down-${item.id}`}
+            variant="surface"
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -627,6 +810,18 @@ function itemIcon(type: PlanItemSnapshot['values']['details']['type']) {
   return icons.calendar;
 }
 
+function compareItemOrder(left: PlanItemSnapshot, right: PlanItemSnapshot) {
+  if (left.sortKey !== right.sortKey) {
+    if (left.sortKey === null) return 1;
+    if (right.sortKey === null) return -1;
+    return (
+      left.sortKey.length - right.sortKey.length ||
+      left.sortKey.localeCompare(right.sortKey)
+    );
+  }
+  return left.id.localeCompare(right.id);
+}
+
 const styles = StyleSheet.create({
   actions: {
     gap: spacing.md,
@@ -671,6 +866,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  orderActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginLeft: spacing.md,
+  },
+  orderedRow: {
     gap: spacing.sm,
   },
   pressedCard: {

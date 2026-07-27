@@ -97,10 +97,7 @@ beforeEach(() => {
   mockListEventTree.mockImplementation(async () => localEvents);
   mockListMemberships.mockImplementation(async () => localMemberships);
   mockPutDraft.mockImplementation(async (draft: DraftRecord) => {
-    localDrafts = [
-      ...localDrafts.filter(item => item.id !== draft.id),
-      draft,
-    ];
+    localDrafts = [...localDrafts.filter(item => item.id !== draft.id), draft];
   });
 });
 
@@ -194,7 +191,9 @@ test('restores the exact template capability with baseVersion zero and refetches
   });
   const runtime = makeRuntime({ requestAsUser });
 
-  await expect(runtime.restoreCapability(capabilityIntent)).resolves.toMatchObject({
+  await expect(
+    runtime.restoreCapability(capabilityIntent),
+  ).resolves.toMatchObject({
     blockerActive: false,
     source: 'online',
   });
@@ -293,6 +292,61 @@ test('replays the same place identity after capability conflict and finishes saf
   expect(placeRequests[0]?.body.id).toBe(`plc_${'a'.repeat(40)}`);
   expect(placeRequests[1]?.body.id).toBe(placeRequests[0]?.body.id);
   expect(placeRequests[1]?.headers).toEqual(placeRequests[0]?.headers);
+});
+
+test('reuses manager-gated search and deterministic place creation outside setup recovery', async () => {
+  const venue = {
+    ...candidate(),
+    id: 'candidate_venue',
+    kind: 'venue' as const,
+    name: 'Kongresshaus Zürich',
+  };
+  const requestAsUser = jest.fn(async (_subject, operationId, options) => {
+    if (operationId === 'placesSearch') {
+      return response({
+        items: [venue],
+        pageInfo: { hasMore: false, nextCursor: null },
+      });
+    }
+    if (operationId === 'eventPlacesCreate') {
+      return response({
+        place: remotePlace(options.body.id, options.body.name),
+      });
+    }
+    return onlineResponse(operationId, {
+      blocker: placeIntent,
+      capabilities: [remoteGolfCapability(3)],
+      revision: '12',
+    });
+  });
+  const runtime = makeRuntime({ requestAsUser });
+
+  await expect(
+    runtime.searchEventPlaces(rootEventId, 'venue', '  Zürich  '),
+  ).resolves.toEqual([venue]);
+  await expect(
+    runtime.createEventPlace(rootEventId, venue),
+  ).resolves.toMatchObject({
+    id: `plc_${'b'.repeat(40)}`,
+    name: 'Kongresshaus Zürich',
+    rootEventId,
+  });
+
+  expect(requestAsUser).toHaveBeenCalledWith(subject, 'placesSearch', {
+    query: { kind: 'venue', limit: 20, q: 'Zürich' },
+  });
+  expect(requestAsUser).toHaveBeenCalledWith(
+    subject,
+    'eventPlacesCreate',
+    expect.objectContaining({
+      body: expect.objectContaining({
+        id: `plc_${'b'.repeat(40)}`,
+        name: 'Kongresshaus Zürich',
+      }),
+      headers: { 'idempotency-key': `place-${'b'.repeat(48)}` },
+      path: { rootEventId },
+    }),
+  );
 });
 
 test('uses one stable enrichment command and accepts pending facts before confirmed details', async () => {
@@ -465,7 +519,10 @@ test('persists caller-stable template child IDs and command identity across a co
     return onlineResponse(operationId, {
       blocker: adopted ? null : templateIntent,
       capabilities: adopted
-        ? [remoteTravelCapability(1), remoteGolfCapability(1, null, adoptedRoundId)]
+        ? [
+            remoteTravelCapability(1),
+            remoteGolfCapability(1, null, adoptedRoundId),
+          ]
         : [],
       events: adopted
         ? [
@@ -486,19 +543,13 @@ test('persists caller-stable template child IDs and command identity across a co
   });
 
   await expect(
-    makeRuntime({ requestAsUser }).adoptTemplate(
-      templateIntent,
-      'golf-tour',
-    ),
+    makeRuntime({ requestAsUser }).adoptTemplate(templateIntent, 'golf-tour'),
   ).rejects.toBeInstanceOf(EventSetupRecoveryConflictError);
   expect(localDrafts).toHaveLength(1);
   expect(mockSecureUuid).toHaveBeenCalledTimes(1);
 
   await expect(
-    makeRuntime({ requestAsUser }).adoptTemplate(
-      templateIntent,
-      'golf-tour',
-    ),
+    makeRuntime({ requestAsUser }).adoptTemplate(templateIntent, 'golf-tour'),
   ).resolves.toMatchObject({
     blockerActive: false,
     template: 'golf-tour',
@@ -569,9 +620,7 @@ test('keeps the template draft when the refreshed adopted tree violates any blue
       }
       return onlineResponse(operationId, {
         blocker: adopted ? null : templateIntent,
-        capabilities: adopted
-          ? [remoteTravelCapability(1), golf]
-          : [],
+        capabilities: adopted ? [remoteTravelCapability(1), golf] : [],
         events: adopted
           ? [remoteEvent(rootEventId, null, 'trip', 'Golf Weekend', 8), child]
           : undefined,
@@ -581,10 +630,7 @@ test('keeps the template draft when the refreshed adopted tree violates any blue
     });
 
     await expect(
-      makeRuntime({ requestAsUser }).adoptTemplate(
-        templateIntent,
-        'golf-tour',
-      ),
+      makeRuntime({ requestAsUser }).adoptTemplate(templateIntent, 'golf-tour'),
     ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
     expect(localDrafts).toHaveLength(1);
   }
@@ -621,7 +667,9 @@ test('stops between place creation and capability write after an account switch'
   const requestAsUser = jest.fn(async (_subject, operationId, options) => {
     if (operationId === 'eventPlacesCreate') {
       activeAccount = accountB;
-      return response({ place: remotePlace(options.body.id, options.body.name) });
+      return response({
+        place: remotePlace(options.body.id, options.body.name),
+      });
     }
     return onlineResponse(operationId, {
       blocker: placeIntent,
@@ -633,7 +681,9 @@ test('stops between place creation and capability write after an account switch'
     makeRuntime({ requestAsUser }).bindPrimaryPlace(placeIntent, candidate()),
   ).rejects.toBeInstanceOf(EventSetupRecoveryAccountChangedError);
   expect(
-    requestAsUser.mock.calls.filter(call => call[1] === 'eventCapabilitiesReplace'),
+    requestAsUser.mock.calls.filter(
+      call => call[1] === 'eventCapabilitiesReplace',
+    ),
   ).toHaveLength(0);
 });
 
@@ -665,7 +715,9 @@ test('rejects a session switch, two stale tree/readiness pairs, and cross-root d
   await expect(
     makeRuntime({ requestAsUser: stale }).refresh(placeIntent),
   ).rejects.toBeInstanceOf(EventSetupRecoveryConflictError);
-  expect(stale.mock.calls.filter(call => call[1] === 'eventsTreeGet')).toHaveLength(2);
+  expect(
+    stale.mock.calls.filter(call => call[1] === 'eventsTreeGet'),
+  ).toHaveLength(2);
 
   const crossRoot = jest.fn(async (_subject, operationId) => {
     const result = onlineResponse(operationId, {
@@ -750,7 +802,9 @@ test('rejects malformed place confirmation and invalid candidates before capabil
     runtime.bindPrimaryPlace(placeIntent, candidate()),
   ).rejects.toBeInstanceOf(EventSetupRecoveryUnavailableError);
   expect(
-    requestAsUser.mock.calls.filter(call => call[1] === 'eventCapabilitiesReplace'),
+    requestAsUser.mock.calls.filter(
+      call => call[1] === 'eventCapabilitiesReplace',
+    ),
   ).toHaveLength(0);
 
   await expect(
@@ -775,23 +829,21 @@ test('rejects malformed place confirmation and invalid candidates before capabil
     { longitude: 7.45 },
     { version: 2 },
   ]) {
-    const malformedRequest = jest.fn(
-      async (_subject, operationId, options) => {
-        if (operationId === 'eventPlacesCreate') {
-          return response({
-            place: {
-              ...remotePlace(options.body.id, options.body.name),
-              ...malformed,
-            },
-          });
-        }
-        return onlineResponse(operationId, {
-          blocker: placeIntent,
-          capabilities: [remoteGolfCapability(3)],
-          revision: '12',
+    const malformedRequest = jest.fn(async (_subject, operationId, options) => {
+      if (operationId === 'eventPlacesCreate') {
+        return response({
+          place: {
+            ...remotePlace(options.body.id, options.body.name),
+            ...malformed,
+          },
         });
-      },
-    );
+      }
+      return onlineResponse(operationId, {
+        blocker: placeIntent,
+        capabilities: [remoteGolfCapability(3)],
+        revision: '12',
+      });
+    });
     await expect(
       makeRuntime({ requestAsUser: malformedRequest }).bindPrimaryPlace(
         placeIntent,
@@ -840,9 +892,9 @@ test('treats another client resolving template, capability or place as conflict 
   );
   const runtime = makeRuntime({ requestAsUser });
 
-  await expect(runtime.restoreCapability(capabilityIntent)).rejects.toBeInstanceOf(
-    EventSetupRecoveryConflictError,
-  );
+  await expect(
+    runtime.restoreCapability(capabilityIntent),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryConflictError);
   await expect(
     runtime.searchPlaces(placeIntent, 'Existing course'),
   ).rejects.toBeInstanceOf(EventSetupRecoveryConflictError);
@@ -868,9 +920,9 @@ test('treats another client resolving template, capability or place as conflict 
 test('never searches, creates, replaces or queues while offline', async () => {
   const requestAsUser = jest.fn();
   const runtime = makeRuntime({ online: false, requestAsUser });
-  await expect(runtime.searchPlaces(placeIntent, 'Golf')).rejects.toBeInstanceOf(
-    EventSetupRecoveryOnlineRequiredError,
-  );
+  await expect(
+    runtime.searchPlaces(placeIntent, 'Golf'),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
   await expect(
     runtime.createPlaceEnrichment(placeIntent, candidate()),
   ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
@@ -888,9 +940,9 @@ test('never searches, creates, replaces or queues while offline', async () => {
       enrichmentProjection('retry', null),
     ),
   ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
-  await expect(runtime.restoreCapability(capabilityIntent)).rejects.toBeInstanceOf(
-    EventSetupRecoveryOnlineRequiredError,
-  );
+  await expect(
+    runtime.restoreCapability(capabilityIntent),
+  ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);
   await expect(
     runtime.bindPrimaryPlace(placeIntent, candidate()),
   ).rejects.toBeInstanceOf(EventSetupRecoveryOnlineRequiredError);

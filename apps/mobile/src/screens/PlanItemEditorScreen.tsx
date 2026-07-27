@@ -8,6 +8,16 @@ import {
 import type { RootStackParamList } from '../navigation/types';
 import { validateEventBasicsForm } from './EventBasicsScreen';
 import {
+  EventSetupRecoveryAccountChangedError,
+  EventSetupRecoveryBusyError,
+  EventSetupRecoveryConnectionError,
+  EventSetupRecoveryManagerRequiredError,
+  EventSetupRecoveryOnlineRequiredError,
+  EventSetupRecoveryRuntime,
+  EventSetupRecoveryUnavailableError,
+  type EventSetupPlaceCandidate,
+} from './EventSetupRecoveryRuntime';
+import {
   PlanAccountChangedError,
   PlanManagerRequiredError,
   PlanPendingError,
@@ -22,6 +32,7 @@ import {
   PlanItemEditorView,
   type PlanItemEditorField,
   type PlanItemEditorForm,
+  type PlanItemPlaceField,
   type PlanItemEditorViewModel,
   type PlanItemStatus,
   type PlanItemType,
@@ -32,6 +43,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PlanItemEditor'>;
 
 const eventIdPattern = /^evt_[A-Za-z0-9._:-]{1,96}$/;
 const itemIdPattern = /^iti_[A-Za-z0-9._:-]{1,96}$/;
+const accountIdPattern = /^usr_[a-f0-9]{32}$/;
 
 type ReadyState = {
   baseline: PlanItemEditorForm;
@@ -44,6 +56,11 @@ type ReadyState = {
   key: string;
   message: string | null;
   phase: 'ready';
+  placeAction: 'create' | 'search' | null;
+  placeMessage: string | null;
+  placeQuery: string;
+  placeResults: readonly EventSetupPlaceCandidate[];
+  placeTarget: PlanItemPlaceField | null;
   refreshing: boolean;
   saved: boolean;
   snapshot: PlanSnapshot;
@@ -70,6 +87,7 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
   const scopeKey =
     lifecycle.status === 'ready' &&
     lifecycle.accountId === privateDatabase.accountId &&
+    accountIdPattern.test(privateDatabase.accountId) &&
     eventIdPattern.test(rootEventId) &&
     eventIdPattern.test(eventId) &&
     (!itemId || itemIdPattern.test(itemId))
@@ -87,19 +105,23 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const saveFlightRef = useRef<Promise<void> | null>(null);
-  const runtime = useMemo(
-    () =>
-      scopeKey
-        ? new PlanRuntime({
-            accountUserId: privateDatabase.accountId,
-            activeAccountUserId: () => activeAccountRef.current,
-            client,
-            database: privateDatabase.database,
-            isOnline: () => onlineRef.current,
-          })
-        : null,
-    [client, privateDatabase.accountId, privateDatabase.database, scopeKey],
-  );
+  const placeFlightRef = useRef<Promise<void> | null>(null);
+  const runtimes = useMemo(() => {
+    if (!scopeKey) return null;
+    const options = {
+      accountUserId: privateDatabase.accountId,
+      activeAccountUserId: () => activeAccountRef.current,
+      client,
+      database: privateDatabase.database,
+      isOnline: () => onlineRef.current,
+    };
+    return {
+      plan: new PlanRuntime(options),
+      places: new EventSetupRecoveryRuntime(options),
+    };
+  }, [client, privateDatabase.accountId, privateDatabase.database, scopeKey]);
+  const runtime = runtimes?.plan ?? null;
+  const placeRuntime = runtimes?.places ?? null;
 
   const publish = useCallback(
     (next: EditorState) => {
@@ -119,6 +141,7 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     saveFlightRef.current = null;
+    placeFlightRef.current = null;
   }, [scopeKey]);
 
   useEffect(() => {
@@ -244,6 +267,9 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       const form = { ...current.form, [field]: value };
       publish({
         ...current,
+        ...(isPlaceField(field) && current.placeTarget === field
+          ? emptyPlaceSearch()
+          : {}),
         errors: validateForm(form).errors,
         form,
         message: null,
@@ -271,12 +297,264 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       const form = { ...current.form, ...changes };
       publish({
         ...current,
+        ...(changes.type ? emptyPlaceSearch() : {}),
         errors: validateForm(form).errors,
         form,
         message: null,
       });
     },
     [publish, scopeKey],
+  );
+
+  const openPlaceSearch = useCallback(
+    (target: PlanItemPlaceField) => {
+      const current = stateRef.current;
+      if (
+        !scopeKey ||
+        current.phase !== 'ready' ||
+        current.key !== scopeKey ||
+        current.busy ||
+        current.refreshing ||
+        current.saved ||
+        (current.issue !== null && current.issue !== 'conflict') ||
+        current.delivery === 'syncing' ||
+        current.delivery === 'attention' ||
+        placeFlightRef.current
+      ) {
+        return;
+      }
+      publish({
+        ...current,
+        ...emptyPlaceSearch(),
+        placeTarget: target,
+      });
+    },
+    [publish, scopeKey],
+  );
+
+  const closePlaceSearch = useCallback(() => {
+    const current = stateRef.current;
+    if (
+      current.phase === 'ready' &&
+      current.key === scopeKey &&
+      !placeFlightRef.current
+    ) {
+      publish({ ...current, ...emptyPlaceSearch() });
+    }
+  }, [publish, scopeKey]);
+
+  const changePlaceQuery = useCallback(
+    (value: string) => {
+      const current = stateRef.current;
+      if (
+        current.phase !== 'ready' ||
+        current.key !== scopeKey ||
+        !current.placeTarget ||
+        current.placeAction ||
+        value.length > 120
+      ) {
+        return;
+      }
+      publish({
+        ...current,
+        placeMessage: null,
+        placeQuery: value,
+        placeResults: [],
+      });
+    },
+    [publish, scopeKey],
+  );
+
+  const searchPlaces = useCallback(() => {
+    const current = stateRef.current;
+    const query = current.phase === 'ready' ? current.placeQuery.trim() : '';
+    if (
+      !placeRuntime ||
+      !scopeKey ||
+      current.phase !== 'ready' ||
+      current.key !== scopeKey ||
+      !current.placeTarget ||
+      current.placeAction ||
+      !onlineRef.current ||
+      !query ||
+      placeFlightRef.current
+    ) {
+      return;
+    }
+    const target = current.placeTarget;
+    const kind = placeSearchKind(current.form.type, target);
+    publish({ ...current, placeAction: 'search', placeMessage: null });
+    const flight = placeRuntime
+      .searchEventPlaces(rootEventId, kind, query)
+      .then(
+        results => {
+          const latest = stateRef.current;
+          if (
+            latest.phase !== 'ready' ||
+            latest.key !== scopeKey ||
+            latest.placeTarget !== target
+          ) {
+            return;
+          }
+          publish({
+            ...latest,
+            placeAction: null,
+            placeMessage:
+              results.length === 0
+                ? 'Keine neuen passenden Orte gefunden. Gespeicherte Treffer bleiben wählbar.'
+                : null,
+            placeResults: results,
+          });
+        },
+        error => {
+          if (concealsPlaceSearch(error)) {
+            publish({ key: scopeKey, message: null, phase: 'concealed' });
+            return;
+          }
+          const latest = stateRef.current;
+          if (
+            latest.phase === 'ready' &&
+            latest.key === scopeKey &&
+            latest.placeTarget === target
+          ) {
+            publish({
+              ...latest,
+              placeAction: null,
+              placeMessage: placeSearchMessage(error),
+              placeResults: [],
+            });
+          }
+        },
+      );
+    placeFlightRef.current = flight;
+    const clear = () => {
+      if (placeFlightRef.current === flight) placeFlightRef.current = null;
+    };
+    flight.then(clear, clear);
+  }, [placeRuntime, publish, rootEventId, scopeKey]);
+
+  const createPlace = useCallback(
+    (candidateId: string) => {
+      const current = stateRef.current;
+      const candidate =
+        current.phase === 'ready'
+          ? current.placeResults.find(result => result.id === candidateId)
+          : null;
+      if (
+        !runtime ||
+        !placeRuntime ||
+        !scopeKey ||
+        current.phase !== 'ready' ||
+        current.key !== scopeKey ||
+        !current.placeTarget ||
+        current.placeAction ||
+        !onlineRef.current ||
+        !candidate ||
+        placeFlightRef.current
+      ) {
+        return;
+      }
+      const target = current.placeTarget;
+      const previousItem = itemId
+        ? current.snapshot.items.find(item => item.id === itemId)
+        : null;
+      let created = false;
+      publish({ ...current, placeAction: 'create', placeMessage: null });
+      const flight = (async () => {
+        try {
+          const place = await placeRuntime.createEventPlace(
+            rootEventId,
+            candidate,
+          );
+          created = true;
+          const snapshot = await runtime.refresh(rootEventId);
+          const confirmed = snapshot.places.find(
+            item => item.id === place.id && item.name === place.name,
+          );
+          const refreshedItem = itemId
+            ? snapshot.items.find(item => item.id === itemId)
+            : null;
+          if (
+            !snapshot.canEdit ||
+            !confirmed ||
+            (itemId &&
+              (!previousItem ||
+                !refreshedItem ||
+                refreshedItem.values.eventId !== eventId))
+          ) {
+            throw new EventSetupRecoveryUnavailableError();
+          }
+          const latest = stateRef.current;
+          if (
+            latest.phase !== 'ready' ||
+            latest.key !== scopeKey ||
+            latest.placeTarget !== target
+          ) {
+            return;
+          }
+          const form = { ...latest.form, [target]: confirmed.id };
+          const refreshedIssue = itemId
+            ? snapshot.issues.find(issue => issue.itemId === itemId) ?? null
+            : null;
+          const serverChanged = Boolean(
+            previousItem &&
+              refreshedItem &&
+              (previousItem.version !== refreshedItem.version ||
+                !sameForm(
+                  formFromValues(previousItem.values),
+                  formFromValues(refreshedItem.values),
+                )),
+          );
+          const issue =
+            refreshedIssue?.code ??
+            (serverChanged ? ('conflict' as const) : latest.issue);
+          publish({
+            ...latest,
+            ...emptyPlaceSearch(),
+            baseline:
+              serverChanged && refreshedItem
+                ? formFromValues(refreshedItem.values)
+                : latest.baseline,
+            errors: validateForm(form).errors,
+            form,
+            issue,
+            message:
+              serverChanged || refreshedIssue
+                ? `${confirmed.name} wurde ausgewählt. ${issueMessage(
+                    issue ?? 'conflict',
+                    Boolean(refreshedItem),
+                  )}`
+                : `${confirmed.name} wurde im Event gespeichert und ausgewählt.`,
+            snapshot,
+          });
+        } catch (error) {
+          if (concealsPlaceSearch(error)) {
+            publish({ key: scopeKey, message: null, phase: 'concealed' });
+            return;
+          }
+          const latest = stateRef.current;
+          if (
+            latest.phase === 'ready' &&
+            latest.key === scopeKey &&
+            latest.placeTarget === target
+          ) {
+            publish({
+              ...latest,
+              placeAction: null,
+              placeMessage: created
+                ? 'Der Ort wurde angelegt, aber der aktuelle Planstand konnte nicht bestätigt werden. Suche erneut; es wird nichts doppelt angelegt.'
+                : placeSearchMessage(error),
+            });
+          }
+        }
+      })();
+      placeFlightRef.current = flight;
+      const clear = () => {
+        if (placeFlightRef.current === flight) placeFlightRef.current = null;
+      };
+      flight.then(clear, clear);
+    },
+    [eventId, itemId, placeRuntime, publish, rootEventId, runtime, scopeKey],
   );
 
   const save = useCallback(() => {
@@ -290,7 +568,8 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       current.refreshing ||
       current.saved ||
       (current.issue !== null && current.issue !== 'conflict') ||
-      saveFlightRef.current
+      saveFlightRef.current ||
+      placeFlightRef.current
     ) {
       return;
     }
@@ -299,27 +578,30 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       publish({ ...current, errors: validation.errors });
       return;
     }
-    const previousItemIds = new Set(current.snapshot.items.map(item => item.id));
+    const previousItemIds = new Set(
+      current.snapshot.items.map(item => item.id),
+    );
     const previousIssueIds = new Set(
       current.snapshot.issues.map(issue => issue.mutationId),
     );
     publish({ ...current, busy: true, message: null });
-    const flight = (itemId
-      ? runtime.updateItem(rootEventId, itemId, {
-          allDay: validation.values.allDay,
-          details: validation.values.details,
-          endsAt: validation.values.endsAt,
-          notes: validation.values.notes,
-          placeId: validation.values.placeId,
-          startsAt: validation.values.startsAt,
-          status: validation.values.status,
-          timeZone: validation.values.timeZone,
-          title: validation.values.title,
-        })
-      : runtime.createItem(rootEventId, {
-          ...validation.values,
-          eventId,
-        })
+    const flight = (
+      itemId
+        ? runtime.updateItem(rootEventId, itemId, {
+            allDay: validation.values.allDay,
+            details: validation.values.details,
+            endsAt: validation.values.endsAt,
+            notes: validation.values.notes,
+            placeId: validation.values.placeId,
+            startsAt: validation.values.startsAt,
+            status: validation.values.status,
+            timeZone: validation.values.timeZone,
+            title: validation.values.title,
+          })
+        : runtime.createItem(rootEventId, {
+            ...validation.values,
+            eventId,
+          })
     ).then(
       snapshot => {
         const savedItem = itemId
@@ -361,6 +643,7 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
             ? issueMessage(issue.code, Boolean(savedItem))
             : saveMessage(delivery),
           phase: 'ready',
+          ...emptyPlaceSearch(),
           refreshing: false,
           saved: !issue,
           snapshot,
@@ -399,7 +682,11 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       : scopeKey
       ? { key: scopeKey, message: null, phase: 'loading' }
       : { key: '', message: null, phase: 'concealed' };
-  const model = editorViewModel(visibleState, online, itemId ? 'edit' : 'create');
+  const model = editorViewModel(
+    visibleState,
+    online,
+    itemId ? 'edit' : 'create',
+  );
   const back = () => {
     const current = stateRef.current;
     if (current.phase === 'ready' && current.saved) {
@@ -416,7 +703,12 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
       onAllDayChange={value => updateForm({ allDay: value })}
       onBack={back}
       onChange={change}
+      onClosePlaceSearch={closePlaceSearch}
+      onCreatePlace={createPlace}
+      onOpenPlaceSearch={openPlaceSearch}
+      onPlaceQueryChange={changePlaceQuery}
       onPrimaryAction={save}
+      onSearchPlaces={searchPlaces}
       onStatusChange={(status: PlanItemStatus) => updateForm({ status })}
       onTypeChange={(type: PlanItemType) => updateForm({ type })}
     />
@@ -460,6 +752,7 @@ function readyState(
     key,
     message,
     phase: 'ready',
+    ...emptyPlaceSearch(),
     refreshing: false,
     saved: false,
     snapshot,
@@ -485,6 +778,13 @@ function editorViewModel(
       mode,
       online,
       phase: state.phase,
+      placeSearch: {
+        action: null,
+        message: null,
+        query: '',
+        results: [],
+        target: null,
+      },
       places: [],
       refreshing: false,
       role: null,
@@ -507,6 +807,13 @@ function editorViewModel(
     mode,
     online,
     phase: 'ready',
+    placeSearch: {
+      action: state.placeAction,
+      message: state.placeMessage,
+      query: state.placeQuery,
+      results: state.placeResults,
+      target: state.placeTarget,
+    },
     places: state.snapshot.places.map(place => ({
       id: place.id,
       label: [place.name, place.locality].filter(Boolean).join(', '),
@@ -677,11 +984,7 @@ function detailsFromForm(
     if (!form.golfRoundReference.trim()) {
       errors.golfRoundReference = 'Gib eine Rundenreferenz an.';
     }
-    const teeTime = validateDatePair(
-      form.golfTeeTime,
-      '',
-      form.timeZone,
-    );
+    const teeTime = validateDatePair(form.golfTeeTime, '', form.timeZone);
     if (!form.golfTeeTime.trim()) {
       errors.golfTeeTime = 'Gib die Tee-Time an.';
     } else if (teeTime.startsError) {
@@ -777,10 +1080,7 @@ function formFromValues(values: PlanItemValues): PlanItemEditorForm {
   return form;
 }
 
-function emptyForm(
-  type: PlanItemType,
-  timeZone: string,
-): PlanItemEditorForm {
+function emptyForm(type: PlanItemType, timeZone: string): PlanItemEditorForm {
   return {
     activityBookingReference: '',
     allDay: false,
@@ -808,7 +1108,9 @@ function emptyForm(
   };
 }
 
-function defaultType(kind: PlanSnapshot['events'][number]['kind']): PlanItemType {
+function defaultType(
+  kind: PlanSnapshot['events'][number]['kind'],
+): PlanItemType {
   if (kind === 'golf') return 'golf_round';
   if (kind === 'session' || kind === 'team_event') return 'session';
   if (kind === 'activity') return 'activity';
@@ -840,6 +1142,58 @@ function formatLocalInstant(value: string | null, timeZone: string) {
 
 function sameForm(left: PlanItemEditorForm, right: PlanItemEditorForm) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function emptyPlaceSearch(): Pick<
+  ReadyState,
+  'placeAction' | 'placeMessage' | 'placeQuery' | 'placeResults' | 'placeTarget'
+> {
+  return {
+    placeAction: null,
+    placeMessage: null,
+    placeQuery: '',
+    placeResults: [],
+    placeTarget: null,
+  };
+}
+
+function isPlaceField(field: PlanItemEditorField): field is PlanItemPlaceField {
+  return (
+    field === 'placeId' ||
+    field === 'originPlaceId' ||
+    field === 'destinationPlaceId'
+  );
+}
+
+function placeSearchKind(
+  type: PlanItemType,
+  target: PlanItemPlaceField,
+): 'golf_course' | 'venue' {
+  return type === 'golf_round' && target === 'placeId'
+    ? 'golf_course'
+    : 'venue';
+}
+
+function placeSearchMessage(error: unknown) {
+  if (error instanceof EventSetupRecoveryOnlineRequiredError) {
+    return 'Neue Orte brauchen eine Verbindung. Bereits gespeicherte Orte bleiben wählbar.';
+  }
+  if (error instanceof EventSetupRecoveryBusyError) {
+    return 'Ein Ort wird bereits sicher verarbeitet.';
+  }
+  if (error instanceof EventSetupRecoveryConnectionError) {
+    return 'Die Ortssuche konnte nicht bestätigt werden. Deine Eingaben bleiben erhalten.';
+  }
+  return 'Kein neuer Ort wurde bestätigt. Deine Eingaben bleiben erhalten.';
+}
+
+function concealsPlaceSearch(error: unknown) {
+  return (
+    concealsEditor(error) ||
+    error instanceof EventSetupRecoveryAccountChangedError ||
+    error instanceof EventSetupRecoveryManagerRequiredError ||
+    error instanceof EventSetupRecoveryUnavailableError
+  );
 }
 
 function saveMessage(delivery: ReadyState['delivery']) {

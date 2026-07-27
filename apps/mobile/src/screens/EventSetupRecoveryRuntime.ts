@@ -39,7 +39,8 @@ export type EventSetupRecoveryIntent = {
 
 type EventTree = GatewayResponseData<'eventsTreeGet'>;
 type RemoteCapability = EventTree['capabilities'][number];
-type CapabilityInput = GatewayRequest<'eventCapabilitiesReplace'>['body']['capability'];
+type CapabilityInput =
+  GatewayRequest<'eventCapabilitiesReplace'>['body']['capability'];
 type RemotePlace = GatewayResponseData<'eventPlacesList'>['items'][number];
 type Readiness = GatewayResponseData<'eventPublishReadinessGet'>;
 type Template = GatewayResponseData<'eventTemplatesList'>['templates'][number];
@@ -51,6 +52,11 @@ type TemplateAdoptionExpectation = {
 
 export type EventSetupPlaceCandidate =
   GatewayResponseData<'placesSearch'>['items'][number];
+
+export type EventSetupPlaceKind = EventSetupPlaceCandidate['kind'];
+
+export type EventSetupEventPlace =
+  GatewayResponseData<'eventPlacesCreate'>['place'];
 
 export type EventSetupPlaceEnrichment =
   GatewayResponseData<'placeEnrichmentJobsCreate'>;
@@ -270,26 +276,48 @@ WHERE account_user_id = ? AND root_event_id = ?`,
     if (intent.code !== 'EVENT_CAPABILITY_PLACE_REQUIRED') {
       throw new EventSetupRecoveryUnavailableError();
     }
-    const query = value.trim();
-    if (query.length < 1 || query.length > 120) {
-      throw new TypeError('Place search must contain 1 to 120 characters');
-    }
+    const query = placeQuery(value);
     return this.#online(async subject => {
       const snapshot = await this.#refresh(subject, intent);
       if (!snapshot.blockerActive) throw new EventSetupRecoveryConflictError();
       if (!snapshot.target) throw new EventSetupRecoveryUnavailableError();
-      const response = await this.#request(subject, 'placesSearch', {
-        query: {
-          kind: searchKind(snapshot.target.type),
-          limit: 20,
-          q: query,
-        },
-      });
-      const results = response.data.items;
-      if (results.length > 20 || !results.every(validCandidate)) {
-        throw new EventSetupRecoveryUnavailableError();
-      }
+      const results = await this.#searchPlaceCandidates(
+        subject,
+        searchKind(snapshot.target.type),
+        query,
+      );
       return { results, snapshot };
+    });
+  }
+
+  async searchEventPlaces(
+    rootEventId: string,
+    kind: EventSetupPlaceKind,
+    value: string,
+  ): Promise<readonly EventSetupPlaceCandidate[]> {
+    if (
+      !eventPattern.test(rootEventId) ||
+      (kind !== 'golf_course' && kind !== 'venue')
+    ) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    const query = placeQuery(value);
+    return this.#online(async subject => {
+      await this.#managerRole(subject, rootEventId);
+      return this.#searchPlaceCandidates(subject, kind, query);
+    });
+  }
+
+  async createEventPlace(
+    rootEventId: string,
+    candidate: EventSetupPlaceCandidate,
+  ): Promise<EventSetupEventPlace> {
+    if (!eventPattern.test(rootEventId) || !validCandidate(candidate)) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return this.#command({ rootEventId }, async subject => {
+      await this.#managerRole(subject, rootEventId);
+      return this.#createEventPlace(subject, rootEventId, candidate);
     });
   }
 
@@ -437,7 +465,10 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       ) {
         throw new EventSetupRecoveryUnavailableError();
       }
-      const eventIds = await this.#templateEventIds(intent.rootEventId, template);
+      const eventIds = await this.#templateEventIds(
+        intent.rootEventId,
+        template,
+      );
       const body: GatewayRequest<'eventTemplateAdopt'>['body'] = {
         baseRevision: snapshot.rootRevision,
         baseVersion: snapshot.rootVersion,
@@ -513,43 +544,12 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       if (primaryPlaceId(target.capability) !== null) {
         throw new EventSetupRecoveryConflictError();
       }
-      const digest = await sha256Hex(
-        JSON.stringify([
-          this.#accountUserId,
-          intent.rootEventId,
-          candidate.id,
-        ]),
+      const confirmedPlace = await this.#createEventPlace(
+        subject,
+        intent.rootEventId,
+        candidate,
       );
-      await this.#assertActive();
-      const placeId = `plc_${digest.slice(0, 40)}`;
-      const placeBody = {
-        countryCode: candidate.countryCode,
-        id: placeId,
-        latitude: candidate.latitude,
-        locality: candidate.locality,
-        longitude: candidate.longitude,
-        name: candidate.name,
-      };
-      const placeKey = `place-${digest.slice(0, 48)}`;
-      const placeResponse = await this.#request(subject, 'eventPlacesCreate', {
-        body: placeBody,
-        headers: { 'idempotency-key': placeKey },
-        path: { rootEventId: intent.rootEventId },
-      });
-      const confirmedPlace = placeResponse.data.place;
-      if (
-        confirmedPlace.id !== placeId ||
-        confirmedPlace.rootEventId !== intent.rootEventId ||
-        confirmedPlace.name !== placeBody.name ||
-        confirmedPlace.countryCode !== placeBody.countryCode ||
-        confirmedPlace.locality !== placeBody.locality ||
-        confirmedPlace.latitude !== placeBody.latitude ||
-        confirmedPlace.longitude !== placeBody.longitude ||
-        confirmedPlace.version !== 1
-      ) {
-        throw new EventSetupRecoveryUnavailableError();
-      }
-      const capability = withPrimaryPlace(target.capability, placeId);
+      const capability = withPrimaryPlace(target.capability, confirmedPlace.id);
       await this.#replaceCapability(
         subject,
         intent,
@@ -602,7 +602,8 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       confirmed.eventId !== intent.eventId ||
       confirmed.type !== capability.type ||
       confirmed.version !== baseVersion + 1 ||
-      capabilityFingerprint(confirmedInput) !== capabilityFingerprint(capability)
+      capabilityFingerprint(confirmedInput) !==
+        capabilityFingerprint(capability)
     ) {
       throw new EventSetupRecoveryUnavailableError();
     }
@@ -613,8 +614,9 @@ WHERE account_user_id = ? AND root_event_id = ?`,
     template: EventSetupTemplateChoice,
   ): Promise<Record<string, string>> {
     const draftId = templateDraftId(rootEventId, template.id);
-    const existing = (await this.#data.listDrafts(this.#accountUserId, rootEventId))
-      .find(item => item.id === draftId);
+    const existing = (
+      await this.#data.listDrafts(this.#accountUserId, rootEventId)
+    ).find(item => item.id === draftId);
     await this.#assertActive();
     if (existing) return parseTemplateDraft(existing, template, rootEventId);
     const eventIds: Record<string, string> = {};
@@ -657,7 +659,11 @@ WHERE account_user_id = ? AND root_event_id = ?`,
       `DELETE FROM local_drafts
 WHERE account_user_id = ? AND root_event_id = ? AND id = ?
   AND entity_type = 'event.template-adoption'`,
-      [this.#accountUserId, rootEventId, templateDraftId(rootEventId, templateId)],
+      [
+        this.#accountUserId,
+        rootEventId,
+        templateDraftId(rootEventId, templateId),
+      ],
     );
     await this.#assertActive();
   }
@@ -736,6 +742,63 @@ WHERE account_user_id = ? AND root_event_id = ? AND id = ?
     throw new EventSetupRecoveryUnavailableError();
   }
 
+  async #searchPlaceCandidates(
+    subject: GatewaySessionSubject,
+    kind: EventSetupPlaceKind,
+    query: string,
+  ): Promise<readonly EventSetupPlaceCandidate[]> {
+    const response = await this.#request(subject, 'placesSearch', {
+      query: { kind, limit: 20, q: query },
+    });
+    const results = response.data.items;
+    if (
+      results.length > 20 ||
+      !results.every(result => result.kind === kind && validCandidate(result))
+    ) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return results;
+  }
+
+  async #createEventPlace(
+    subject: GatewaySessionSubject,
+    rootEventId: string,
+    candidate: EventSetupPlaceCandidate,
+  ): Promise<EventSetupEventPlace> {
+    const digest = await sha256Hex(
+      JSON.stringify([this.#accountUserId, rootEventId, candidate.id]),
+    );
+    await this.#assertActive();
+    const placeId = `plc_${digest.slice(0, 40)}`;
+    const placeBody = {
+      countryCode: candidate.countryCode,
+      id: placeId,
+      latitude: candidate.latitude,
+      locality: candidate.locality,
+      longitude: candidate.longitude,
+      name: candidate.name,
+    };
+    const response = await this.#request(subject, 'eventPlacesCreate', {
+      body: placeBody,
+      headers: { 'idempotency-key': `place-${digest.slice(0, 48)}` },
+      path: { rootEventId },
+    });
+    const place = response.data.place;
+    if (
+      place.id !== placeId ||
+      place.rootEventId !== rootEventId ||
+      place.name !== placeBody.name ||
+      place.countryCode !== placeBody.countryCode ||
+      place.locality !== placeBody.locality ||
+      place.latitude !== placeBody.latitude ||
+      place.longitude !== placeBody.longitude ||
+      place.version !== 1
+    ) {
+      throw new EventSetupRecoveryUnavailableError();
+    }
+    return place;
+  }
+
   async #managerRole(
     subject: GatewaySessionSubject,
     rootEventId: string,
@@ -769,7 +832,7 @@ WHERE account_user_id = ? AND root_event_id = ? AND id = ?
   }
 
   async #command<Result>(
-    intent: EventSetupRecoveryIntent,
+    intent: Pick<EventSetupRecoveryIntent, 'rootEventId'>,
     work: (subject: GatewaySessionSubject) => Promise<Result>,
   ): Promise<Result> {
     const key = `${this.#accountUserId}\u0000${intent.rootEventId}`;
@@ -810,7 +873,9 @@ WHERE account_user_id = ? AND root_event_id = ? AND id = ?
     }
   }
 
-  async #request<Id extends Parameters<MobileGatewayClient['requestAsUser']>[1]>(
+  async #request<
+    Id extends Parameters<MobileGatewayClient['requestAsUser']>[1],
+  >(
     subject: GatewaySessionSubject,
     operationId: Id,
     options: GatewayRequest<Id>,
@@ -1012,8 +1077,7 @@ function remoteSnapshot(
     throw new EventSetupRecoveryUnavailableError();
   }
   const root = tree.events.find(
-    event =>
-      event.id === intent.rootEventId && event.parentEventId === null,
+    event => event.id === intent.rootEventId && event.parentEventId === null,
   );
   if (!root || root.status !== 'draft') {
     throw new EventSetupRecoveryUnavailableError();
@@ -1052,7 +1116,8 @@ function remoteTarget(
   const event = tree.events.find(item => item.id === intent.eventId);
   if (!event) throw new EventSetupRecoveryUnavailableError();
   const capability = tree.capabilities.find(
-    item => item.eventId === intent.eventId && item.type === intent.capabilityType,
+    item =>
+      item.eventId === intent.eventId && item.type === intent.capabilityType,
   );
   if (
     capability &&
@@ -1106,15 +1171,16 @@ function validateTemplates(value: readonly Template[]): readonly Template[] {
       new Set(keys).size !== keys.length ||
       !root ||
       root.parentLogicalKey !== null ||
-      template.events.filter(event => event.parentLogicalKey === null).length !== 1 ||
+      template.events.filter(event => event.parentLogicalKey === null)
+        .length !== 1 ||
       template.events.some(
         event =>
           event.logicalKey.length < 1 ||
           event.logicalKey.length > 96 ||
           (event.parentLogicalKey !== null &&
             !keySet.has(event.parentLogicalKey)) ||
-          new Set(event.capabilities.map(capability => capability.type)).size !==
-            event.capabilities.length,
+          new Set(event.capabilities.map(capability => capability.type))
+            .size !== event.capabilities.length,
       ) ||
       template.events.some(event => templateEventCycles(event, template.events))
     ) {
@@ -1357,8 +1423,7 @@ function capabilityFingerprint(value: CapabilityInput): string {
 function nullableId(value: unknown): value is string | null {
   return (
     value === null ||
-    (typeof value === 'string' &&
-      /^plc_[A-Za-z0-9._:-]{1,96}$/.test(value))
+    (typeof value === 'string' && /^plc_[A-Za-z0-9._:-]{1,96}$/.test(value))
   );
 }
 
@@ -1420,6 +1485,14 @@ function withPrimaryPlace(
 
 function searchKind(type: EventSetupCapabilityType): 'golf_course' | 'venue' {
   return type === 'golf' ? 'golf_course' : 'venue';
+}
+
+function placeQuery(value: string): string {
+  const query = value.trim();
+  if (query.length < 1 || query.length > 120) {
+    throw new TypeError('Place search must contain 1 to 120 characters');
+  }
+  return query;
 }
 
 function validCandidate(value: EventSetupPlaceCandidate): boolean {
@@ -1522,7 +1595,9 @@ function validTimestamp(value: string): boolean {
 function validCachedTemplate(value: unknown): boolean {
   return (
     value === null ||
-    (isRecord(value) && parseTemplateId(value.id) !== null && value.version === 1)
+    (isRecord(value) &&
+      parseTemplateId(value.id) !== null &&
+      value.version === 1)
   );
 }
 
@@ -1681,7 +1756,8 @@ function mapGatewayError(error: unknown): Error {
     if (error.code === 'PLACE_ENRICHMENT_CAPACITY') {
       return new EventSetupRecoveryEnrichmentUnavailableError();
     }
-    if (error.status === 403) return new EventSetupRecoveryManagerRequiredError();
+    if (error.status === 403)
+      return new EventSetupRecoveryManagerRequiredError();
     if (error.status === 404) return new EventSetupRecoveryUnavailableError();
     if (error.status === 409) return new EventSetupRecoveryConflictError();
     if (

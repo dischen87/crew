@@ -50,6 +50,7 @@ type Props = {
 
 export type InboundGateViewState =
   | { kind: 'loading' }
+  | { kind: 'removed' }
   | { kind: 'ready'; title: string }
   | { kind: 'retryable'; retrying?: boolean }
   | { kind: 'unavailable' };
@@ -140,11 +141,13 @@ export function InboundGateScreen({ navigation, route }: Props) {
           ? {
               eventId: record.eventId,
               id: record.id,
+              removed: false,
               title: authorizedEvent.title,
             }
           : {
               eventId: route.params.rootEventId,
               id: route.params.rootEventId,
+              removed: true,
               title: authorizedEvent.title,
             };
       }
@@ -171,13 +174,10 @@ export function InboundGateScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!event.data) return;
     if (route.name === 'ItemInbound') {
+      if ('removed' in event.data && event.data.removed) return;
       if (event.data.id === route.params.itemId) {
         navigation.replace('LiveItem', {
           itemId: event.data.id,
-          rootEventId: route.params.rootEventId,
-        });
-      } else {
-        navigation.replace('Plan', {
           rootEventId: route.params.rootEventId,
         });
       }
@@ -212,6 +212,12 @@ export function InboundGateScreen({ navigation, route }: Props) {
       : { kind: 'unavailable' };
   } else if (!event.data) {
     state = { kind: 'unavailable' };
+  } else if (
+    route.name === 'ItemInbound' &&
+    'removed' in event.data &&
+    event.data.removed
+  ) {
+    state = { kind: 'removed' };
   } else if (route.name === 'ItemInbound' || route.name === 'FeedInbound') {
     state = { kind: 'loading' };
   } else {
@@ -224,6 +230,13 @@ export function InboundGateScreen({ navigation, route }: Props) {
       onRetry={() => {
         event.refetch().catch(() => undefined);
       }}
+      onUpdatedPlan={() => {
+        if (route.name === 'ItemInbound') {
+          navigation.replace('Plan', {
+            rootEventId: route.params.rootEventId,
+          });
+        }
+      }}
       state={state}
     />
   );
@@ -232,10 +245,12 @@ export function InboundGateScreen({ navigation, route }: Props) {
 export function InboundGateView({
   onEvents,
   onRetry,
+  onUpdatedPlan,
   state,
 }: {
   onEvents(): void;
   onRetry(): void;
+  onUpdatedPlan?(): void;
   state: InboundGateViewState;
 }) {
   if (state.kind === 'loading') {
@@ -284,6 +299,35 @@ export function InboundGateView({
           onPress={onRetry}
           style={styles.action}
           testID="inbound-gate-retry"
+          variant="action"
+        />
+      </ScreenFrame>
+    );
+  }
+
+  if (state.kind === 'removed') {
+    return (
+      <ScreenFrame
+        description="Der Plan hat sich geändert. Entfernte private Inhalte werden nicht angezeigt."
+        eyebrow="PLAN AKTUALISIERT"
+        icon={cloudOffline}
+        liveRegion="assertive"
+        statusLabel="PROGRAMMPUNKT NICHT MEHR VERFÜGBAR"
+        testID="inbound-gate-removed"
+        title="Programmpunkt geändert oder entfernt"
+        tone="brand"
+      >
+        <Text accessibilityRole="alert" style={styles.message}>
+          Dieser Programmpunkt ist im aktuellen Plan nicht mehr verfügbar.
+          Öffne den aktualisierten Plan, um sicher weiterzumachen.
+        </Text>
+        <Button
+          accessibilityHint="Öffnet den aktuellen Plan ohne den entfernten privaten Inhalt."
+          icon={<ScreenIcon source={arrowRight} />}
+          label="Aktualisierten Plan ansehen"
+          onPress={onUpdatedPlan}
+          style={styles.action}
+          testID="inbound-gate-updated-plan"
           variant="action"
         />
       </ScreenFrame>

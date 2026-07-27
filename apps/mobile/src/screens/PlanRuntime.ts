@@ -18,8 +18,18 @@ import { deniedRootRegistry } from '../storage/deniedRoots';
 import { secureUuidV4 } from '../storage/secureRandom';
 
 type ItineraryCreate = Extract<SyncMutation, { kind: 'itinerary.create' }>;
+type EventCreate = Extract<SyncMutation, { kind: 'event.create' }>;
+type EventChildrenReorder = Extract<
+  SyncMutation,
+  { kind: 'event.children.reorder' }
+>;
+type ItineraryReorder = Extract<
+  SyncMutation,
+  { kind: 'itinerary.reorder' }
+>;
 type ItineraryUpdate = Extract<SyncMutation, { kind: 'itinerary.update' }>;
 type ItineraryCommand = ItineraryCreate | ItineraryUpdate;
+type PlanOrderCommand = EventChildrenReorder | ItineraryReorder;
 
 export type PlanItemDetails = ItineraryCreate['payload']['details'];
 
@@ -40,6 +50,18 @@ export type PlanItemChanges = Partial<Omit<PlanItemValues, 'eventId'>>;
 
 export type PlanItemDelivery = 'attention' | 'clean' | 'queued' | 'syncing';
 
+export type PlanChildEventValues = {
+  description: string | null;
+  endsAt: string | null;
+  kind: EventCreate['payload']['kind'];
+  startsAt: string | null;
+  status: NonNullable<EventCreate['payload']['status']>;
+  timeZone: string;
+  title: string;
+};
+
+export type PlanMoveDirection = 'down' | 'up';
+
 export type PlanItemSnapshot = {
   delivery: PlanItemDelivery;
   id: string;
@@ -53,8 +75,15 @@ export type PlanIssue = {
   attempted: PlanItemValues | null;
   code: 'attention' | 'conflict' | 'deleted' | 'permission';
   current: PlanItemValues | null;
+  eventAttempted?: PlanChildEventValues & { parentEventId: string };
   itemId: string;
   mutationId: string;
+  orderAttempted?: {
+    entityId: string;
+    kind: PlanOrderOverlay['kind'];
+    orderedIds: readonly string[];
+  };
+  resolution: 'discard' | 'retry';
 };
 
 export type PlanSnapshot = {
@@ -80,6 +109,21 @@ type PlanOverlay = {
   replacementFor: string | null;
   rootEventId: string;
   values: PlanItemValues;
+};
+
+type PlanEventOverlay = {
+  eventId: string;
+  parentEventId: string;
+  rootEventId: string;
+  values: PlanChildEventValues;
+};
+
+type PlanOrderOverlay = {
+  entityId: string;
+  kind: 'plan.event-order' | 'plan.itinerary-order';
+  orderedIds: readonly string[];
+  replacementFor: string | null;
+  rootEventId: string;
 };
 
 const activeStates = new Set<OutboxItem['state']>([
@@ -184,7 +228,7 @@ export class PlanRuntime {
     let outbox = await this.#sync.listOutbox(this.#accountUserId, rootEventId);
     await this.#assertActive();
     outbox = await this.#finishDurableReplacement(rootEventId, outbox);
-    const [events, memberships, timeline, places, syncStatus] =
+    const [eventRecords, memberships, timeline, places, syncStatus] =
       await Promise.all([
         this.#data.listEventTree(this.#accountUserId, rootEventId),
         this.#data.listMemberships(this.#accountUserId, rootEventId),
@@ -193,7 +237,7 @@ export class PlanRuntime {
         this.#sync.getStatus(this.#accountUserId, rootEventId),
       ]);
     await this.#assertActive();
-    const root = events.find(
+    const root = eventRecords.find(
       event =>
         event.id === rootEventId &&
         event.rootEventId === rootEventId &&
@@ -208,6 +252,7 @@ export class PlanRuntime {
     );
     if (!root || !membership) throw new PlanUnavailableError();
 
+    let events = [...eventRecords];
     const canonical = new Map(
       timeline.map(item => [item.id, snapshotFromRecord(item)]),
     );
@@ -216,7 +261,41 @@ export class PlanRuntime {
       Array<OutboxItem & { command: ItineraryCommand }>
     >();
     const failures: Array<OutboxItem & { command: ItineraryCommand }> = [];
+    const eventCreates: Array<OutboxItem & { command: EventCreate }> = [];
+    const eventFailures: Array<OutboxItem & { command: EventCreate }> = [];
+    const eventOrders: Array<OutboxItem & { command: EventChildrenReorder }> =
+      [];
+    const eventOrderFailures: Array<
+      OutboxItem & { command: EventChildrenReorder }
+    > = [];
+    const itineraryOrders: Array<
+      OutboxItem & { command: ItineraryReorder }
+    > = [];
+    const itineraryOrderFailures: Array<
+      OutboxItem & { command: ItineraryReorder }
+    > = [];
     for (const item of outbox) {
+      if (eventCreateCommand(item)) {
+        if (activeStates.has(item.state)) {
+          eventCreates.push(item);
+        } else if (item.state === 'dead_letter') {
+          eventCreates.push(item);
+          eventFailures.push(item);
+        }
+        continue;
+      }
+      if (eventChildrenReorderCommand(item)) {
+        if (activeStates.has(item.state)) eventOrders.push(item);
+        else if (item.state === 'dead_letter') eventOrderFailures.push(item);
+        continue;
+      }
+      if (itineraryReorderCommand(item)) {
+        if (activeStates.has(item.state)) itineraryOrders.push(item);
+        else if (item.state === 'dead_letter') {
+          itineraryOrderFailures.push(item);
+        }
+        continue;
+      }
       if (!itineraryCommand(item)) continue;
       if (activeStates.has(item.state)) {
         const items = activeByItem.get(item.command.entityId) ?? [];
@@ -225,6 +304,63 @@ export class PlanRuntime {
       } else if (item.state === 'dead_letter') {
         failures.push(item);
       }
+    }
+
+    for (const item of eventCreates) {
+      if (events.some(event => event.id === item.command.entityId)) continue;
+      const parent = events.find(
+        event => event.id === item.command.payload.parentEventId,
+      );
+      if (!parent) continue;
+      const overlay = readPlanEventOverlay(
+        item.optimisticOverlay,
+        rootEventId,
+        item.command.entityId,
+      );
+      const values =
+        overlay?.values ??
+        validateChildEventValues({
+          description: item.command.payload.description ?? null,
+          endsAt: item.command.payload.endsAt ?? null,
+          kind: item.command.payload.kind,
+          startsAt: item.command.payload.startsAt ?? null,
+          status: item.command.payload.status ?? 'draft',
+          timeZone: item.command.payload.timeZone,
+          title: item.command.payload.title,
+        });
+      const now = item.createdAt;
+      events.push({
+        accountUserId: this.#accountUserId,
+        childOrderVersion: '0',
+        createdAt: now,
+        deletedAt: null,
+        depth: parent.depth + 1,
+        description: values.description,
+        endsAt: values.endsAt,
+        id: item.command.entityId,
+        itineraryOrderVersion: '0',
+        kind: values.kind,
+        parentEventId: parent.id,
+        rootEventId,
+        sortKey: `~${String(item.clientSequence).padStart(12, '0')}`,
+        startsAt: values.startsAt,
+        status: values.status,
+        timeZone: values.timeZone,
+        title: values.title,
+        updatedAt: now,
+        version: 0,
+      });
+    }
+    events = flattenEventTree(events);
+
+    for (const item of eventOrders) {
+      const overlay = readPlanOrderOverlay(
+        item.optimisticOverlay,
+        rootEventId,
+        item.command.entityId,
+        'plan.event-order',
+      );
+      if (overlay) events = reorderEventTree(events, overlay);
     }
 
     for (const [itemId, pending] of activeByItem) {
@@ -242,11 +378,42 @@ export class PlanRuntime {
       canonical.set(itemId, item);
     }
 
-    const issues = failures.map(item =>
-      issueFromFailure(item, canonical.get(item.command.entityId) ?? null),
-    );
+    const issues = [
+      ...failures.map(item =>
+        issueFromFailure(item, canonical.get(item.command.entityId) ?? null),
+      ),
+      ...eventFailures.map(eventIssueFromFailure),
+      ...eventOrderFailures.map(item =>
+        orderIssueFromFailure(item, 'plan.event-order'),
+      ),
+      ...itineraryOrderFailures.map(item =>
+        orderIssueFromFailure(item, 'plan.itinerary-order'),
+      ),
+    ];
     for (const issue of issues) {
       if (issue.code === 'deleted') canonical.delete(issue.itemId);
+    }
+    for (const item of itineraryOrders) {
+      const overlay = readPlanOrderOverlay(
+        item.optimisticOverlay,
+        rootEventId,
+        item.command.entityId,
+        'plan.itinerary-order',
+      );
+      if (!overlay) continue;
+      overlay.orderedIds.forEach((itemId, index) => {
+        const current = canonical.get(itemId);
+        if (current?.values.eventId === item.command.entityId) {
+          canonical.set(itemId, {
+            ...current,
+            sortKey: String(index + 1).padStart(12, '0'),
+          });
+        }
+      });
+    }
+    const eventIds = new Set(events.map(event => event.id));
+    for (const [itemId, item] of canonical) {
+      if (!eventIds.has(item.values.eventId)) canonical.delete(itemId);
     }
     return {
       canEdit: membership.role === 'owner' || membership.role === 'organizer',
@@ -279,9 +446,11 @@ export class PlanRuntime {
       const normalized = validatePlanItemValues(values);
       const before = await this.load(rootEventId);
       this.#assertManager(before);
-      if (!before.events.some(event => event.id === normalized.eventId)) {
-        throw new PlanUnavailableError();
-      }
+      const event = before.events.find(
+        candidate => candidate.id === normalized.eventId,
+      );
+      if (!event) throw new PlanUnavailableError();
+      if (event.version === 0) throw new PlanPendingError();
       const deviceId = await secureDeviceIdStore.getOrCreate(
         this.#database,
         this.#accountUserId,
@@ -302,6 +471,120 @@ export class PlanRuntime {
         planOverlay(rootEventId, itemId, normalized, null),
       );
       await this.#afterEnqueue(rootEventId);
+      return this.load(rootEventId);
+    });
+  }
+
+  async createChildEvent(
+    rootEventId: string,
+    parentEventId: string,
+    values: PlanChildEventValues,
+  ): Promise<PlanSnapshot> {
+    return this.#withSaveLock(rootEventId, async () => {
+      if (!eventIdPattern.test(parentEventId)) throw new PlanUnavailableError();
+      const normalized = validateChildEventValues(values);
+      const before = await this.load(rootEventId);
+      this.#assertManager(before);
+      const parent = before.events.find(event => event.id === parentEventId);
+      if (!parent) throw new PlanUnavailableError();
+      if (parent.version === 0) throw new PlanPendingError();
+      const deviceId = await secureDeviceIdStore.getOrCreate(
+        this.#database,
+        this.#accountUserId,
+        rootEventId,
+      );
+      await this.#assertActive();
+      const eventId = `evt_${secureUuidV4()}`;
+      if (!eventIdPattern.test(eventId)) throw new PlanUnavailableError();
+      await this.#sync.enqueueMutation(
+        this.#accountUserId,
+        rootEventId,
+        deviceId,
+        {
+          entityId: eventId,
+          kind: 'event.create',
+          payload: { parentEventId, ...normalized },
+        },
+        planEventOverlay(rootEventId, eventId, parentEventId, normalized),
+      );
+      await this.#afterEnqueue(rootEventId);
+      return this.load(rootEventId);
+    });
+  }
+
+  async moveChildEvent(
+    rootEventId: string,
+    eventId: string,
+    direction: PlanMoveDirection,
+  ): Promise<PlanSnapshot> {
+    return this.#withSaveLock(rootEventId, async () => {
+      if (!eventIdPattern.test(eventId)) throw new PlanUnavailableError();
+      const before = await this.load(rootEventId);
+      this.#assertManager(before);
+      const event = before.events.find(candidate => candidate.id === eventId);
+      if (!event?.parentEventId) throw new PlanUnavailableError();
+      const parent = before.events.find(
+        candidate => candidate.id === event.parentEventId,
+      );
+      if (!parent) throw new PlanUnavailableError();
+      const siblings = before.events.filter(
+        candidate => candidate.parentEventId === event.parentEventId,
+      );
+      if (siblings.some(candidate => candidate.version === 0)) {
+        throw new PlanPendingError();
+      }
+      const orderedIds = movedIds(siblings, eventId, direction);
+      if (!orderedIds) return before;
+      await this.#enqueueOrder(
+        rootEventId,
+        parent.id,
+        versionFromString(parent.childOrderVersion),
+        'event.children.reorder',
+        orderedIds,
+        'plan.event-order',
+      );
+      return this.load(rootEventId);
+    });
+  }
+
+  async moveItineraryItem(
+    rootEventId: string,
+    itemId: string,
+    direction: PlanMoveDirection,
+  ): Promise<PlanSnapshot> {
+    return this.#withSaveLock(rootEventId, async () => {
+      if (!itineraryIdPattern.test(itemId)) throw new PlanUnavailableError();
+      const before = await this.load(rootEventId);
+      this.#assertManager(before);
+      const item = before.items.find(candidate => candidate.id === itemId);
+      if (!item || item.delivery !== 'clean' || item.version === null) {
+        throw new PlanPendingError();
+      }
+      const event = before.events.find(
+        candidate => candidate.id === item.values.eventId,
+      );
+      if (!event || event.version === 0) throw new PlanPendingError();
+      const siblings = before.items
+        .filter(candidate => candidate.values.eventId === event.id)
+        .sort(compareItineraryOrder);
+      if (
+        siblings.some(
+          candidate =>
+            candidate.delivery !== 'clean' || candidate.version === null,
+        )
+      ) {
+        throw new PlanPendingError();
+      }
+      const orderedIds = movedIds(siblings, itemId, direction);
+      if (!orderedIds) return before;
+      await this.#enqueueOrder(
+        rootEventId,
+        event.id,
+        versionFromString(event.itineraryOrderVersion),
+        'itinerary.reorder',
+        orderedIds,
+        'plan.itinerary-order',
+      );
       return this.load(rootEventId);
     });
   }
@@ -397,11 +680,49 @@ export class PlanRuntime {
           candidate.clientMutationId === mutationId &&
           candidate.rootEventId === rootEventId &&
           candidate.state === 'dead_letter' &&
-          itineraryCommand(candidate),
+          candidate.serverConsumed &&
+          (itineraryCommand(candidate) ||
+            eventCreateCommand(candidate) ||
+            eventChildrenReorderCommand(candidate) ||
+            itineraryReorderCommand(candidate)),
       );
       if (!item) throw new PlanUnavailableError();
       await this.#sync.discardDeadLetter(this.#accountUserId, mutationId);
       await this.#assertActive();
+      return this.load(rootEventId);
+    });
+  }
+
+  async retryIssue(
+    rootEventId: string,
+    mutationId: string,
+  ): Promise<PlanSnapshot> {
+    return this.#withSaveLock(rootEventId, async () => {
+      if (!mutationIdPattern.test(mutationId)) {
+        throw new PlanUnavailableError();
+      }
+      await this.#assertActive();
+      const outbox = await this.#sync.listOutbox(
+        this.#accountUserId,
+        rootEventId,
+      );
+      await this.#assertActive();
+      const item = outbox.find(
+        candidate =>
+          candidate.clientMutationId === mutationId &&
+          candidate.rootEventId === rootEventId &&
+          candidate.state === 'dead_letter' &&
+          !candidate.serverConsumed &&
+          candidate.lastError?.code === 'retry_exhausted' &&
+          (itineraryCommand(candidate) ||
+            eventCreateCommand(candidate) ||
+            eventChildrenReorderCommand(candidate) ||
+            itineraryReorderCommand(candidate)),
+      );
+      if (!item) throw new PlanUnavailableError();
+      await this.#sync.retryExhausted(this.#accountUserId, rootEventId);
+      await this.#assertActive();
+      await this.#afterEnqueue(rootEventId);
       return this.load(rootEventId);
     });
   }
@@ -414,6 +735,85 @@ export class PlanRuntime {
       });
       await this.#assertActive();
     }
+  }
+
+  async #enqueueOrder(
+    rootEventId: string,
+    entityId: string,
+    baseVersion: number,
+    kind: PlanOrderCommand['kind'],
+    orderedIds: readonly string[],
+    overlayKind: PlanOrderOverlay['kind'],
+  ) {
+    const outbox = await this.#sync.listOutbox(
+      this.#accountUserId,
+      rootEventId,
+    );
+    const active = outbox.some(
+      item =>
+        activeStates.has(item.state) &&
+        ((kind === 'event.children.reorder' &&
+          eventChildrenReorderCommand(item)) ||
+          (kind === 'itinerary.reorder' && itineraryReorderCommand(item))) &&
+        item.command.entityId === entityId,
+    );
+    await this.#assertActive();
+    if (active) throw new PlanPendingError();
+    const failed = outbox.find(
+      item =>
+        item.state === 'dead_letter' &&
+        ((kind === 'event.children.reorder' &&
+          eventChildrenReorderCommand(item)) ||
+          (kind === 'itinerary.reorder' && itineraryReorderCommand(item))) &&
+        item.command.entityId === entityId,
+    );
+    if (failed && !failed.serverConsumed) throw new PlanPendingError();
+    const deviceId = await secureDeviceIdStore.getOrCreate(
+      this.#database,
+      this.#accountUserId,
+      rootEventId,
+    );
+    await this.#assertActive();
+    if (kind === 'event.children.reorder') {
+      await this.#sync.enqueueMutation(
+        this.#accountUserId,
+        rootEventId,
+        deviceId,
+        {
+          baseVersion,
+          entityId,
+          kind,
+          payload: { orderedIds: [...orderedIds] },
+        },
+        planOrderOverlay(
+          rootEventId,
+          entityId,
+          orderedIds,
+          overlayKind,
+          failed?.clientMutationId ?? null,
+        ),
+      );
+    } else {
+      await this.#sync.enqueueMutation(
+        this.#accountUserId,
+        rootEventId,
+        deviceId,
+        {
+          baseVersion,
+          entityId,
+          kind,
+          payload: { orderedIds: [...orderedIds] },
+        },
+        planOrderOverlay(
+          rootEventId,
+          entityId,
+          orderedIds,
+          overlayKind,
+          failed?.clientMutationId ?? null,
+        ),
+      );
+    }
+    await this.#afterEnqueue(rootEventId);
   }
 
   #assertManager(snapshot: PlanSnapshot) {
@@ -431,12 +831,28 @@ export class PlanRuntime {
     outbox: readonly OutboxItem[],
   ) {
     for (const item of outbox) {
-      if (!activeStates.has(item.state) || !itineraryCommand(item)) continue;
-      const replacementFor = readPlanOverlay(
-        item.optimisticOverlay,
-        rootEventId,
-        item.command.entityId,
-      )?.replacementFor;
+      if (!activeStates.has(item.state)) continue;
+      const replacementFor = itineraryCommand(item)
+        ? readPlanOverlay(
+            item.optimisticOverlay,
+            rootEventId,
+            item.command.entityId,
+          )?.replacementFor
+        : eventChildrenReorderCommand(item)
+        ? readPlanOrderOverlay(
+            item.optimisticOverlay,
+            rootEventId,
+            item.command.entityId,
+            'plan.event-order',
+          )?.replacementFor
+        : itineraryReorderCommand(item)
+        ? readPlanOrderOverlay(
+            item.optimisticOverlay,
+            rootEventId,
+            item.command.entityId,
+            'plan.itinerary-order',
+          )?.replacementFor
+        : null;
       if (
         replacementFor &&
         outbox.some(
@@ -477,6 +893,36 @@ function itineraryCommand(
     'kind' in item.command &&
     (item.command.kind === 'itinerary.create' ||
       item.command.kind === 'itinerary.update')
+  );
+}
+
+function eventCreateCommand(
+  item: OutboxItem,
+): item is OutboxItem & { command: EventCreate } {
+  return (
+    item.operationId === 'syncMutationsApply' &&
+    'kind' in item.command &&
+    item.command.kind === 'event.create'
+  );
+}
+
+function eventChildrenReorderCommand(
+  item: OutboxItem,
+): item is OutboxItem & { command: EventChildrenReorder } {
+  return (
+    item.operationId === 'syncMutationsApply' &&
+    'kind' in item.command &&
+    item.command.kind === 'event.children.reorder'
+  );
+}
+
+function itineraryReorderCommand(
+  item: OutboxItem,
+): item is OutboxItem & { command: ItineraryReorder } {
+  return (
+    item.operationId === 'syncMutationsApply' &&
+    'kind' in item.command &&
+    item.command.kind === 'itinerary.reorder'
   );
 }
 
@@ -570,18 +1016,73 @@ function issueFromFailure(
   const failure = item.lastError?.code;
   return {
     attempted,
-    code:
-      failure === 'conflict'
-        ? 'conflict'
-        : failure === 'deleted'
-        ? 'deleted'
-        : failure === 'permission' || failure === 'auth_required'
-        ? 'permission'
-        : 'attention',
+    code: issueCode(failure),
     current: failure === 'deleted' ? null : current?.values ?? null,
     itemId: item.command.entityId,
     mutationId: item.clientMutationId,
+    resolution: item.serverConsumed ? 'discard' : 'retry',
   };
+}
+
+function eventIssueFromFailure(
+  item: OutboxItem & { command: EventCreate },
+): PlanIssue {
+  const overlay = readPlanEventOverlay(
+    item.optimisticOverlay,
+    item.rootEventId,
+    item.command.entityId,
+  );
+  const eventAttempted = overlay
+    ? { parentEventId: overlay.parentEventId, ...overlay.values }
+    : {
+        parentEventId: item.command.payload.parentEventId,
+        ...validateChildEventValues({
+          description: item.command.payload.description ?? null,
+          endsAt: item.command.payload.endsAt ?? null,
+          kind: item.command.payload.kind,
+          startsAt: item.command.payload.startsAt ?? null,
+          status: item.command.payload.status ?? 'draft',
+          timeZone: item.command.payload.timeZone,
+          title: item.command.payload.title,
+        }),
+      };
+  return {
+    attempted: null,
+    code: issueCode(item.lastError?.code),
+    current: null,
+    eventAttempted,
+    itemId: item.command.entityId,
+    mutationId: item.clientMutationId,
+    resolution: item.serverConsumed ? 'discard' : 'retry',
+  };
+}
+
+function orderIssueFromFailure(
+  item: OutboxItem & { command: PlanOrderCommand },
+  kind: PlanOrderOverlay['kind'],
+): PlanIssue {
+  return {
+    attempted: null,
+    code: issueCode(item.lastError?.code),
+    current: null,
+    itemId: item.command.entityId,
+    mutationId: item.clientMutationId,
+    orderAttempted: {
+      entityId: item.command.entityId,
+      kind,
+      orderedIds: [...item.command.payload.orderedIds],
+    },
+    resolution: item.serverConsumed ? 'discard' : 'retry',
+  };
+}
+
+function issueCode(failure: string | undefined): PlanIssue['code'] {
+  if (failure === 'conflict') return 'conflict';
+  if (failure === 'deleted') return 'deleted';
+  if (failure === 'permission' || failure === 'auth_required') {
+    return 'permission';
+  }
+  return 'attention';
 }
 
 function planOverlay(
@@ -597,6 +1098,106 @@ function planOverlay(
     rootEventId,
     schemaVersion: 1,
     values,
+  };
+}
+
+function planEventOverlay(
+  rootEventId: string,
+  eventId: string,
+  parentEventId: string,
+  values: PlanChildEventValues,
+) {
+  return {
+    eventId,
+    kind: 'plan.event',
+    parentEventId,
+    rootEventId,
+    schemaVersion: 1,
+    values,
+  };
+}
+
+function planOrderOverlay(
+  rootEventId: string,
+  entityId: string,
+  orderedIds: readonly string[],
+  kind: PlanOrderOverlay['kind'],
+  replacementFor: string | null,
+) {
+  return {
+    entityId,
+    kind,
+    orderedIds: [...orderedIds],
+    replacementFor,
+    rootEventId,
+    schemaVersion: 1,
+  };
+}
+
+function readPlanEventOverlay(
+  value: unknown,
+  rootEventId: string,
+  eventId: string,
+): PlanEventOverlay | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const overlay = value as Record<string, unknown>;
+  if (
+    overlay.schemaVersion !== 1 ||
+    overlay.kind !== 'plan.event' ||
+    overlay.rootEventId !== rootEventId ||
+    overlay.eventId !== eventId ||
+    typeof overlay.parentEventId !== 'string' ||
+    !eventIdPattern.test(overlay.parentEventId)
+  ) {
+    return null;
+  }
+  try {
+    return {
+      eventId,
+      parentEventId: overlay.parentEventId,
+      rootEventId,
+      values: validateChildEventValues(
+        overlay.values as PlanChildEventValues,
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readPlanOrderOverlay(
+  value: unknown,
+  rootEventId: string,
+  entityId: string,
+  kind: PlanOrderOverlay['kind'],
+): PlanOrderOverlay | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const overlay = value as Record<string, unknown>;
+  if (
+    overlay.schemaVersion !== 1 ||
+    overlay.kind !== kind ||
+    overlay.rootEventId !== rootEventId ||
+    overlay.entityId !== entityId ||
+    !Array.isArray(overlay.orderedIds) ||
+    overlay.orderedIds.length === 0 ||
+    !overlay.orderedIds.every(id => typeof id === 'string') ||
+    new Set(overlay.orderedIds).size !== overlay.orderedIds.length ||
+    (overlay.replacementFor !== undefined &&
+      overlay.replacementFor !== null &&
+      (typeof overlay.replacementFor !== 'string' ||
+        !mutationIdPattern.test(overlay.replacementFor)))
+  ) {
+    return null;
+  }
+  return {
+    entityId,
+    kind,
+    orderedIds: overlay.orderedIds as string[],
+    replacementFor:
+      typeof overlay.replacementFor === 'string'
+        ? overlay.replacementFor
+        : null,
+    rootEventId,
   };
 }
 
@@ -681,6 +1282,45 @@ export function validatePlanItemValues(values: PlanItemValues): PlanItemValues {
     status: values.status,
     timeZone: values.timeZone,
     title,
+  };
+}
+
+export function validateChildEventValues(
+  values: PlanChildEventValues,
+): PlanChildEventValues {
+  if (!values || typeof values !== 'object') throw new PlanValidationError();
+  if (
+    ![
+      'trip',
+      'day',
+      'golf',
+      'team_event',
+      'session',
+      'activity',
+      'other',
+    ].includes(values.kind)
+  ) {
+    throw new PlanValidationError();
+  }
+  const startsAt = validInstant(values.startsAt);
+  const endsAt = validInstant(values.endsAt);
+  if (startsAt && endsAt && Date.parse(startsAt) >= Date.parse(endsAt)) {
+    throw new PlanValidationError();
+  }
+  if (
+    !['draft', 'published', 'cancelled', 'archived'].includes(values.status)
+  ) {
+    throw new PlanValidationError();
+  }
+  if (!isIanaTimeZone(values.timeZone)) throw new PlanValidationError();
+  return {
+    description: nullableString(values.description, 20_000),
+    endsAt,
+    kind: values.kind,
+    startsAt,
+    status: values.status,
+    timeZone: values.timeZone,
+    title: requiredString(values.title, 160, true),
   };
 }
 
@@ -926,4 +1566,90 @@ function comparePlanItems(left: PlanItemSnapshot, right: PlanItemSnapshot) {
     );
   }
   return left.id.localeCompare(right.id);
+}
+
+function compareItineraryOrder(
+  left: PlanItemSnapshot,
+  right: PlanItemSnapshot,
+) {
+  if (left.sortKey !== right.sortKey) {
+    if (left.sortKey === null) return 1;
+    if (right.sortKey === null) return -1;
+    return (
+      left.sortKey.length - right.sortKey.length ||
+      left.sortKey.localeCompare(right.sortKey)
+    );
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function movedIds<Item extends { id: string }>(
+  items: readonly Item[],
+  itemId: string,
+  direction: PlanMoveDirection,
+): string[] | null {
+  const index = items.findIndex(item => item.id === itemId);
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (index < 0 || target < 0 || target >= items.length) return null;
+  const orderedIds = items.map(item => item.id);
+  [orderedIds[index], orderedIds[target]] = [
+    orderedIds[target]!,
+    orderedIds[index]!,
+  ];
+  return orderedIds;
+}
+
+function versionFromString(value: string) {
+  if (!/^[1-9]\d*$/.test(value)) throw new PlanUnavailableError();
+  const version = Number(value);
+  if (!Number.isSafeInteger(version)) {
+    throw new PlanUnavailableError();
+  }
+  return version;
+}
+
+function reorderEventTree(
+  events: readonly EventTreeNode[],
+  overlay: PlanOrderOverlay,
+) {
+  const children = new Map<string | null, EventTreeNode[]>();
+  for (const event of events) {
+    const siblings = children.get(event.parentEventId) ?? [];
+    siblings.push(event);
+    children.set(event.parentEventId, siblings);
+  }
+  const siblings = children.get(overlay.entityId);
+  if (
+    siblings &&
+    siblings.length === overlay.orderedIds.length &&
+    siblings.every(event => overlay.orderedIds.includes(event.id))
+  ) {
+    const byId = new Map(siblings.map(event => [event.id, event]));
+    children.set(
+      overlay.entityId,
+      overlay.orderedIds.map(id => byId.get(id)!),
+    );
+  }
+  return flattenEventTree(events, children);
+}
+
+function flattenEventTree(
+  events: readonly EventTreeNode[],
+  childrenOverride?: ReadonlyMap<string | null, readonly EventTreeNode[]>,
+) {
+  const children =
+    childrenOverride ??
+    new Map<string | null, EventTreeNode[]>(
+      [...new Set(events.map(event => event.parentEventId))].map(parentId => [
+        parentId,
+        events.filter(event => event.parentEventId === parentId),
+      ]),
+    );
+  const ordered: EventTreeNode[] = [];
+  const visit = (event: EventTreeNode) => {
+    ordered.push(event);
+    for (const child of children.get(event.id) ?? []) visit(child);
+  };
+  for (const root of children.get(null) ?? []) visit(root);
+  return ordered.length === events.length ? ordered : [...events];
 }
