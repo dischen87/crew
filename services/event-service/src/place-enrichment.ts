@@ -94,8 +94,14 @@ export type PlaceEnrichmentField = {
 	promptVersion: string | null;
 	validatorVersion: typeof PLACE_ENRICHMENT_VALIDATOR_VERSION;
 	validationState: "passed";
-	approvalState: "auto_approved" | "pending_review";
+	approvalState:
+		| "auto_approved"
+		| "pending_review"
+		| "human_approved"
+		| "rejected";
 };
+
+export type PlaceEnrichmentReviewDecision = "approve" | "reject";
 
 export type LlmPlaceField = {
 	name: PlaceEnrichmentFieldName;
@@ -203,7 +209,7 @@ export function mergeValidatedPlaceFields(
 				"LLM output cited evidence that Exa did not return",
 			);
 		}
-		const value = validateFieldValue(
+		const value = validatePlaceEnrichmentFieldValue(
 			proposal.name,
 			proposal.value,
 			claim.target.countryCode,
@@ -300,11 +306,29 @@ export function globalPlaceId(candidateId: string) {
 	)}`;
 }
 
+export function reviewedPlaceCandidateSource(
+	fields: readonly PlaceEnrichmentField[],
+) {
+	const sourceUrl =
+		fields.find(({ name }) => name === "websiteUrl")?.value ??
+		fields.find(({ name }) => name === "name")?.sourceUrl;
+	if (!sourceUrl) {
+		throw new PlaceEnrichmentValidationError(
+			"Reviewed place has no candidate source",
+		);
+	}
+	const canonicalUrl = canonicalEvidenceUrl(sourceUrl);
+	return {
+		sourceRecordId: `citation_${hashText(canonicalUrl)}`,
+		sourceRecordUrl: canonicalUrl,
+	};
+}
+
 export function safeEnrichmentCode(value: string) {
 	return /^[A-Z][A-Z0-9_]{1,127}$/.test(value) ? value : "ENRICHMENT_FAILED";
 }
 
-function validateFieldValue(
+export function validatePlaceEnrichmentFieldValue(
 	name: PlaceEnrichmentFieldName,
 	input: string,
 	expectedCountryCode: string,

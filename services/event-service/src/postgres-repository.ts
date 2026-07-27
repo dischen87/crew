@@ -59,7 +59,11 @@ import {
 import type { FeedbackInput, FeedbackStatus } from "./feedback-domain";
 import type { GolfRoundSetupInput, GolfScoreInput } from "./golf-domain";
 import type { PlaceCandidateKind } from "./place-candidate";
-import { globalPlaceId, type PlaceEnrichmentPolicy } from "./place-enrichment";
+import {
+	globalPlaceId,
+	type PlaceEnrichmentPolicy,
+	type PlaceEnrichmentReviewDecision,
+} from "./place-enrichment";
 import { PostgresPlaceEnrichmentJobs } from "./place-enrichment-jobs";
 import {
 	assertCommunityFeedbackAccess,
@@ -5026,6 +5030,8 @@ export class PostgresEventRepository implements EventRepository {
 		).admitCandidate(candidateId, policy, {
 			actorId: actor.id,
 			rootEventId: scope.rootEventId,
+			eventId: scope.eventId,
+			capabilityType: scope.capabilityType,
 			expectedKind,
 		});
 		const id = globalPlaceId(candidateId);
@@ -5062,6 +5068,8 @@ export class PostgresEventRepository implements EventRepository {
 				{
 					actorId: actor.id,
 					rootEventId: scope.rootEventId,
+					eventId: scope.eventId,
+					capabilityType: scope.capabilityType,
 					expectedKind,
 				},
 			);
@@ -5097,6 +5105,33 @@ export class PostgresEventRepository implements EventRepository {
 				actor.id,
 				rootEventId,
 				id,
+			);
+		});
+	}
+
+	reviewPlaceEnrichment(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		id: string,
+		decision: PlaceEnrichmentReviewDecision,
+	) {
+		if (!this.inTransaction)
+			throw new Error("Place enrichment review requires an idempotent command");
+		return this.transaction(async (tx) => {
+			const expectedKind = await requirePlaceEnrichmentCreateScope(
+				tx,
+				actor,
+				scope,
+				"update",
+			);
+			return new PostgresPlaceEnrichmentJobs(tx, true).reviewAssociated(
+				actor.id,
+				scope.rootEventId,
+				scope.eventId,
+				scope.capabilityType,
+				id,
+				decision,
+				expectedKind,
 			);
 		});
 	}

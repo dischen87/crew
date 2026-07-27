@@ -453,6 +453,89 @@
         ],
         "additionalProperties": false
       },
+      "PlaceEnrichmentReview": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "name",
+                    "locality",
+                    "region",
+                    "countryCode",
+                    "latitude",
+                    "longitude",
+                    "address",
+                    "websiteUrl",
+                    "summary"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "provenance": {
+                  "type": "object",
+                  "properties": {
+                    "sourceKind": {
+                      "type": "string",
+                      "enum": [
+                        "exa_llm"
+                      ]
+                    },
+                    "sourceUrl": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "format": "uri",
+                      "pattern": "^https:\\/\\/"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "sourceKind",
+                    "sourceUrl",
+                    "observedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "name",
+                "value",
+                "provenance"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 2,
+            "maxItems": 9
+          }
+        },
+        "required": [
+          "state",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
       "EnrichedPlace": {
         "type": [
           "object",
@@ -10684,12 +10767,16 @@
                     "enrichment": {
                       "$ref": "#/components/schemas/PlaceEnrichment"
                     },
+                    "review": {
+                      "$ref": "#/components/schemas/PlaceEnrichmentReview"
+                    },
                     "place": {
                       "$ref": "#/components/schemas/EnrichedPlace"
                     }
                   },
                   "required": [
                     "enrichment",
+                    "review",
                     "place"
                   ],
                   "additionalProperties": false
@@ -10878,12 +10965,16 @@
                     "enrichment": {
                       "$ref": "#/components/schemas/PlaceEnrichment"
                     },
+                    "review": {
+                      "$ref": "#/components/schemas/PlaceEnrichmentReview"
+                    },
                     "place": {
                       "$ref": "#/components/schemas/EnrichedPlace"
                     }
                   },
                   "required": [
                     "enrichment",
+                    "review",
                     "place"
                   ],
                   "additionalProperties": false
@@ -11030,12 +11121,16 @@
                     "enrichment": {
                       "$ref": "#/components/schemas/PlaceEnrichment"
                     },
+                    "review": {
+                      "$ref": "#/components/schemas/PlaceEnrichmentReview"
+                    },
                     "place": {
                       "$ref": "#/components/schemas/EnrichedPlace"
                     }
                   },
                   "required": [
                     "enrichment",
+                    "review",
                     "place"
                   ],
                   "additionalProperties": false
@@ -11132,6 +11227,236 @@
               },
               "Retry-After": {
                 "description": "Seconds until the request may be retried",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/places/enrichment-jobs/{jobId}/review": {
+      "post": {
+        "operationId": "placeEnrichmentJobsReview",
+        "tags": [
+          "places"
+        ],
+        "summary": "Approve or reject cited search-miss place facts",
+        "description": "Reviews a completed search-miss job without provider work. Approval atomically materializes one reusable candidate and global place; rejection materializes neither.",
+        "security": [
+          {
+            "userBearer": []
+          }
+        ],
+        "x-idempotency": "required",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^pej_[a-f0-9]{64}$"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^(?!(?:cin_|crs_|rt_|at_|access[_-]|refresh[_-]|bearer[_-]|eyJ))[A-Za-z0-9][A-Za-z0-9._:-]+$"
+            },
+            "required": true,
+            "name": "idempotency-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rootEventId": {
+                    "type": "string",
+                    "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                  },
+                  "eventId": {
+                    "type": "string",
+                    "pattern": "^evt_[A-Za-z0-9._:-]{1,96}$"
+                  },
+                  "capabilityType": {
+                    "type": "string",
+                    "enum": [
+                      "travel",
+                      "lodging",
+                      "transport",
+                      "golf",
+                      "team"
+                    ]
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  }
+                },
+                "required": [
+                  "rootEventId",
+                  "eventId",
+                  "capabilityType",
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search-miss review decision applied",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True when the stored idempotent response was replayed",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "Sensitive responses must not be stored by HTTP caches",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "private, no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enrichment": {
+                      "$ref": "#/components/schemas/PlaceEnrichment"
+                    },
+                    "review": {
+                      "$ref": "#/components/schemas/PlaceEnrichmentReview"
+                    },
+                    "place": {
+                      "$ref": "#/components/schemas/EnrichedPlace"
+                    }
+                  },
+                  "required": [
+                    "enrichment",
+                    "review",
+                    "place"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Seconds until the request may be retried",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected failure",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Crew request correlation identifier",
                 "schema": {
                   "type": "string"
                 }

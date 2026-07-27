@@ -53,7 +53,10 @@ import type {
 	UploadGrantCodec,
 } from "./object-store";
 import type { PlaceCandidateKind } from "./place-candidate";
-import type { PlaceEnrichmentPolicy } from "./place-enrichment";
+import type {
+	PlaceEnrichmentPolicy,
+	PlaceEnrichmentReviewDecision,
+} from "./place-enrichment";
 import type {
 	RecapExternalField,
 	RecapExternalGrantDecisionInput,
@@ -1953,8 +1956,22 @@ export class EventService {
 	) {
 		try {
 			await this.repository.assertPlaceEnrichmentCreateScope(actor, scope);
-			if (id !== null)
-				await this.getPlaceEnrichment(actor, scope.rootEventId, id);
+			if (id !== null) {
+				const result = await this.getPlaceEnrichment(
+					actor,
+					scope.rootEventId,
+					id,
+				);
+				if (
+					!result.associationScopes.some(
+						(associationScope) =>
+							associationScope.eventId === scope.eventId &&
+							associationScope.capabilityType === scope.capabilityType,
+					)
+				) {
+					throw placeEnrichmentNotFound();
+				}
+			}
 		} catch (error) {
 			if (
 				error instanceof DomainError &&
@@ -1978,6 +1995,41 @@ export class EventService {
 			this.repository.requestPlaceEnrichmentRetry(actor, rootEventId, id),
 		);
 		return this.getPlaceEnrichment(actor, rootEventId, id);
+	}
+
+	async reviewPlaceEnrichment(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		id: string,
+		decision: PlaceEnrichmentReviewDecision,
+	) {
+		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw placeEnrichmentNotFound();
+		return concealPlaceEnrichmentAccess(
+			this.repository.reviewPlaceEnrichment(actor, scope, id, decision),
+		);
+	}
+
+	async assertPlaceEnrichmentReviewReplaySafe(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		id: string,
+		decision: PlaceEnrichmentReviewDecision,
+	) {
+		await this.assertPlaceEnrichmentCreateReplaySafe(actor, scope, id);
+		const result = await this.getPlaceEnrichment(actor, scope.rootEventId, id);
+		const expectedState =
+			decision === "approve" ? "human_approved" : "rejected";
+		if (
+			result.job.target.type !== "search_miss" ||
+			result.job.status !== "succeeded" ||
+			result.fields.length < 2 ||
+			result.fields.some(
+				({ approvalState }) => approvalState !== expectedState,
+			) ||
+			(decision === "approve") !== (result.globalPlaceId !== null)
+		) {
+			throw placeEnrichmentNotFound();
+		}
 	}
 
 	async tokenForInvitation(

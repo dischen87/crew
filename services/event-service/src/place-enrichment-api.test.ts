@@ -36,6 +36,7 @@ describe("place enrichment API projection", () => {
 				updatedAt: "2026-07-18T20:00:00.000Z",
 				completedAt: null,
 			},
+			review: null,
 			place: {
 				id: "gpl_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 				sourceCandidateId:
@@ -597,6 +598,7 @@ function enrichmentResult() {
 		fields: [],
 		globalPlaceId:
 			"gpl_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		associationScopes: [scope],
 	};
 }
 

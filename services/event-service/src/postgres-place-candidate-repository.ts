@@ -48,13 +48,15 @@ type CandidateIndexRow = CandidateRow & {
 export class PostgresPlaceCandidateRepository
 	implements PlaceCandidateRepository
 {
-	constructor(private readonly sql: Sql) {}
+	constructor(
+		private readonly sql: Sql,
+		private readonly inTransaction = false,
+	) {}
 
 	async importBatch(
 		candidates: PlaceCandidateInput[],
 	): Promise<PlaceCandidateImportResult[]> {
-		return this.sql.begin(async (transaction) => {
-			const tx = transaction as unknown as Tx;
+		const importCandidates = async (tx: Tx) => {
 			const prepared = candidates.map((input) => ({
 				id: placeCandidateId(input.source, input.sourceRecordId),
 				hash: placeCandidateSnapshotHash(input),
@@ -155,7 +157,12 @@ export class PostgresPlaceCandidateRepository
 				});
 			}
 			return results;
-		}) as Promise<PlaceCandidateImportResult[]>;
+		};
+		return this.inTransaction
+			? importCandidates(this.sql)
+			: (this.sql.begin((transaction) =>
+					importCandidates(transaction as unknown as Tx),
+				) as Promise<PlaceCandidateImportResult[]>);
 	}
 
 	async listActive(input: {

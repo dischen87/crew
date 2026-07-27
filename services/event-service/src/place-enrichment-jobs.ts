@@ -1,7 +1,12 @@
 import type { Sql } from "postgres";
-import { DomainError } from "./domain";
-import type { PlaceCandidateKind } from "./place-candidate";
+import { type CapabilityType, DomainError } from "./domain";
+import type {
+	PlaceCandidateInput,
+	PlaceCandidateKind,
+} from "./place-candidate";
 import {
+	canonicalEvidenceUrl,
+	globalPlaceId,
 	hashText,
 	normalizePlaceSearchQuery,
 	PLACE_ENRICHMENT_VALIDATOR_VERSION,
@@ -9,12 +14,16 @@ import {
 	type PlaceEnrichmentField,
 	type PlaceEnrichmentJob,
 	type PlaceEnrichmentPolicy,
+	type PlaceEnrichmentReviewDecision,
 	type PlaceEnrichmentStatus,
 	type PlaceEnrichmentTarget,
 	PlaceEnrichmentValidationError,
 	placeEnrichmentIdentity,
+	reviewedPlaceCandidateSource,
 	safeEnrichmentCode,
+	validatePlaceEnrichmentFieldValue,
 } from "./place-enrichment";
+import { PostgresPlaceCandidateRepository } from "./postgres-place-candidate-repository";
 
 type Tx = Sql;
 
@@ -75,6 +84,8 @@ type CandidateSeedRow = {
 type Admission = {
 	actorId: string;
 	rootEventId: string;
+	eventId: string;
+	capabilityType: CapabilityType;
 	expectedKind: PlaceCandidateKind;
 };
 
@@ -441,7 +452,14 @@ export class PostgresPlaceEnrichmentJobs {
 		if (
 			fields.length < 2 ||
 			fields.length > 9 ||
-			new Set(fields.map(({ name }) => name)).size !== fields.length
+			new Set(fields.map(({ name }) => name)).size !== fields.length ||
+			fields.some(
+				(field) =>
+					field.approvalState !==
+					(field.sourceKind === "candidate"
+						? "auto_approved"
+						: "pending_review"),
+			)
 		) {
 			throw new Error("Place-enrichment field set is invalid");
 		}
@@ -528,36 +546,7 @@ export class PostgresPlaceEnrichmentJobs {
 			SELECT ${jobColumns(this.sql)} FROM place_enrichment_jobs WHERE id = ${id}
 		`;
 		if (!row) return null;
-		const fields = await this.sql<
-			{
-				name: PlaceEnrichmentField["name"];
-				value: string;
-				sourceKind: PlaceEnrichmentField["sourceKind"];
-				sourceUrl: string | null;
-				observedAt: Date;
-				model: string | null;
-				promptVersion: string | null;
-				validatorVersion: string;
-				validationState: "passed";
-				approvalState: PlaceEnrichmentField["approvalState"];
-			}[]
-		>`
-			SELECT field_name AS name, value_text AS value,
-				source_kind AS "sourceKind", source_url AS "sourceUrl",
-				observed_at AS "observedAt", model, prompt_version AS "promptVersion",
-				validator_version AS "validatorVersion",
-				validation_state AS "validationState", approval_state AS "approvalState"
-			FROM place_enrichment_fields WHERE job_id = ${id} ORDER BY field_name
-		`;
-		const normalizedFields = fields.map((field): PlaceEnrichmentField => {
-			if (field.validatorVersion !== PLACE_ENRICHMENT_VALIDATOR_VERSION) {
-				throw new Error("Place-enrichment validator invariant failed");
-			}
-			return {
-				...field,
-				validatorVersion: PLACE_ENRICHMENT_VALIDATOR_VERSION,
-			};
-		});
+		const fields = await enrichmentFields(this.sql, id);
 		const job = jobRecord(row);
 		const [globalPlace] =
 			job.target.type === "candidate"
@@ -565,21 +554,171 @@ export class PostgresPlaceEnrichmentJobs {
 						SELECT id FROM global_places
 						WHERE candidate_id = ${job.target.candidateId}
 					`
-				: [];
+				: await this.sql<{ id: string }[]>`
+						SELECT place.id FROM place_enrichment_reviews review
+						JOIN global_places place
+							ON place.candidate_id = review.candidate_id
+						WHERE review.job_id = ${id} AND review.decision = 'approve'
+					`;
 		return {
 			job,
-			fields: normalizedFields,
+			fields,
 			globalPlaceId: globalPlace?.id ?? null,
 		};
 	}
 
 	async getAssociated(actorId: string, rootEventId: string, id: string) {
 		const [association] = await this.sql<{ found: boolean }[]>`
-			SELECT true AS found FROM place_enrichment_job_associations
+			SELECT TRUE AS found FROM place_enrichment_job_associations
 			WHERE job_id = ${id} AND actor_id = ${actorId}
 				AND root_event_id = ${rootEventId}
 		`;
-		return association ? this.get(id) : null;
+		const scopes = association
+			? await this.sql<
+					{
+						eventId: string;
+						capabilityType: CapabilityType;
+					}[]
+				>`
+					SELECT event_id AS "eventId", capability_type AS "capabilityType"
+					FROM place_enrichment_job_scopes
+					WHERE job_id = ${id} AND actor_id = ${actorId}
+						AND root_event_id = ${rootEventId}
+				`
+			: [];
+		const result = association ? await this.get(id) : null;
+		return result
+			? {
+					...result,
+					associationScopes: scopes.map((scope) => ({
+						rootEventId,
+						eventId: scope.eventId,
+						capabilityType: scope.capabilityType,
+					})),
+				}
+			: null;
+	}
+
+	async reviewAssociated(
+		actorId: string,
+		rootEventId: string,
+		eventId: string,
+		capabilityType: CapabilityType,
+		id: string,
+		decision: PlaceEnrichmentReviewDecision,
+		expectedKind: PlaceCandidateKind,
+	) {
+		return this.transaction(async (tx) => {
+			const [association] = await tx<{ found: boolean }[]>`
+				SELECT TRUE AS found FROM place_enrichment_job_scopes
+				WHERE job_id = ${id} AND actor_id = ${actorId}
+					AND root_event_id = ${rootEventId}
+					AND event_id = ${eventId}
+					AND capability_type = ${capabilityType}
+			`;
+			if (!association) throw enrichmentNotFound();
+			const [row] = await tx<JobRow[]>`
+				SELECT ${jobColumns(tx)} FROM place_enrichment_jobs
+				WHERE id = ${id} FOR UPDATE
+			`;
+			if (!row) throw enrichmentNotFound();
+			const job = jobRecord(row);
+			const [review] = await tx<{ decision: PlaceEnrichmentReviewDecision }[]>`
+				SELECT decision FROM place_enrichment_reviews WHERE job_id = ${id}
+			`;
+			if (review) {
+				if (review.decision !== decision) throw enrichmentReviewConflict();
+				return reviewResult(tx, id);
+			}
+			if (
+				job.target.type !== "search_miss" ||
+				job.target.kind !== expectedKind ||
+				job.status !== "succeeded" ||
+				job.outcomeCode !== "ENRICHMENT_COMPLETED" ||
+				job.completedAt === null
+			) {
+				throw enrichmentReviewUnavailable();
+			}
+
+			const [usage] = await tx<
+				{
+					exaCalls: number;
+					llmCalls: number;
+					inputTokens: number;
+					outputTokens: number;
+					costMicros: number;
+					openCalls: number;
+				}[]
+			>`
+				SELECT
+					count(*) FILTER (WHERE provider = 'exa')::int AS "exaCalls",
+					count(*) FILTER (WHERE provider = 'llm')::int AS "llmCalls",
+					COALESCE(sum(input_tokens_actual), 0)::int AS "inputTokens",
+					COALESCE(sum(output_tokens_actual), 0)::int AS "outputTokens",
+					COALESCE(sum(cost_micros_actual), 0)::int AS "costMicros",
+					count(*) FILTER (WHERE status = 'reserved')::int AS "openCalls"
+				FROM place_enrichment_provider_calls WHERE job_id = ${id}
+			`;
+			if (
+				!usage ||
+				usage.openCalls > 0 ||
+				usage.exaCalls > job.policy.maxExaCalls ||
+				usage.llmCalls > job.policy.maxLlmCalls ||
+				usage.inputTokens > job.policy.maxInputTokens ||
+				usage.outputTokens > job.policy.maxOutputTokens ||
+				usage.costMicros > job.policy.maxCostMicros
+			) {
+				throw enrichmentReviewUnavailable();
+			}
+
+			const fields = await enrichmentFields(tx, id);
+			assertReviewableFields(job, fields);
+			if (decision === "reject") {
+				await setReviewState(tx, id, fields.length, "rejected");
+				await insertReview(
+					tx,
+					id,
+					actorId,
+					rootEventId,
+					eventId,
+					capabilityType,
+					decision,
+					null,
+				);
+				return reviewResult(tx, id);
+			}
+
+			const input = reviewedCandidateInput(job, fields);
+			const [materialized] = await new PostgresPlaceCandidateRepository(
+				tx,
+				true,
+			).importBatch([input]);
+			if (!materialized || materialized.outcome === "stale") {
+				throw enrichmentReviewUnavailable();
+			}
+			const candidateId = materialized.candidate.id;
+			const placeId = globalPlaceId(candidateId);
+			const [place] = await tx<{ id: string }[]>`
+				INSERT INTO global_places (id, candidate_id)
+				VALUES (${placeId}, ${candidateId})
+				ON CONFLICT (candidate_id) DO UPDATE
+					SET candidate_id = EXCLUDED.candidate_id
+				RETURNING id
+			`;
+			if (place?.id !== placeId) throw enrichmentReviewUnavailable();
+			await setReviewState(tx, id, fields.length, "human_approved");
+			await insertReview(
+				tx,
+				id,
+				actorId,
+				rootEventId,
+				eventId,
+				capabilityType,
+				decision,
+				candidateId,
+			);
+			return reviewResult(tx, id);
+		});
 	}
 
 	async requestRetryAssociated(
@@ -654,6 +793,7 @@ export class PostgresPlaceEnrichmentJobs {
 		if (replay) {
 			if (!existing)
 				throw new Error("Place-enrichment association invariant failed");
+			await insertAssociationScope(tx, identity.id, admission);
 			return jobRecord(existing);
 		}
 
@@ -738,6 +878,7 @@ export class PostgresPlaceEnrichmentJobs {
 				${reservedCostMicros}
 			)
 		`;
+		await insertAssociationScope(tx, row.id, admission);
 		return jobRecord(row);
 	}
 
@@ -815,6 +956,184 @@ async function insertJob(
 	`;
 	if (!row) throw new Error("Place-enrichment enqueue invariant failed");
 	return row;
+}
+
+async function enrichmentFields(tx: Tx, id: string) {
+	const fields = await tx<
+		{
+			name: PlaceEnrichmentField["name"];
+			value: string;
+			sourceKind: PlaceEnrichmentField["sourceKind"];
+			sourceUrl: string | null;
+			observedAt: Date;
+			model: string | null;
+			promptVersion: string | null;
+			validatorVersion: string;
+			validationState: "passed";
+			approvalState: PlaceEnrichmentField["approvalState"];
+		}[]
+	>`
+		SELECT field_name AS name, value_text AS value,
+			source_kind AS "sourceKind", source_url AS "sourceUrl",
+			observed_at AS "observedAt", model, prompt_version AS "promptVersion",
+			validator_version AS "validatorVersion",
+			validation_state AS "validationState", approval_state AS "approvalState"
+		FROM place_enrichment_fields WHERE job_id = ${id} ORDER BY field_name
+	`;
+	return fields.map((field): PlaceEnrichmentField => {
+		if (field.validatorVersion !== PLACE_ENRICHMENT_VALIDATOR_VERSION) {
+			throw new Error("Place-enrichment validator invariant failed");
+		}
+		return {
+			...field,
+			validatorVersion: PLACE_ENRICHMENT_VALIDATOR_VERSION,
+		};
+	});
+}
+
+function assertReviewableFields(
+	job: PlaceEnrichmentJob,
+	fields: readonly PlaceEnrichmentField[],
+) {
+	if (
+		job.target.type !== "search_miss" ||
+		fields.length < 2 ||
+		fields.length > 9 ||
+		new Set(fields.map(({ name }) => name)).size !== fields.length ||
+		fields.some(
+			(field) =>
+				field.sourceKind !== "exa_llm" ||
+				field.sourceUrl === null ||
+				field.model === null ||
+				field.promptVersion === null ||
+				field.validationState !== "passed" ||
+				field.approvalState !== "pending_review",
+		)
+	) {
+		throw enrichmentReviewUnavailable();
+	}
+	const names = new Set(fields.map(({ name }) => name));
+	if (
+		!names.has("name") ||
+		!names.has("countryCode") ||
+		names.has("latitude") !== names.has("longitude")
+	) {
+		throw enrichmentReviewUnavailable();
+	}
+	try {
+		for (const field of fields) {
+			if (
+				canonicalEvidenceUrl(field.sourceUrl as string) !== field.sourceUrl ||
+				validatePlaceEnrichmentFieldValue(
+					field.name,
+					field.value,
+					job.target.countryCode,
+				) !== field.value
+			) {
+				throw enrichmentReviewUnavailable();
+			}
+		}
+	} catch (error) {
+		if (error instanceof DomainError) throw error;
+		if (!(error instanceof PlaceEnrichmentValidationError)) throw error;
+		throw enrichmentReviewUnavailable();
+	}
+}
+
+function reviewedCandidateInput(
+	job: PlaceEnrichmentJob,
+	fields: readonly PlaceEnrichmentField[],
+): PlaceCandidateInput {
+	if (job.target.type !== "search_miss") throw enrichmentReviewUnavailable();
+	const values = new Map(fields.map((field) => [field.name, field.value]));
+	const value = (name: PlaceEnrichmentField["name"]) =>
+		values.get(name) ?? null;
+	const source = reviewedPlaceCandidateSource(fields);
+	const retrievedAt = new Date(
+		Math.max(...fields.map(({ observedAt }) => observedAt.getTime())),
+	);
+	return {
+		source: "place_enrichment",
+		sourceRecordId: source.sourceRecordId,
+		kind: job.target.kind,
+		name: value("name") as string,
+		locality: value("locality"),
+		region: value("region"),
+		countryCode: value("countryCode") as string,
+		latitude: value("latitude") === null ? null : Number(value("latitude")),
+		longitude: value("longitude") === null ? null : Number(value("longitude")),
+		sourceRecordUrl: source.sourceRecordUrl,
+		license: {
+			code: "human-reviewed-citation-v1",
+			url: null,
+			attribution: "Human-approved cited place facts",
+			allowsSearchIndex: false,
+		},
+		retrievedAt,
+		confidence: 1,
+		expiresAt: null,
+		retirement: null,
+	};
+}
+
+async function setReviewState(
+	tx: Tx,
+	id: string,
+	expectedFields: number,
+	state: "human_approved" | "rejected",
+) {
+	const updated = await tx`
+		UPDATE place_enrichment_fields SET approval_state = ${state}
+		WHERE job_id = ${id} AND approval_state = 'pending_review'
+		RETURNING field_name
+	`;
+	if (updated.length !== expectedFields) throw enrichmentReviewUnavailable();
+}
+
+async function insertReview(
+	tx: Tx,
+	id: string,
+	actorId: string,
+	rootEventId: string,
+	eventId: string,
+	capabilityType: CapabilityType,
+	decision: PlaceEnrichmentReviewDecision,
+	candidateId: string | null,
+) {
+	const inserted = await tx`
+		INSERT INTO place_enrichment_reviews (
+			job_id, actor_id, root_event_id, event_id, capability_type,
+			decision, candidate_id
+		) VALUES (
+			${id}, ${actorId}, ${rootEventId}, ${eventId}, ${capabilityType},
+			${decision}, ${candidateId}
+		)
+		RETURNING job_id
+	`;
+	if (inserted.length !== 1)
+		throw new Error("Place-enrichment review invariant failed");
+}
+
+async function insertAssociationScope(
+	tx: Tx,
+	id: string,
+	admission: Admission,
+) {
+	await tx`
+		INSERT INTO place_enrichment_job_scopes (
+			job_id, actor_id, root_event_id, event_id, capability_type
+		) VALUES (
+			${id}, ${admission.actorId}, ${admission.rootEventId},
+			${admission.eventId}, ${admission.capabilityType}
+		)
+		ON CONFLICT DO NOTHING
+	`;
+}
+
+async function reviewResult(tx: Tx, id: string) {
+	const result = await new PostgresPlaceEnrichmentJobs(tx, true).get(id);
+	if (!result) throw new Error("Place-enrichment review invariant failed");
+	return result;
 }
 
 function jobColumns(sql: Tx) {
@@ -996,6 +1315,22 @@ function enrichmentScopeInvalid() {
 		409,
 		"PLACE_ENRICHMENT_SCOPE_INVALID",
 		"Place enrichment is not available for this event capability.",
+	);
+}
+
+function enrichmentReviewUnavailable() {
+	return new DomainError(
+		409,
+		"PLACE_ENRICHMENT_REVIEW_UNAVAILABLE",
+		"This place enrichment cannot be reviewed.",
+	);
+}
+
+function enrichmentReviewConflict() {
+	return new DomainError(
+		409,
+		"PLACE_ENRICHMENT_REVIEW_CONFLICT",
+		"This place enrichment already has a different review decision.",
 	);
 }
 

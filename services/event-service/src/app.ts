@@ -888,6 +888,12 @@ const PlaceEnrichmentRequestSchema = z.discriminatedUnion("target", [
 		})
 		.strict(),
 ]);
+const PlaceEnrichmentReviewRequestSchema = z
+	.object({
+		...PlaceEnrichmentScopeShape,
+		decision: z.enum(["approve", "reject"]),
+	})
+	.strict();
 const PlaceEnrichmentSchema = z
 	.object({
 		id: PlaceEnrichmentJobIdSchema,
@@ -924,9 +930,48 @@ const EnrichedPlaceSchema = z
 	})
 	.strict()
 	.openapi("EnrichedPlace");
+const PlaceEnrichmentReviewSchema = z
+	.object({
+		state: z.enum(["pending", "approved", "rejected"]),
+		fields: z
+			.array(
+				z
+					.object({
+						name: z.enum([
+							"name",
+							"locality",
+							"region",
+							"countryCode",
+							"latitude",
+							"longitude",
+							"address",
+							"websiteUrl",
+							"summary",
+						]),
+						value: z.string().min(1).max(2_048),
+						provenance: z
+							.object({
+								sourceKind: z.literal("exa_llm"),
+								sourceUrl: z
+									.string()
+									.url()
+									.max(2_048)
+									.regex(/^https:\/\//),
+								observedAt: DateTimeSchema,
+							})
+							.strict(),
+					})
+					.strict(),
+			)
+			.min(2)
+			.max(9),
+	})
+	.strict()
+	.openapi("PlaceEnrichmentReview");
 const PlaceEnrichmentResponseSchema = z
 	.object({
 		enrichment: PlaceEnrichmentSchema,
+		review: PlaceEnrichmentReviewSchema.nullable(),
 		place: EnrichedPlaceSchema.nullable(),
 	})
 	.strict();
@@ -5142,6 +5187,38 @@ const retryPlaceEnrichmentRoute = createRoute({
 	},
 	"x-idempotency": "required",
 });
+const reviewPlaceEnrichmentRoute = createRoute({
+	method: "post",
+	path: "/v1/places/enrichment-jobs/{jobId}/review",
+	operationId: "placeEnrichmentJobsReview",
+	tags: ["places"],
+	summary: "Approve or reject cited search-miss place facts",
+	description:
+		"Reviews a completed search-miss job without provider work. Approval atomically materializes one reusable candidate and global place; rejection materializes neither.",
+	security: [{ userBearer: [] }],
+	request: {
+		params: z.object({ jobId: PlaceEnrichmentJobIdSchema }).strict(),
+		headers: IdempotencyHeadersSchema,
+		body: {
+			required: true,
+			content: {
+				"application/json": { schema: PlaceEnrichmentReviewRequestSchema },
+			},
+		},
+	},
+	responses: {
+		200: privateResponse(
+			PlaceEnrichmentResponseSchema,
+			"Search-miss review decision applied",
+		),
+		400: errors[400],
+		401: errors[401],
+		404: errors[404],
+		409: errors[409],
+		500: errors[500],
+	},
+	"x-idempotency": "required",
+});
 
 const syncPushRoute = createRoute({
 	method: "post",
@@ -5512,6 +5589,42 @@ export function createApp(options: AppOptions = {}) {
 		);
 		applyCommandHeaders(c, result);
 		return c.json(result.body, 202);
+	});
+	app.openapi(reviewPlaceEnrichmentRoute, async (c) => {
+		const actor = requiredActor(c);
+		const params = c.req.valid("param");
+		const body = c.req.valid("json");
+		const scope = {
+			rootEventId: body.rootEventId,
+			eventId: body.eventId,
+			capabilityType: body.capabilityType,
+		};
+		const result = await command(
+			c,
+			actor,
+			"placeEnrichmentJobsReview",
+			{ params, body },
+			async (service) => ({
+				status: 200,
+				body: placeEnrichmentResponse(
+					await service.reviewPlaceEnrichment(
+						actor,
+						scope,
+						params.jobId,
+						body.decision,
+					),
+				),
+				headers: { "Cache-Control": "private, no-store" },
+			}),
+			placeEnrichmentReviewReplayGuard(
+				actor,
+				scope,
+				params.jobId,
+				body.decision,
+			),
+		);
+		applyCommandHeaders(c, result);
+		return c.json(result.body, 200);
 	});
 
 	app.openapi(syncPushRoute, async (c) => {
@@ -7831,6 +7944,41 @@ function placeEnrichmentRetryReplayGuard(
 			if (id !== jobId) replayNotFound();
 		}
 		await service.getPlaceEnrichment(actor, rootEventId, jobId);
+	};
+}
+
+function placeEnrichmentReviewReplayGuard(
+	actor: Actor,
+	scope: {
+		rootEventId: string;
+		eventId: string;
+		capabilityType: z.infer<typeof CapabilityTypeSchema>;
+	},
+	jobId: string,
+	decision: "approve" | "reject",
+) {
+	return async (
+		service: EventService,
+		replay: { status: number; body: Record<string, unknown> },
+	) => {
+		if (replay.status < 400) {
+			const enrichment = replay.body.enrichment;
+			const id =
+				typeof enrichment === "object" &&
+				enrichment !== null &&
+				"id" in enrichment
+					? enrichment.id
+					: null;
+			if (id !== jobId) replayNotFound();
+			await service.assertPlaceEnrichmentReviewReplaySafe(
+				actor,
+				scope,
+				jobId,
+				decision,
+			);
+			return;
+		}
+		await service.assertPlaceEnrichmentCreateReplaySafe(actor, scope, jobId);
 	};
 }
 

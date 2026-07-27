@@ -71,6 +71,7 @@ import type {
 	PlaceEnrichmentField,
 	PlaceEnrichmentJob,
 	PlaceEnrichmentPolicy,
+	PlaceEnrichmentReviewDecision,
 } from "./place-enrichment";
 import type {
 	EventRecap,
@@ -743,10 +744,21 @@ export interface EventRepository {
 		job: PlaceEnrichmentJob;
 		fields: PlaceEnrichmentField[];
 		globalPlaceId: string | null;
+		associationScopes: PlaceEnrichmentScope[];
 	} | null>;
 	requestPlaceEnrichmentRetry(
 		actor: Actor,
 		rootEventId: string,
 		id: string,
 	): Promise<PlaceEnrichmentJob>;
+	reviewPlaceEnrichment(
+		actor: Actor,
+		scope: PlaceEnrichmentScope,
+		id: string,
+		decision: PlaceEnrichmentReviewDecision,
+	): Promise<{
+		job: PlaceEnrichmentJob;
+		fields: PlaceEnrichmentField[];
+		globalPlaceId: string | null;
+	}>;
 }
