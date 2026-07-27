@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "partial-native-acceptance",
+  "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
+  "groups": [
+    {
+      "platform": "android",
+      "textSetting": "1.0",
+      "screenshots": 5,
+      "report": "runtime/reports/android-normal.xml"
+    },
+    {
+      "platform": "android",
+      "textSetting": "2.0",
+      "screenshots": 5,
+      "report": "runtime/reports/android-200.xml"
+    },
+    {
+      "platform": "ios",
+      "textSetting": "medium",
+      "screenshots": 5,
+      "report": "runtime/reports/ios-normal.xml"
+    },
+    {
+      "platform": "ios",
+      "textSetting": "accessibility-extra-large",
+      "screenshots": 5,
+      "report": "runtime/reports/ios-large.xml"
+    }
+  ],
+  "totals": {
+    "screenshots": 20,
+    "tests": 4,
+    "failures": 0,
+    "errors": 0
+  },
+  "privacy": {
+    "sanitized": true,
+    "credentialsRetained": false,
+    "uniqueDeviceIdentifiersRetained": false,
+    "absoluteLocalPathsRetained": false
+  },
+  "remainingBoundaries": [
+    "distribution signing",
+    "physical devices",
+    "VoiceOver and TalkBack",
+    "queued, conflict and tombstone visual states",
+    "external Figma handoff"
+  ]
+}

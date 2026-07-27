@@ -1,0 +1,95 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_local_turkey_golf_2026
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn:
+    id: event-hub-tab-plan
+    retryTapIfNoChange: true
+- runFlow:
+    when:
+      visible:
+        id: event-hub
+    commands:
+      - tapOn:
+          id: event-hub-tab-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-view
+    timeout: 30000
+- assertVisible: Alles in einem Plan
+- scrollUntilVisible:
+    element: 11 Einträge
+    direction: DOWN
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: plan-item-iti_local_turkey_golf_flight_out
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- takeScreenshot: ${CAPTURE_DIR}/01-plan
+- scrollUntilVisible:
+    element:
+      id: plan-back
+    direction: DOWN
+    timeout: 60000
+- tapOn:
+    id: plan-back
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: event-hub-timeline-iti_local_turkey_golf_flight_out
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: event-hub-timeline-iti_local_turkey_golf_flight_out
+- extendedWaitUntil:
+    visible:
+      id: live-item-view
+    timeout: 30000
+- takeScreenshot: ${CAPTURE_DIR}/02-live-top
+- scrollUntilVisible:
+    element:
+      id: live-item-edit
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- takeScreenshot: ${CAPTURE_DIR}/03-live-action
+- tapOn:
+    id: live-item-edit
+- extendedWaitUntil:
+    visible:
+      id: plan-item-editor-view
+    timeout: 30000
+- assertVisible: Programmpunkt ändern
+- scrollUntilVisible:
+    element:
+      id: plan-item-title
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- assertVisible:
+    id: plan-item-title
+- takeScreenshot: ${CAPTURE_DIR}/04-editor-top
+- repeat:
+    times: 12
+    commands:
+      - swipe:
+          start: 50%, 85%
+          end: 50%, 15%
+          duration: 350
+- assertVisible: Zurück zum Plan
+- takeScreenshot: ${CAPTURE_DIR}/05-editor-action

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="SwissActivities_API36" tests="1" failures="0" time="147.0">
+    <testcase id="plan-live-editor" name="plan-live-editor" classname="plan-live-editor" file="maestro/plan-live-editor.yaml" time="147.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

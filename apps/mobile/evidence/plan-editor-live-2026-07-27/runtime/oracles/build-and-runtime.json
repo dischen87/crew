@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "capturedOn": "2026-07-27",
+  "source": {
+    "branch": "main",
+    "sha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
+    "originMainSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
+    "cleanBeforeAndAfter": true
+  },
+  "runtime": {
+    "fixture": "evt_local_turkey_golf_2026",
+    "gateway": "isolated native-e2e-runner",
+    "metroPort": 8082,
+    "foreignMetro8081Unchanged": true
+  },
+  "android": {
+    "appId": "app.crew.next",
+    "device": "SwissActivities_API36",
+    "apiLevel": 36,
+    "resolution": "1080x2400",
+    "fontScales": [
+      1.0,
+      2.0
+    ],
+    "apkSha256": "21a2d49eeefb9ababbc9f20e4f6ba21328c906b148d322aa6e9e143e26330a0e",
+    "installedArtifactMatched": true,
+    "runs": 2,
+    "failures": 0
+  },
+  "ios": {
+    "appId": "app.crew.next",
+    "device": "iPhone 16e",
+    "osVersion": "26.2",
+    "resolution": "1170x2532",
+    "contentSizes": [
+      "medium",
+      "accessibility-extra-large"
+    ],
+    "executableSha256": "c4c19dfdedc9a2fa3b68547c2a6e71e497a725e44a14016015685731b31a80ae",
+    "installedArtifactMatched": true,
+    "signing": "simulator debug",
+    "runs": 2,
+    "failures": 0
+  },
+  "artifacts": {
+    "screenshots": 20,
+    "junitReports": 4
+  }
+}
