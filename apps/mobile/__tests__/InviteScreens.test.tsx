@@ -425,6 +425,69 @@ test('keeps only this-mount server-confirmed summaries after a transient refresh
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('refreshes the manager list when returning from the invite editor', async () => {
+  const before = invitation('inv_before_editor', 'active', 1);
+  const created = invitation('inv_created_in_editor', 'active', 1);
+  let listAttempt = 0;
+  let onFocus: (() => void) | undefined;
+  mockRequestAsUser.mockImplementation(
+    async (_subject: unknown, operation: string) => {
+      if (operation === 'eventMembershipsList') {
+        return {
+          data: {
+            items: [membership(mockAccountId, 'owner')],
+            pageInfo: { hasMore: false, nextCursor: null },
+          },
+        };
+      }
+      if (operation === 'eventInvitationsList') {
+        listAttempt += 1;
+        return {
+          data: {
+            items: listAttempt === 1 ? [before] : [created, before],
+            pageInfo: { hasMore: false, nextCursor: null },
+          },
+        };
+      }
+      throw new Error(`Unexpected operation ${operation}`);
+    },
+  );
+  const navigation = {
+    addListener: jest.fn((event: string, listener: () => void) => {
+      if (event === 'focus') onFocus = listener;
+      return jest.fn();
+    }),
+    canGoBack: jest.fn(() => true),
+    goBack: jest.fn(),
+    navigate: jest.fn(),
+  };
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(managerElement(navigation));
+    await flush();
+  });
+
+  expect(
+    renderer.root.findByProps({
+      testID: 'invite-manager-item-inv_before_editor',
+    }),
+  ).toBeTruthy();
+  expect(onFocus).toBeDefined();
+
+  await ReactTestRenderer.act(async () => {
+    onFocus?.();
+    await flush();
+  });
+
+  expect(
+    renderer.root.findByProps({
+      testID: 'invite-manager-item-inv_created_in_editor',
+    }),
+  ).toBeTruthy();
+  expect(listAttempt).toBe(2);
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('lists safe summaries and revokes only after confirmation and a fresh role check', async () => {
   const active = invitation('inv_active_link', 'active', 4);
   mockRequestAsUser.mockImplementation(
@@ -642,6 +705,7 @@ test('clears the server-confirmed fallback after revoke authority is denied', as
     },
   );
   const navigation = {
+    addListener: jest.fn(() => jest.fn()),
     canGoBack: jest.fn(() => true),
     goBack: jest.fn(),
     navigate: jest.fn(),
@@ -1937,6 +2001,7 @@ async function pressCreate(renderer: ReactTestRenderer.ReactTestRenderer) {
 
 async function renderManager() {
   const navigation = {
+    addListener: jest.fn(() => jest.fn()),
     canGoBack: jest.fn(() => true),
     goBack: jest.fn(),
     navigate: jest.fn(),

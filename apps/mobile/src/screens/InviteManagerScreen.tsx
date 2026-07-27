@@ -200,6 +200,14 @@ export function InviteManagerScreen({ navigation, route }: Props) {
     serverConfirmedRef.current = null;
   }, [scopeKey]);
 
+  useEffect(
+    () =>
+      navigation.addListener('focus', () => {
+        if (scopeRef.current) setRefreshRequest(value => value + 1);
+      }),
+    [navigation],
+  );
+
   useEffect(() => {
     if (!scopeKey) {
       setState({ key: '', phase: 'concealed' });
