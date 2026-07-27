@@ -7,6 +7,9 @@ const workflowUrl = new URL(
 	repositoryRoot,
 );
 const workflowSource = await Bun.file(workflowUrl).text();
+const stagingWorkflowSource = await Bun.file(
+	new URL(".github/workflows/crew-staging-release.yml", repositoryRoot),
+).text();
 const dockerIgnoreSource = await Bun.file(
 	new URL(".dockerignore", repositoryRoot),
 ).text();
@@ -68,6 +71,51 @@ const serviceImages = {
 	"user-service": "@crew/user-service",
 	"event-service": "@crew/event-service",
 } as const;
+const compatibilityServices = [
+	"api-gateway",
+	"user-api",
+	"event-api",
+	"magic-worker",
+	"push-worker",
+	"attachment-worker",
+	"notification-worker",
+	"recap-retention-worker",
+	"redis-rate-limit",
+	"provider-sink",
+	"fixture-bootstrap",
+	"web",
+] as const;
+const targetComposeExpression = ["$", "{target_compose[@]}"].join("");
+const previousComposeExpression = ["$", "{previous_compose[@]}"].join("");
+const restoredServicesExpression = ["$", "{restored_services[@]}"].join("");
+const portExpression = ["$", "{port}"].join("");
+const compatibilityInputExpression = [
+	"$",
+	"{{ inputs.compatibility_from_sha }}",
+].join("");
+const compatibilityConditionExpression = [
+	"$",
+	"{{ !inputs.reuse_stored_manifest && inputs.compatibility_from_sha != '' }}",
+].join("");
+const auditedCompatibilityFromSha = "9e2d70c0cc367085d48cc80db5e739bc813580e7";
+const auditedCompatibilityDigests = {
+	AUDITED_FROM_RUNTIME_CONTRACT_SHA:
+		"7d7a783b3bd0aa6c5bda2c2e5d036a4805967ff6e7350f96d8eedc71e7e35b41",
+	AUDITED_TARGET_DATABASE_CONTRACT_SHA:
+		"25b18715f31538144e3e63f5b4b4c8bbf5901b3d245936601a7d79034bc07b17",
+	AUDITED_TARGET_GRANT_SHA:
+		"4ac716f6ea109571d2ba1d6555a00349060f8702d6c5392b4fef3d0dcaf34957",
+	AUDITED_TARGET_RUNTIME_CONTRACT_SHA:
+		"0250b362d12b96b3034fdaefef82791b01b2812e795407f23f499d235c4d73d6",
+} as const;
+const previousImageRepositories = {
+	"api-gateway": "ghcr.io/dischen87/crew-api-gateway",
+	"user-service": "ghcr.io/dischen87/crew-user-service",
+	"event-service": "ghcr.io/dischen87/crew-event-service",
+	infra: "ghcr.io/dischen87/crew-infra",
+	"rate-limit-redis": "ghcr.io/dischen87/crew-rate-limit-redis",
+	web: "ghcr.io/dischen87/crew-web",
+} as const;
 const serviceDockerfiles = Object.fromEntries(
 	await Promise.all(
 		Object.keys(serviceImages).map(async (service) => [
@@ -99,6 +147,44 @@ const databases = {
 describe("Crew Next GitHub Actions workflow", () => {
 	test("pins runtimes, fails closed and contains no deployment path", () => {
 		validateWorkflow(workflowSource);
+	});
+
+	test("proves the previous runtime on the exact target contract before staging deploy", () => {
+		validateStagingCompatibilityWorkflow(stagingWorkflowSource);
+		for (const [needle, replacement] of [
+			[
+				'            git merge-base --is-ancestor "$COMPATIBILITY_FROM_SHA" "$RELEASE_SHA"\n',
+				"            true # removed compatibility ancestry check\n",
+			],
+			[
+				'            test "$COMPATIBILITY_FROM_SHA" = "$AUDITED_COMPATIBILITY_FROM_SHA"\n',
+				"            true # widened compatibility source\n",
+			],
+			[
+				'            --command "SELECT count(*) FROM event_schema_migrations WHERE name = \'0035_place_enrichment_worker_health.sql\'")" -eq 1\n',
+				"            --command 'SELECT 1')\" -eq 1\n",
+			],
+			[
+				`          "${previousComposeExpression}" up --no-build --no-deps --wait --wait-timeout 180 \\\n`,
+				"          true # removed previous runtime startup\n",
+			],
+			[
+				'              test "$(docker inspect --format \'{{.Image}}\' "$container_id")" = "$expected_image_id"\n',
+				"              true # removed exact previous image check\n",
+			],
+			[
+				"            'worker (tick|heartbeat) failed|permission denied|relation .* does not exist|column .* does not exist' \\\n",
+				"            'ignored worker errors' \\\n",
+			],
+			[
+				'              manifest["rollbackCompatibility"] = compatibility\n',
+				"              pass\n",
+			],
+		] as const) {
+			const drifted = stagingWorkflowSource.replace(needle, replacement);
+			expect(drifted).not.toBe(stagingWorkflowSource);
+			expect(() => validateStagingCompatibilityWorkflow(drifted)).toThrow();
+		}
 	});
 
 	test("turns required command, environment and fail-closed drift red", () => {
@@ -470,6 +556,164 @@ function normalizeSql(statement: string) {
 		.replace(/\s*([(),;.])\s*/g, "$1")
 		.trim()
 		.toLowerCase();
+}
+
+function validateStagingCompatibilityWorkflow(source: string) {
+	expect(source).not.toContain("continue-on-error");
+	expect(source).not.toMatch(/set \+e/);
+	const workflow = object(Bun.YAML.parse(source), "staging workflow");
+	const publish = object(
+		object(workflow.jobs, "staging jobs").publish,
+		"staging publish job",
+	);
+	const inputs = object(
+		object(
+			object(workflow.on, "staging triggers").workflow_dispatch,
+			"staging dispatch",
+		).inputs,
+		"staging inputs",
+	);
+	expect(inputs.compatibility_from_sha).toMatchObject({
+		required: false,
+		default: "",
+		type: "string",
+	});
+	expect(
+		object(publish.env, "staging publish env").COMPATIBILITY_FROM_SHA,
+	).toBe(compatibilityInputExpression);
+	const publishEnv = object(publish.env, "staging publish env");
+	expect(publishEnv.AUDITED_COMPATIBILITY_FROM_SHA).toBe(
+		auditedCompatibilityFromSha,
+	);
+	for (const [variable, digest] of Object.entries(
+		auditedCompatibilityDigests,
+	)) {
+		expect(publishEnv[variable]).toBe(digest);
+	}
+	const steps = array(publish.steps, "staging publish steps").map(
+		(value, index) => object(value, `staging step ${index}`),
+	);
+	const verify = runStep(steps, "Verify immutable main release");
+	for (const required of [
+		'[[ "$COMPATIBILITY_FROM_SHA" =~ ^[0-9a-f]{40}$ ]]',
+		'test "$COMPATIBILITY_FROM_SHA" = "$AUDITED_COMPATIBILITY_FROM_SHA"',
+		'test "$(git rev-parse "$COMPATIBILITY_FROM_SHA^{commit}")" = "$COMPATIBILITY_FROM_SHA"',
+		'git merge-base --is-ancestor "$COMPATIBILITY_FROM_SHA" "$RELEASE_SHA"',
+	]) {
+		expect(verify).toContain(required);
+	}
+
+	const proofStep = requiredStep(
+		steps,
+		"Prove previous runtime on target contract",
+	);
+	expect(proofStep.if).toBe(compatibilityConditionExpression);
+	const proof = string(proofStep.run, "compatibility proof command");
+	expect(proof.trimStart().startsWith("set -euo pipefail\n")).toBe(true);
+	expect(proof).not.toContain(`"${previousComposeExpression}" build`);
+	for (const required of [
+		'test "$COMPATIBILITY_FROM_SHA" = "$AUDITED_COMPATIBILITY_FROM_SHA"',
+		'git worktree add --detach "$compatibility_checkout" "$COMPATIBILITY_FROM_SHA"',
+		'test "$FROM_RUNTIME_CONTRACT_SHA" = "$AUDITED_FROM_RUNTIME_CONTRACT_SHA"',
+		'test "$TARGET_DATABASE_CONTRACT_SHA" = "$AUDITED_TARGET_DATABASE_CONTRACT_SHA"',
+		'test "$TARGET_GRANT_SHA" = "$AUDITED_TARGET_GRANT_SHA"',
+		'test "$TARGET_RUNTIME_CONTRACT_SHA" = "$AUDITED_TARGET_RUNTIME_CONTRACT_SHA"',
+		'docker pull "$tag" >&2',
+		"--format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}'",
+		"--format '{{index .Config.Labels \"org.opencontainers.image.source\"}}'",
+		"--format '{{range .RepoDigests}}{{println .}}{{end}}'",
+		'[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]',
+		"PREVIOUS_API_GATEWAY_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-api-gateway)",
+		"PREVIOUS_USER_SERVICE_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-user-service)",
+		"PREVIOUS_EVENT_SERVICE_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-event-service)",
+		"PREVIOUS_INFRA_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-infra)",
+		"PREVIOUS_RATE_LIMIT_REDIS_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-rate-limit-redis)",
+		"PREVIOUS_WEB_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-web)",
+		`"${targetComposeExpression}" up --wait --wait-timeout 180 \\`,
+		"jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap",
+		"SELECT count(*) FROM event_schema_migrations WHERE name = '0035_place_enrichment_worker_health.sql'",
+		'test "$enrichment_worker_acl" = "f|t|t|t|t|t|f|t|f|f|f"',
+		`"${previousComposeExpression}" up --no-build --no-deps --wait --wait-timeout 180 \\`,
+		`"${restoredServicesExpression}"`,
+		`test "$(docker inspect --format '{{.Image}}' "$container_id")" = "$expected_image_id"`,
+		`test "$(docker inspect --format '{{.RestartCount}}' "$container_id")" -eq 0`,
+		`curl --fail --silent --show-error "http://127.0.0.1:${portExpression}/docs/openapi.json"`,
+		"curl --fail --silent --show-error http://127.0.0.1:8080/",
+		"Der gemeinsame Plan für eure Gruppe.",
+		'["services"]["fixture-bootstrap"]["image"]',
+		"-e CREW_FIXTURE_SCENARIO=golf-tour fixture-bootstrap",
+		"-e CREW_FIXTURE_ATTACHMENT_E2E=1",
+		"-e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap",
+		"worker (tick|heartbeat) failed|permission denied|relation .* does not exist|column .* does not exist",
+		"services/user-service/migrations",
+		"services/event-service/migrations",
+		"infra/staging/compose.staging.yaml",
+		'"kind": "previous-runtime-on-target-contract"',
+		'"previousImages": previous_images',
+		'"githubActionsRunId": run_id',
+	]) {
+		expect(proof).toContain(required);
+	}
+	for (const [service, image] of [
+		["redis-rate-limit", "$PREVIOUS_RATE_LIMIT_REDIS_IMAGE"],
+		["provider-sink", "$PREVIOUS_INFRA_IMAGE"],
+		["api-gateway", "$PREVIOUS_API_GATEWAY_IMAGE"],
+		["user-api", "$PREVIOUS_USER_SERVICE_IMAGE"],
+		["magic-worker", "$PREVIOUS_USER_SERVICE_IMAGE"],
+		["push-worker", "$PREVIOUS_USER_SERVICE_IMAGE"],
+		["event-api", "$PREVIOUS_EVENT_SERVICE_IMAGE"],
+		["attachment-worker", "$PREVIOUS_EVENT_SERVICE_IMAGE"],
+		["notification-worker", "$PREVIOUS_EVENT_SERVICE_IMAGE"],
+		["recap-retention-worker", "$PREVIOUS_EVENT_SERVICE_IMAGE"],
+		["fixture-bootstrap", "$PREVIOUS_INFRA_IMAGE"],
+		["web", "$PREVIOUS_WEB_IMAGE"],
+	] as const) {
+		expect(proof).toContain(`  ${service}:\n    image: ${image}`);
+	}
+	for (const repository of Object.values(previousImageRepositories)) {
+		expect(proof).toContain(`"${repository}"`);
+	}
+	expect(proof).toContain(
+		`"${targetComposeExpression}" --profile tools run --no-deps --rm place-golf-import`,
+	);
+	expect(proof).toContain(
+		`"${targetComposeExpression}" --profile tools run --no-deps --rm place-search-reindex`,
+	);
+	expect(proof).toContain(
+		`"${previousComposeExpression}" --profile tools run --no-deps --rm \\`,
+	);
+
+	const manifestStep = requiredStep(steps, "Create immutable image manifest");
+	const manifest = string(manifestStep.run, "manifest command");
+	expect(steps.indexOf(proofStep) < steps.indexOf(manifestStep)).toBe(true);
+	for (const required of [
+		"if not isinstance(compatibility, dict) or set(compatibility) != expected_fields:",
+		'compatibility["kind"] != "previous-runtime-on-target-contract"',
+		'compatibility["fromReleaseId"] != compatibility_from_sha',
+		'compatibility["fromReleaseId"]',
+		'!= os.environ["AUDITED_COMPATIBILITY_FROM_SHA"]',
+		'compatibility["targetDatabaseReleaseId"] != os.environ["RELEASE_SHA"]',
+		'compatibility["githubActionsRunId"] != os.environ["GITHUB_RUN_ID"]',
+		'compatibility["outcome"] != "passed"',
+		'"previousImages"',
+		"or set(previous_images) != set(previous_repositories)",
+		'manifest["rollbackCompatibility"] = compatibility',
+	]) {
+		expect(manifest).toContain(required);
+	}
+	for (const [variable, digest] of Object.entries(
+		auditedCompatibilityDigests,
+	)) {
+		expect(manifest).toContain(`"${variable}"`);
+		expect(source).toContain(digest);
+	}
+	for (const repository of Object.values(previousImageRepositories)) {
+		expect(manifest).toContain(`"${repository}"`);
+	}
+	for (const service of compatibilityServices) {
+		expect(proof).toContain(`"${service}"`);
+		expect(manifest).toContain(`"${service}"`);
+	}
 }
 
 function validateWorkflow(source: string) {

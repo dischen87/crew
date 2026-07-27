@@ -228,6 +228,138 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 	expect(hostDeploy).toContain(
 		'"kind": "identical-database-and-runtime-contract"',
 	);
+	expect(hostDeploy).toContain('"kind": "previous-runtime-on-target-contract"');
+	for (const field of [
+		"targetDatabaseReleaseId",
+		"targetDatabaseContractSha256",
+		"targetGrantSha256",
+		"fromRuntimeInfrastructureContractSha256",
+		"targetRuntimeInfrastructureContractSha256",
+		"githubActionsRunId",
+		"previousImages",
+	]) {
+		expect(hostDeploy).toContain(`"${field}"`);
+	}
+	expect(
+		hostDeploy.match(/re\.escape\(repository\) \+ r"@sha256:\[0-9a-f\]\{64\}"/g)
+			?.length,
+	).toBeGreaterThanOrEqual(3);
+	for (const [variable, image, requested] of [
+		[
+			"compatibility_previous_api_gateway_image",
+			"api-gateway",
+			"requested_api_gateway_image",
+		],
+		[
+			"compatibility_previous_user_service_image",
+			"user-service",
+			"requested_user_service_image",
+		],
+		[
+			"compatibility_previous_event_service_image",
+			"event-service",
+			"requested_event_service_image",
+		],
+		["compatibility_previous_infra_image", "infra", "requested_infra_image"],
+		[
+			"compatibility_previous_rate_limit_redis_image",
+			"rate-limit-redis",
+			"requested_rate_limit_redis_image",
+		],
+		["compatibility_previous_web_image", "web", "requested_web_image"],
+	] as const) {
+		expect(hostDeploy).toContain(`"${variable}": previous_images["${image}"]`);
+		expect(hostDeploy).toContain(`"${image}": stored_images.get("${image}")`);
+		expect(hostDeploy).toContain(`"${image}": ${requested}`);
+	}
+	for (const service of [
+		"redis-rate-limit",
+		"provider-sink",
+		"fixture-bootstrap",
+		"web",
+	]) {
+		expect(hostDeploy).toContain(`"${service}"`);
+	}
+	expect(hostDeploy).toContain(
+		"Previous runtime images do not match the stored source manifest",
+	);
+	expect(hostDeploy).toContain('"previousImages": previous_images');
+	expect(hostDeploy).toContain('"state": "target-database-previous-runtime"');
+	expect(hostDeploy).toContain(
+		"A forward compatibility transition must be resumed before rollback",
+	);
+	expect(hostDeploy).toContain(
+		"A forward compatibility transition must be resumed before reset",
+	);
+	expect(
+		hostDeploy.lastIndexOf(
+			"A forward compatibility transition must be resumed before reset",
+		),
+	).toBeLessThan(
+		hostDeploy.lastIndexOf(`prepare_greenfield_reset "\${source_sha}"`),
+	);
+	expect(hostDeploy.indexOf("prepare_forward_intent")).toBeLessThan(
+		hostDeploy.lastIndexOf(`\ninstall_caddy "\${release_dir}"`),
+	);
+	expect(
+		hostDeploy.lastIndexOf("record_forward_database_boundary"),
+	).toBeLessThan(
+		hostDeploy.lastIndexOf("user-api event-api magic-worker push-worker"),
+	);
+	expect(hostDeploy.lastIndexOf("complete_forward_intent")).toBeGreaterThan(
+		hostDeploy.lastIndexOf(
+			`activate_release_state "\${target_sha}" "\${target_sha}"`,
+		),
+	);
+	expect(hostDeploy).toContain(
+		"Completed forward transition evidence does not match",
+	);
+	const completedForwardResumeStart = hostDeploy.indexOf(
+		"Completed forward transition evidence does not match",
+	);
+	const completedForwardResume = hostDeploy.slice(
+		completedForwardResumeStart,
+		hostDeploy.indexOf(
+			"elif [[ $(database_contract_sha",
+			completedForwardResumeStart,
+		),
+	);
+	expect(
+		completedForwardResume.indexOf("previous_runtime_proof validate"),
+	).toBeLessThan(completedForwardResume.indexOf("complete_forward_intent"));
+	expect(completedForwardResume).toContain("exit 0");
+	expect(hostDeploy).toContain(
+		"A forward compatibility transition requires resume-forward or abort-forward",
+	);
+	expect(hostDeploy).toContain(
+		"Forward recovery requires the exact existing transition",
+	);
+	expect(hostDeploy).toContain(
+		`( -e "\${forward_in_progress_file}" ||\n\t\t-L "\${forward_in_progress_file}" )`,
+	);
+	const abortForwardStart = hostDeploy.indexOf(
+		`if [[ "\${abort_forward}" == true ]]; then`,
+	);
+	const abortForward = hostDeploy.slice(
+		abortForwardStart,
+		hostDeploy.indexOf(`\ninstall_caddy "\${release_dir}"`, abortForwardStart),
+	);
+	expect(abortForwardStart).toBeGreaterThan(-1);
+	expect(
+		abortForward.indexOf("jwt-bootstrap user-migrate event-migrate"),
+	).toBeLessThan(abortForward.indexOf("record_forward_database_boundary"));
+	expect(abortForward.indexOf("record_forward_database_boundary")).toBeLessThan(
+		abortForward.indexOf("source_manifest="),
+	);
+	expect(abortForward.indexOf(`\tsmoke "\${release_dir}"`)).toBeLessThan(
+		abortForward.indexOf("record_release forward-abort"),
+	);
+	expect(abortForward.indexOf("record_release forward-abort")).toBeLessThan(
+		abortForward.lastIndexOf("activate_release_state"),
+	);
+	expect(abortForward.lastIndexOf("activate_release_state")).toBeLessThan(
+		abortForward.indexOf("complete_forward_intent"),
+	);
 	expect(hostDeploy).toContain("validate_current_state");
 	expect(hostDeploy).toContain("validate_compatibility_proof");
 	expect(hostDeploy).toContain(
@@ -902,6 +1034,14 @@ test("staging release publishes six digests behind the reviewed environment", ()
 			type: "string",
 		},
 	);
+	expect(
+		workflow.on?.workflow_dispatch?.inputs?.forward_recovery,
+	).toMatchObject({
+		required: true,
+		default: "none",
+		type: "choice",
+		options: ["none", "resume", "abort"],
+	});
 	for (const action of [
 		"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
 		"docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
@@ -952,6 +1092,7 @@ test("staging release publishes six digests behind the reviewed environment", ()
 	expect(releaseWorkflow).toContain("reset_staging_data:");
 	expect(releaseWorkflow).toContain("expected_current_staging_sha:");
 	expect(releaseWorkflow).toContain("resume_reset_id:");
+	expect(releaseWorkflow).toContain("forward_recovery:");
 	expect(releaseWorkflow).toContain('test "$DEPLOY_REQUESTED" = true');
 	expect(releaseWorkflow).toContain('test "$REUSE_STORED_MANIFEST" = false');
 	expect(releaseWorkflow).toContain(
@@ -969,6 +1110,12 @@ test("staging release publishes six digests behind the reviewed environment", ()
 	expect(releaseWorkflow).toContain('test "$RESET_STAGING_DATA" = false');
 	expect(releaseWorkflow).toContain(
 		'remote_command="resume-reset $RELEASE_SHA $RESUME_RESET_ID"',
+	);
+	expect(releaseWorkflow).toContain(
+		'remote_command="resume-forward $RELEASE_SHA"',
+	);
+	expect(releaseWorkflow).toContain(
+		'remote_command="abort-forward $RELEASE_SHA"',
 	);
 	expect(releaseWorkflow).toContain('remote_command="redeploy $RELEASE_SHA"');
 	expect(releaseWorkflow).toContain(
@@ -991,6 +1138,7 @@ test("GitHub deploy key is constrained to the current main controller", () => {
 	expect(githubDeploy).toContain(
 		"^resume-reset\\ ([0-9a-f]{40})\\ (github-actions-[0-9]+)$",
 	);
+	expect(githubDeploy).toContain("^(resume|abort)-forward\\ ([0-9a-f]{40})$");
 	expect(githubDeploy).toContain(
 		`[[ "\${target_sha}" == "\${controller_sha}" ]]`,
 	);
@@ -999,11 +1147,17 @@ test("GitHub deploy key is constrained to the current main controller", () => {
 		"Reset resume target must be an ancestor of current main",
 	);
 	expect(githubDeploy).toContain(
+		"Forward recovery target must be an ancestor of current main",
+	);
+	expect(githubDeploy).toContain(
 		`\${controller_sha}:infra/staging/host-release.sh`,
 	);
 	expect(githubDeploy).toContain("env -i");
 	expect(githubDeploy).toContain("CREW_IMAGE_MANIFEST_SOURCE");
 	expect(githubDeploy).toContain(`CREW_RESET_RESUME_ID="\${reset_resume_id}"`);
+	expect(githubDeploy).toContain(
+		`CREW_FORWARD_RECOVERY="\${forward_recovery}"`,
+	);
 	expect(hostDeploy).toContain(`[[ -n "\${requested_id}" ]] || return 0`);
 	expect(hostDeploy).toContain(
 		`[[ "\${reset_staging_data}" != true ]] || return 0`,

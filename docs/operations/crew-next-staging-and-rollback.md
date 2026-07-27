@@ -17,6 +17,8 @@ deploy <current-main-40-sha> <base64-image-manifest>
 redeploy <current-main-40-sha>
 rollback <main-ancestor-40-sha>
 resume-reset <reset-target-main-ancestor-40-sha> <github-actions-N>
+resume-forward <forward-target-main-ancestor-40-sha>
+abort-forward <forward-target-main-ancestor-40-sha>
 ```
 
 The forced command fetches the current `main` controller and runs
@@ -178,13 +180,27 @@ Rollback to a commit before the reset boundary is rejected before Caddy,
 containers, or routes are changed. Later compatible releases may roll back only
 within the new lineage.
 
-The current executor deliberately supports only the smallest provably safe
-case: the previous code, current database release, and target release must have
-identical database-compatibility, runtime-grant, and runtime-infrastructure
-digests. A forward deploy with an existing release writes an immutable
-`identical-database-and-runtime-contract` proof for the exact
-`fromReleaseId`/`toReleaseId`/`databaseReleaseId` tuple before any public route
-or runtime is changed.
+The executor supports two explicit cases. The normal case requires identical
+database-compatibility, runtime-grant, and runtime-infrastructure digests. It
+writes an immutable `identical-database-and-runtime-contract` proof for the
+exact `fromReleaseId`/`toReleaseId`/`databaseReleaseId` tuple before any public
+route or runtime is changed.
+
+An additive transition may instead carry a
+`previous-runtime-on-target-contract` proof in the immutable image manifest.
+After requiring successful Crew CI, the release job must have started the
+previous Redis, provider sink, Gateway, both APIs, all five existing workers,
+fixture bootstrap, and web against a fresh database migrated and granted by the
+target release. It checks every running container's local image ID, the previous
+web marker, and both fixture scenarios. The manifest binds the exact previous
+and target SHAs, target database/grant digests, both runtime-infrastructure
+digests, the exact tested-service list, the successful release-workflow run ID,
+`outcome: passed`, and all six immutable previous Crew image references. The
+host recomputes every digest, loads the previous release's stored manifest, and
+requires all six image references to match exactly before it writes the
+rollback proof.
+Dispatch that transition with `compatibility_from_sha` set to the exact active
+staging SHA; leave reset, resume, and stored-manifest inputs disabled.
 
 If migrations, grants, or runtime infrastructure differ, the forward deploy
 stops with:
@@ -193,9 +209,25 @@ stops with:
 Forward deploy changes the database or runtime infrastructure contract; richer rollback evidence is required
 ```
 
-That path must not be bypassed. A future schema-changing release needs a richer
-CI compatibility proof that starts the previous Gateway, APIs, and workers
-against a clone migrated and granted by the target release.
+That path must not be bypassed for any transition without the exact CI proof.
+The proof does not claim that changed contracts are identical.
+
+Before target migrations run, the host stores a mode-`0600`
+`forward-in-progress` intent bound to the exact from/to SHAs, target manifest,
+and compatibility proof. After migrations and grants succeed, but before the
+target runtime starts, it commits an auditable
+`target-database-previous-runtime` release record. A failure may therefore be
+resumed only with the same transition and manifest by selecting
+`forward_recovery=resume`. If the target runtime cannot be made healthy,
+`forward_recovery=abort` restores and smokes the proven previous runtime,
+records and activates it against the active database release, and only then
+removes the marker. Because the intent precedes migrations, abort first
+idempotently completes the target migrations and grants and records the target
+database boundary when that boundary is not yet durable. Both recovery modes
+reuse the host-stored target manifest, so an interrupted transition remains
+recoverable after `main` advances.
+Rollback is rejected while the intent exists, and a staging reset is rejected
+rather than silently superseding it.
 
 Before rollback mutates Caddy, images, or services, it validates:
 
@@ -205,7 +237,8 @@ Before rollback mutates Caddy, images, or services, it validates:
 4. the stored and recomputed database-compatibility digest;
 5. the stored and recomputed runtime-infrastructure digest;
 6. both releases' stored image-manifest digests;
-7. the immutable proof written by the forward deploy.
+7. the immutable proof written by the forward deploy, including both manifest
+   digests, database lineage, tested services, release-workflow run, and result.
 
 Only then does it recreate the target release's custom Redis, provider sink,
 and internal TLS containers without removing their volumes. It verifies the

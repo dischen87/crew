@@ -25,8 +25,11 @@ runtime_contract_file="${shared_dir}/runtime-infrastructure-contract-sha256"
 current_record_file="${shared_dir}/current-record"
 reset_consumed_file="${reset_records_dir}/greenfield-reset-consumed.json"
 reset_in_progress_file="${shared_dir}/reset-in-progress"
+forward_in_progress_file="${shared_dir}/forward-in-progress"
 lock_file="${shared_dir}/deploy.lock"
 reset_staging_data=false
+rollback_compatibility=false
+forward_recovery=${CREW_FORWARD_RECOVERY:-none}
 
 case "${action}" in
 	deploy | rollback) ;;
@@ -38,6 +41,10 @@ esac
 
 if [[ ! "${target_sha}" =~ ^[0-9a-f]{40}$ ]]; then
 	echo "Target release must be a full lowercase Git SHA" >&2
+	exit 2
+fi
+if [[ ! "${forward_recovery}" =~ ^(none|resume|abort)$ ]]; then
+	echo "Forward recovery request is invalid" >&2
 	exit 2
 fi
 if [[ $(id -u) -ne 0 ]]; then
@@ -245,6 +252,7 @@ with open(source, encoding="utf-8") as input_file:
 if not isinstance(manifest, dict):
     raise SystemExit("Image manifest fields are invalid")
 reset_intent = manifest.pop("resetStaging", None)
+rollback_compatibility = manifest.get("rollbackCompatibility")
 reset_staging_data = reset_intent is not None
 reset_id = ""
 reset_expected_current_sha = ""
@@ -267,7 +275,11 @@ if reset_staging_data:
         r"[0-9a-f]{40}", reset_expected_current_sha
     ):
         raise SystemExit("Expected current staging release is invalid")
-if set(manifest) != {"schemaVersion", "releaseId", "platform", "images"}:
+required_fields = {"schemaVersion", "releaseId", "platform", "images"}
+if set(manifest) not in {
+    frozenset(required_fields),
+    frozenset(required_fields | {"rollbackCompatibility"}),
+}:
     raise SystemExit("Image manifest fields are invalid")
 if manifest["schemaVersion"] != 1:
     raise SystemExit("Image manifest schema is unsupported")
@@ -285,6 +297,142 @@ for name, repository in repositories.items():
     ):
         raise SystemExit(f"Image manifest reference is invalid for {name}")
 
+compatibility_values = {
+    "rollback_compatibility": "false",
+    "compatibility_from_sha": "",
+    "compatibility_to_sha": "",
+    "compatibility_database_sha": "",
+    "compatibility_database_contract_sha": "",
+    "compatibility_grant_sha": "",
+    "compatibility_from_runtime_contract_sha": "",
+    "compatibility_target_runtime_contract_sha": "",
+    "compatibility_github_actions_run_id": "",
+    "compatibility_previous_api_gateway_image": "",
+    "compatibility_previous_user_service_image": "",
+    "compatibility_previous_event_service_image": "",
+    "compatibility_previous_infra_image": "",
+    "compatibility_previous_rate_limit_redis_image": "",
+    "compatibility_previous_web_image": "",
+}
+if rollback_compatibility is not None:
+    if reset_staging_data:
+        raise SystemExit(
+            "Rollback compatibility and staging reset intents are mutually exclusive"
+        )
+    compatibility_fields = {
+        "schemaVersion",
+        "kind",
+        "fromReleaseId",
+        "toReleaseId",
+        "targetDatabaseReleaseId",
+        "targetDatabaseContractSha256",
+        "targetGrantSha256",
+        "fromRuntimeInfrastructureContractSha256",
+        "targetRuntimeInfrastructureContractSha256",
+        "testedServices",
+        "githubActionsRunId",
+        "outcome",
+        "previousImages",
+    }
+    if (
+        not isinstance(rollback_compatibility, dict)
+        or set(rollback_compatibility) != compatibility_fields
+        or rollback_compatibility["schemaVersion"] != 1
+        or rollback_compatibility["kind"]
+        != "previous-runtime-on-target-contract"
+        or rollback_compatibility["outcome"] != "passed"
+    ):
+        raise SystemExit("Rollback compatibility evidence is invalid")
+    for field in (
+        "fromReleaseId",
+        "toReleaseId",
+        "targetDatabaseReleaseId",
+    ):
+        if not isinstance(rollback_compatibility[field], str) or not re.fullmatch(
+            r"[0-9a-f]{40}", rollback_compatibility[field]
+        ):
+            raise SystemExit("Rollback compatibility release ID is invalid")
+    for field in (
+        "targetDatabaseContractSha256",
+        "targetGrantSha256",
+        "fromRuntimeInfrastructureContractSha256",
+        "targetRuntimeInfrastructureContractSha256",
+    ):
+        if not isinstance(rollback_compatibility[field], str) or not re.fullmatch(
+            r"[0-9a-f]{64}", rollback_compatibility[field]
+        ):
+            raise SystemExit("Rollback compatibility digest is invalid")
+    if (
+        rollback_compatibility["toReleaseId"] != expected_sha
+        or rollback_compatibility["targetDatabaseReleaseId"] != expected_sha
+    ):
+        raise SystemExit("Rollback compatibility target does not match the release")
+    tested_services = [
+        "api-gateway",
+        "user-api",
+        "event-api",
+        "magic-worker",
+        "push-worker",
+        "attachment-worker",
+        "notification-worker",
+        "recap-retention-worker",
+        "redis-rate-limit",
+        "provider-sink",
+        "fixture-bootstrap",
+        "web",
+    ]
+    if rollback_compatibility["testedServices"] != tested_services:
+        raise SystemExit("Rollback compatibility service coverage is incomplete")
+    previous_images = rollback_compatibility["previousImages"]
+    previous_repositories = {
+        "api-gateway": repositories["api-gateway"],
+        "user-service": repositories["user-service"],
+        "event-service": repositories["event-service"],
+        "infra": repositories["infra"],
+        "rate-limit-redis": repositories["rate-limit-redis"],
+        "web": repositories["web"],
+    }
+    if not isinstance(previous_images, dict) or set(previous_images) != set(
+        previous_repositories
+    ):
+        raise SystemExit("Rollback compatibility previous images are incomplete")
+    for name, repository in previous_repositories.items():
+        value = previous_images[name]
+        if not isinstance(value, str) or not re.fullmatch(
+            re.escape(repository) + r"@sha256:[0-9a-f]{64}", value
+        ):
+            raise SystemExit(f"Rollback compatibility previous image is invalid: {name}")
+    github_actions_run_id = rollback_compatibility["githubActionsRunId"]
+    if not isinstance(github_actions_run_id, str) or not re.fullmatch(
+        r"[0-9]+", github_actions_run_id
+    ):
+        raise SystemExit("Rollback compatibility GitHub Actions run ID is invalid")
+    compatibility_values = {
+        "rollback_compatibility": "true",
+        "compatibility_from_sha": rollback_compatibility["fromReleaseId"],
+        "compatibility_to_sha": rollback_compatibility["toReleaseId"],
+        "compatibility_database_sha": rollback_compatibility[
+            "targetDatabaseReleaseId"
+        ],
+        "compatibility_database_contract_sha": rollback_compatibility[
+            "targetDatabaseContractSha256"
+        ],
+        "compatibility_grant_sha": rollback_compatibility["targetGrantSha256"],
+        "compatibility_from_runtime_contract_sha": rollback_compatibility[
+            "fromRuntimeInfrastructureContractSha256"
+        ],
+        "compatibility_target_runtime_contract_sha": rollback_compatibility[
+            "targetRuntimeInfrastructureContractSha256"
+        ],
+        "compatibility_github_actions_run_id": github_actions_run_id,
+        "compatibility_previous_api_gateway_image": previous_images["api-gateway"],
+        "compatibility_previous_user_service_image": previous_images["user-service"],
+        "compatibility_previous_event_service_image": previous_images["event-service"],
+        "compatibility_previous_infra_image": previous_images["infra"],
+        "compatibility_previous_rate_limit_redis_image": previous_images["rate-limit-redis"],
+        "compatibility_previous_web_image": previous_images["web"],
+    }
+
 with open(canonical_path, "w", encoding="utf-8") as output:
     json.dump(manifest, output, sort_keys=True, separators=(",", ":"))
     output.write("\n")
@@ -297,6 +445,8 @@ if environment_path != "-":
         )
         output.write(f"reset_id={reset_id}\n")
         output.write(f"reset_expected_current_sha={reset_expected_current_sha}\n")
+        for name, value in compatibility_values.items():
+            output.write(f"{name}={value}\n")
 PY
 }
 
@@ -640,6 +790,176 @@ PY
 	chmod 0600 "${temporary}"
 	mv "${temporary}" "${proof}"
 	printf '%s\n' "${proof}"
+}
+
+previous_runtime_proof() {
+	local mode=$1 compatibility_from=$2 compatibility_to=$3 database_sha=$4
+	local grant_sha=$5 database_contract_sha=$6 from_runtime_contract_sha=$7
+	local target_runtime_contract_sha=$8 github_actions_run_id=${9:-}
+	local requested_api_gateway_image=${10:-} requested_user_service_image=${11:-}
+	local requested_event_service_image=${12:-}
+	local requested_infra_image=${13:-} requested_rate_limit_redis_image=${14:-}
+	local requested_web_image=${15:-}
+	local proof from_manifest_sha to_manifest_sha from_manifest
+	proof=$(compatibility_proof_path \
+		"${compatibility_to}" "${compatibility_from}" "${database_sha}")
+	from_manifest="${manifests_dir}/${compatibility_from}.json"
+	[[ "${mode}" == create || "${mode}" == validate ]] || return 2
+	if [[ "${mode}" == validate && ! -f "${proof}" ]]; then
+		echo "Previous-runtime rollback compatibility proof is unavailable" >&2
+		exit 1
+	fi
+	from_manifest_sha=$(image_manifest_sha "${compatibility_from}")
+	to_manifest_sha=$(image_manifest_sha "${compatibility_to}")
+	python3 - "${mode}" "${proof}" "${compatibility_from}" \
+		"${compatibility_to}" "${database_sha}" "${grant_sha}" \
+		"${database_contract_sha}" "${from_runtime_contract_sha}" \
+		"${target_runtime_contract_sha}" "${github_actions_run_id}" \
+		"${from_manifest_sha}" "${to_manifest_sha}" \
+		"${database_lineage_id}" "${from_manifest}" \
+		"${requested_api_gateway_image}" "${requested_user_service_image}" \
+		"${requested_event_service_image}" "${requested_infra_image}" \
+		"${requested_rate_limit_redis_image}" "${requested_web_image}" <<'PY'
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+(
+    mode, proof_path, compatibility_from, compatibility_to, database_release,
+    grant_sha, database_contract_sha, from_runtime_contract_sha,
+    target_runtime_contract_sha, requested_run_id, from_manifest_sha,
+    to_manifest_sha, database_lineage_id, stored_from_manifest_path,
+    requested_api_gateway_image, requested_user_service_image,
+    requested_event_service_image, requested_infra_image,
+    requested_rate_limit_redis_image, requested_web_image,
+) = sys.argv[1:]
+proof = None
+if os.path.exists(proof_path):
+    metadata = os.stat(proof_path)
+    if (
+        os.path.islink(proof_path)
+        or metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or oct(metadata.st_mode & 0o777) != "0o600"
+    ):
+        raise SystemExit("Previous-runtime rollback proof mode is invalid")
+    with open(proof_path, encoding="utf-8") as input_file:
+        proof = json.load(input_file)
+run_id = requested_run_id or (proof or {}).get("githubActionsRunId", "")
+if not isinstance(run_id, str) or not re.fullmatch(r"[0-9]+", run_id):
+    raise SystemExit("Previous-runtime rollback proof run ID is invalid")
+with open(stored_from_manifest_path, encoding="utf-8") as input_file:
+    stored_from_manifest = json.load(input_file)
+stored_images = stored_from_manifest.get("images")
+previous_images = {
+    "api-gateway": stored_images.get("api-gateway") if isinstance(stored_images, dict) else None,
+    "user-service": stored_images.get("user-service") if isinstance(stored_images, dict) else None,
+    "event-service": stored_images.get("event-service") if isinstance(stored_images, dict) else None,
+    "infra": stored_images.get("infra") if isinstance(stored_images, dict) else None,
+    "rate-limit-redis": stored_images.get("rate-limit-redis") if isinstance(stored_images, dict) else None,
+    "web": stored_images.get("web") if isinstance(stored_images, dict) else None,
+}
+repositories = {
+    "api-gateway": "ghcr.io/dischen87/crew-api-gateway",
+    "user-service": "ghcr.io/dischen87/crew-user-service",
+    "event-service": "ghcr.io/dischen87/crew-event-service",
+    "infra": "ghcr.io/dischen87/crew-infra",
+    "rate-limit-redis": "ghcr.io/dischen87/crew-rate-limit-redis",
+    "web": "ghcr.io/dischen87/crew-web",
+}
+for name, repository in repositories.items():
+    value = previous_images[name]
+    if not isinstance(value, str) or not re.fullmatch(
+        re.escape(repository) + r"@sha256:[0-9a-f]{64}", value
+    ):
+        raise SystemExit(f"Stored previous runtime image is invalid: {name}")
+requested_previous_images = {
+    "api-gateway": requested_api_gateway_image,
+    "user-service": requested_user_service_image,
+    "event-service": requested_event_service_image,
+    "infra": requested_infra_image,
+    "rate-limit-redis": requested_rate_limit_redis_image,
+    "web": requested_web_image,
+}
+if mode == "create" and not all(requested_previous_images.values()):
+    raise SystemExit("Previous runtime image evidence is required")
+if any(requested_previous_images.values()) and requested_previous_images != previous_images:
+    raise SystemExit("Previous runtime images do not match the stored source manifest")
+expected = {
+    "schemaVersion": 3,
+    "environment": "staging",
+    "kind": "previous-runtime-on-target-contract",
+    "fromReleaseId": compatibility_from,
+    "toReleaseId": compatibility_to,
+    "targetDatabaseReleaseId": database_release,
+    "targetGrantSha256": grant_sha,
+    "targetDatabaseContractSha256": database_contract_sha,
+    "fromRuntimeInfrastructureContractSha256": from_runtime_contract_sha,
+    "targetRuntimeInfrastructureContractSha256": target_runtime_contract_sha,
+    "testedServices": [
+        "api-gateway", "user-api", "event-api", "magic-worker", "push-worker",
+        "attachment-worker", "notification-worker", "recap-retention-worker",
+        "redis-rate-limit", "provider-sink", "fixture-bootstrap", "web",
+    ],
+    "githubActionsRunId": run_id,
+    "outcome": "passed",
+    "previousImages": previous_images,
+    "fromImageManifestSha256": from_manifest_sha,
+    "toImageManifestSha256": to_manifest_sha,
+    "databaseLineageId": database_lineage_id or None,
+}
+if proof is None:
+    if mode != "create":
+        raise SystemExit("Previous-runtime rollback proof is unavailable")
+    expected["verifiedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    descriptor, temporary = tempfile.mkstemp(
+        dir=os.path.dirname(proof_path), prefix=".proof."
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output_file:
+        json.dump(expected, output_file, indent=2)
+        output_file.write("\n")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, proof_path)
+else:
+    verified_at = proof.pop("verifiedAt", None)
+    if proof != expected or not isinstance(verified_at, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+        verified_at,
+    ):
+        raise SystemExit("Previous-runtime rollback proof does not match")
+PY
+	printf '%s\n' "${proof}"
+}
+
+prepare_forward_intent() {
+	local source_sha=$1 proof=$2 expected
+	expected="${source_sha}|${target_sha}|${target_manifest_sha}|$(basename "${proof}")"
+	if [[ -e "${forward_in_progress_file}" ]]; then
+		[[ -f "${forward_in_progress_file}" &&
+			! -L "${forward_in_progress_file}" &&
+			$(stat -c '%U:%G:%a' "${forward_in_progress_file}") == root:root:600 &&
+			$(cat "${forward_in_progress_file}") == "${expected}" ]] || {
+			echo "A different forward compatibility transition is in progress" >&2
+			exit 1
+		}
+		return
+	fi
+	local temporary
+	temporary=$(mktemp "${shared_dir}/.forward-in-progress.XXXXXX")
+	printf '%s\n' "${expected}" >"${temporary}"
+	chmod 0600 "${temporary}"
+	mv "${temporary}" "${forward_in_progress_file}"
+	sync -f "${forward_in_progress_file}"
+	sync -f "${shared_dir}"
+}
+
+complete_forward_intent() {
+	[[ -e "${forward_in_progress_file}" ]] || return
+	rm -f -- "${forward_in_progress_file}"
+	sync -f "${shared_dir}"
 }
 
 install_caddy() {
@@ -1861,6 +2181,64 @@ record_release() {
 	printf '%s\n' "${record}"
 }
 
+record_forward_database_boundary() {
+	local source_sha=$1 database_sha=$2 compatibility_proof=$3
+	local source_record recorded_at record temporary
+	source_record=$(active_record_path "${source_sha}")
+	recorded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	record="${records_dir}/${recorded_at//:/-}-forward-database-boundary-${source_sha}.json"
+	temporary=$(mktemp "${records_dir}/.boundary.XXXXXX")
+	python3 - "${source_record}" "${temporary}" "${source_sha}" "${database_sha}" \
+		"${target_grant_sha}" "${target_contract_sha}" \
+		"${active_runtime_contract_sha}" "${recorded_at}" \
+		"$(basename "${compatibility_proof}")" <<'PY'
+import json
+import sys
+
+(
+    source_path,
+    output_path,
+    source_release,
+    database_release,
+    grant_sha,
+    database_contract_sha,
+    runtime_contract_sha,
+    recorded_at,
+    proof,
+) = sys.argv[1:]
+with open(source_path, encoding="utf-8") as input_file:
+    record = json.load(input_file)
+record.update(
+    {
+        "action": "forward-database-boundary",
+        "fromReleaseId": source_release,
+        "releaseId": source_release,
+        "databaseReleaseId": database_release,
+        "recordedAt": recorded_at,
+        "runtimeGrantSha256": grant_sha,
+        "databaseCompatibilitySha256": database_contract_sha,
+        "runtimeInfrastructureCompatibilitySha256": runtime_contract_sha,
+        "dataReset": False,
+        "resetId": None,
+        "resetAuditSha256": None,
+        "rollbackCompatibilityProof": proof,
+        "smoke": [],
+        "state": "target-database-previous-runtime",
+    }
+)
+with open(output_path, "w", encoding="utf-8") as output_file:
+    json.dump(record, output_file, indent=2)
+    output_file.write("\n")
+PY
+	chmod 0600 "${temporary}"
+	mv "${temporary}" "${record}"
+	validate_record \
+		"${record}" "${source_sha}" "${database_sha}" "${target_grant_sha}" \
+		"${target_contract_sha}" "${active_runtime_contract_sha}" \
+		"${database_lineage_id}"
+	printf '%s\n' "${record}"
+}
+
 activate_release_state() {
 	local release_sha=$1 database_sha=$2 record=$3
 	local database_release_dir="${releases_dir}/${database_sha}"
@@ -1900,6 +2278,26 @@ ensure_environment
 release_dir=$(checkout_release)
 chmod -R a=rX -- "${release_dir}"
 load_target_image_manifest
+if [[ "${forward_recovery}" != none ]]; then
+	[[ "${action}" == deploy &&
+		"${reset_staging_data}" == false &&
+		"${rollback_compatibility}" == true &&
+		-f "${forward_in_progress_file}" &&
+		! -L "${forward_in_progress_file}" ]] || {
+		echo "Forward recovery requires the exact existing transition" >&2
+		exit 1
+	}
+	forward_recovery_proof=$(compatibility_proof_path \
+		"${target_sha}" "${compatibility_from_sha}" "${target_sha}")
+	prepare_forward_intent \
+		"${compatibility_from_sha}" "${forward_recovery_proof}"
+elif [[ "${action}" == deploy &&
+	"${reset_staging_data}" == false &&
+	( -e "${forward_in_progress_file}" ||
+		-L "${forward_in_progress_file}" ) ]]; then
+	echo "A forward compatibility transition requires resume-forward or abort-forward" >&2
+	exit 1
+fi
 load_reset_resume_intent
 reset_guard_normal_release
 pull_release_images
@@ -1913,6 +2311,9 @@ active_contract_sha=
 active_runtime_contract_sha=
 active_record=
 compatibility_proof=
+previous_runtime_compatibility=false
+abort_forward=false
+abort_requires_boundary=false
 reset_from_sha=
 release_action=deploy
 database_lineage_id=
@@ -1922,6 +2323,11 @@ target_runtime_contract_sha=$(runtime_infrastructure_contract_sha "${release_dir
 
 if [[ "${action}" == deploy ]]; then
 	if [[ "${reset_staging_data}" == true ]]; then
+		[[ ! -e "${forward_in_progress_file}" &&
+			! -L "${forward_in_progress_file}" ]] || {
+			echo "A forward compatibility transition must be resumed before reset" >&2
+			exit 1
+		}
 		prepare_greenfield_reset "${source_sha}"
 		reset_from_sha=${reset_expected_current_sha}
 		release_action=reset-deploy
@@ -1931,16 +2337,125 @@ if [[ "${action}" == deploy ]]; then
 		validate_current_state "${source_sha}"
 		database_lineage_id=${active_lineage_id}
 		source_release_dir="${releases_dir}/${source_sha}"
-		if [[ ! -d "${source_release_dir}/.git" ]] ||
-			[[ $(database_contract_sha "${source_release_dir}") != "${active_contract_sha}" ]] ||
-			[[ "${target_contract_sha}" != "${active_contract_sha}" ]] ||
-			[[ "${target_grant_sha}" != "${active_grant_sha}" ]] ||
-			[[ "${target_runtime_contract_sha}" != \
-				"${active_runtime_contract_sha}" ]]; then
+		if [[ "${forward_recovery}" == abort ]]; then
+			compatibility_from_release_dir="${releases_dir}/${compatibility_from_sha}"
+			[[ "${rollback_compatibility}" == true &&
+				"${compatibility_to_sha}" == "${target_sha}" &&
+				"${compatibility_database_sha}" == "${target_sha}" &&
+				"${compatibility_database_contract_sha}" == \
+				"${target_contract_sha}" &&
+				"${compatibility_grant_sha}" == "${target_grant_sha}" &&
+				"${compatibility_target_runtime_contract_sha}" == \
+				"${target_runtime_contract_sha}" &&
+				( "${source_sha}" == "${compatibility_from_sha}" ||
+					"${source_sha}" == "${target_sha}" ) &&
+				( "${active_database_sha}" == "${compatibility_from_sha}" ||
+					"${active_database_sha}" == "${target_sha}" ) &&
+				( "${active_database_sha}" == "${target_sha}" ||
+					"${source_sha}" == "${compatibility_from_sha}" ) &&
+				-d "${compatibility_from_release_dir}/.git" &&
+				$(runtime_infrastructure_contract_sha \
+					"${compatibility_from_release_dir}") == \
+				"${compatibility_from_runtime_contract_sha}" ]] || {
+				echo "Forward abort evidence does not match" >&2
+				exit 1
+			}
+			compatibility_proof=$(previous_runtime_proof validate \
+				"${compatibility_from_sha}" "${target_sha}" "${target_sha}" \
+				"${target_grant_sha}" "${target_contract_sha}" \
+				"${compatibility_from_runtime_contract_sha}" \
+				"${target_runtime_contract_sha}" \
+				"${compatibility_github_actions_run_id}" \
+				"${compatibility_previous_api_gateway_image}" \
+				"${compatibility_previous_user_service_image}" \
+				"${compatibility_previous_event_service_image}" \
+				"${compatibility_previous_infra_image}" \
+				"${compatibility_previous_rate_limit_redis_image}" \
+				"${compatibility_previous_web_image}")
+			if [[ "${active_database_sha}" != "${target_sha}" ]]; then
+				abort_requires_boundary=true
+			fi
+			abort_forward=true
+		elif [[ "${source_sha}" == "${target_sha}" &&
+			-e "${forward_in_progress_file}" ]]; then
+			compatibility_from_release_dir="${releases_dir}/${compatibility_from_sha}"
+			[[ "${rollback_compatibility}" == true &&
+				"${compatibility_to_sha}" == "${target_sha}" &&
+				"${compatibility_database_sha}" == "${active_database_sha}" &&
+				"${active_database_sha}" == "${target_sha}" &&
+				"${compatibility_database_contract_sha}" == \
+				"${active_contract_sha}" &&
+				"${compatibility_grant_sha}" == "${active_grant_sha}" &&
+				"${compatibility_target_runtime_contract_sha}" == \
+				"${active_runtime_contract_sha}" &&
+				-d "${compatibility_from_release_dir}/.git" &&
+				$(runtime_infrastructure_contract_sha \
+					"${compatibility_from_release_dir}") == \
+				"${compatibility_from_runtime_contract_sha}" ]] || {
+				echo "Completed forward transition evidence does not match" >&2
+				exit 1
+			}
+			compatibility_proof=$(previous_runtime_proof validate \
+				"${compatibility_from_sha}" "${target_sha}" "${target_sha}" \
+				"${active_grant_sha}" "${active_contract_sha}" \
+				"${compatibility_from_runtime_contract_sha}" \
+				"${active_runtime_contract_sha}" \
+				"${compatibility_github_actions_run_id}" \
+				"${compatibility_previous_api_gateway_image}" \
+				"${compatibility_previous_user_service_image}" \
+				"${compatibility_previous_event_service_image}" \
+				"${compatibility_previous_infra_image}" \
+				"${compatibility_previous_rate_limit_redis_image}" \
+				"${compatibility_previous_web_image}")
+			prepare_forward_intent \
+				"${compatibility_from_sha}" "${compatibility_proof}"
+			complete_forward_intent
+			compose_command "${release_dir}" ps
+			exit 0
+		elif [[ $(database_contract_sha "${source_release_dir}") == \
+			"${active_contract_sha}" &&
+			"${target_contract_sha}" == "${active_contract_sha}" &&
+			"${target_grant_sha}" == "${active_grant_sha}" &&
+			"${target_runtime_contract_sha}" == \
+			"${active_runtime_contract_sha}" ]]; then
+			[[ ! -e "${forward_in_progress_file}" ]] || {
+				echo "A forward compatibility transition must be resumed first" >&2
+				exit 1
+			}
+		elif [[ "${rollback_compatibility}" == true &&
+			"${compatibility_from_sha}" == "${source_sha}" &&
+			"${compatibility_to_sha}" == "${target_sha}" &&
+			"${compatibility_database_sha}" == "${target_sha}" &&
+			"${compatibility_database_contract_sha}" == \
+			"${target_contract_sha}" &&
+			"${compatibility_grant_sha}" == "${target_grant_sha}" &&
+			"${compatibility_from_runtime_contract_sha}" == \
+			"${active_runtime_contract_sha}" &&
+			"${compatibility_target_runtime_contract_sha}" == \
+			"${target_runtime_contract_sha}" &&
+			( "${active_database_sha}" == "${source_sha}" ||
+				"${active_database_sha}" == "${target_sha}" ) ]]; then
+			previous_runtime_compatibility=true
+			compatibility_proof=$(previous_runtime_proof create \
+				"${source_sha}" "${target_sha}" "${target_sha}" \
+				"${target_grant_sha}" "${target_contract_sha}" \
+				"${active_runtime_contract_sha}" \
+				"${target_runtime_contract_sha}" \
+				"${compatibility_github_actions_run_id}" \
+				"${compatibility_previous_api_gateway_image}" \
+				"${compatibility_previous_user_service_image}" \
+				"${compatibility_previous_event_service_image}" \
+				"${compatibility_previous_infra_image}" \
+				"${compatibility_previous_rate_limit_redis_image}" \
+				"${compatibility_previous_web_image}")
+			prepare_forward_intent "${source_sha}" "${compatibility_proof}"
+		else
 			echo "Forward deploy changes the database or runtime infrastructure contract; richer rollback evidence is required" >&2
 			exit 1
 		fi
-		if [[ "${source_sha}" != "${target_sha}" ]]; then
+		if [[ "${abort_forward}" == false &&
+			"${source_sha}" != "${target_sha}" &&
+			"${previous_runtime_compatibility}" == false ]]; then
 			compatibility_proof=$(write_compatibility_proof \
 				"${target_sha}" "${source_sha}" "${target_sha}" \
 				"${target_grant_sha}" "${target_contract_sha}" \
@@ -1953,6 +2468,10 @@ if [[ "${action}" == deploy ]]; then
 		exit 1
 	fi
 else
+	[[ ! -e "${forward_in_progress_file}" ]] || {
+		echo "A forward compatibility transition must be resumed before rollback" >&2
+		exit 1
+	}
 	if [[ -z "${source_sha}" || "${source_sha}" == "${target_sha}" ]]; then
 		echo "Rollback requires a different currently deployed release" >&2
 		exit 1
@@ -1960,19 +2479,110 @@ else
 	validate_current_state "${source_sha}"
 	database_lineage_id=${active_lineage_id}
 	enforce_reset_rollback_boundary
-	if [[ "${target_contract_sha}" != "${active_contract_sha}" ]] ||
-		[[ "${target_grant_sha}" != "${active_grant_sha}" ]] ||
-		[[ "${target_runtime_contract_sha}" != \
-			"${active_runtime_contract_sha}" ]]; then
+	if [[ "${target_contract_sha}" == "${active_contract_sha}" &&
+		"${target_grant_sha}" == "${active_grant_sha}" &&
+		"${target_runtime_contract_sha}" == \
+		"${active_runtime_contract_sha}" ]]; then
+		compatibility_proof=$(compatibility_proof_path \
+			"${source_sha}" "${target_sha}" "${active_database_sha}")
+		validate_compatibility_proof \
+			"${compatibility_proof}" "${source_sha}" "${target_sha}" \
+			"${active_database_sha}" "${active_grant_sha}" \
+			"${active_contract_sha}" "${active_runtime_contract_sha}" \
+			"${active_lineage_id}"
+	elif [[ "${active_database_sha}" == "${source_sha}" ]]; then
+		compatibility_proof=$(previous_runtime_proof validate \
+			"${target_sha}" "${source_sha}" \
+			"${active_database_sha}" "${active_grant_sha}" \
+			"${active_contract_sha}" "${target_runtime_contract_sha}" \
+			"${active_runtime_contract_sha}" "")
+	else
 		echo "Rollback target is not compatible with the active database or runtime infrastructure contract" >&2
 		exit 1
 	fi
-	compatibility_proof=$(compatibility_proof_path \
-		"${source_sha}" "${target_sha}" "${active_database_sha}")
-	validate_compatibility_proof \
-		"${compatibility_proof}" "${source_sha}" "${target_sha}" \
-		"${active_database_sha}" "${active_grant_sha}" "${active_contract_sha}" \
-		"${active_runtime_contract_sha}" "${active_lineage_id}"
+fi
+
+if [[ "${abort_forward}" == true ]]; then
+	forward_target_sha=${target_sha}
+	if [[ "${abort_requires_boundary}" == true ]]; then
+		compose_command "${release_dir}" up -d --no-build \
+			postgres redis-rate-limit minio typesense provider-sink internal-tls
+		for service in postgres redis-rate-limit minio typesense provider-sink \
+			internal-tls; do
+			wait_for_service "${release_dir}" "${service}"
+		done
+		ensure_typesense_search_key
+		for job in jwt-bootstrap user-migrate event-migrate db-grants \
+			minio-bootstrap; do
+			run_job "${release_dir}" "${job}"
+		done
+		boundary_record=$(record_forward_database_boundary \
+			"${compatibility_from_sha}" "${target_sha}" "${compatibility_proof}")
+		activate_release_state \
+			"${compatibility_from_sha}" "${target_sha}" "${boundary_record}"
+		active_database_sha=${target_sha}
+	fi
+	source_manifest="${manifests_dir}/${compatibility_from_sha}.json"
+	source_canonical=$(mktemp "${manifests_dir}/.canonical.XXXXXX")
+	source_environment=$(mktemp "${manifests_dir}/.environment.XXXXXX")
+	source_override=$(mktemp "${shared_dir}/.source-compose-digest.XXXXXX")
+	canonicalize_image_manifest \
+		"${source_manifest}" "${source_canonical}" "${source_environment}" \
+		"${compatibility_from_sha}" false
+	(
+		# Values are constrained by canonicalize_image_manifest.
+		source "${source_environment}"
+		target_sha=${compatibility_from_sha}
+		release_dir=${compatibility_from_release_dir}
+		digest_override_file=${source_override}
+		write_digest_override "${source_override}"
+		pull_release_images
+		compose_command "${release_dir}" config --quiet
+		install_caddy "${release_dir}"
+		refresh_tls_bundle
+		compose_command "${release_dir}" up -d --no-build --no-deps \
+			--force-recreate redis-rate-limit provider-sink internal-tls
+		for service in redis-rate-limit provider-sink internal-tls; do
+			wait_for_service "${release_dir}" "${service}"
+		done
+		ensure_typesense_search_key
+		verify_typesense_search_key
+		compose_command "${release_dir}" up -d --no-build --no-deps api-gateway
+		wait_for_service "${release_dir}" api-gateway
+		compose_command "${release_dir}" up -d --no-build --no-deps \
+			event-api attachment-worker notification-worker recap-retention-worker
+		for service in event-api attachment-worker notification-worker \
+			recap-retention-worker; do
+			wait_for_service "${release_dir}" "${service}"
+		done
+		compose_command "${release_dir}" up -d --no-build --no-deps \
+			user-api magic-worker push-worker web
+		for service in user-api magic-worker push-worker web; do
+			wait_for_service "${release_dir}" "${service}"
+		done
+		smoke "${release_dir}"
+		verify_service_image_references "${release_dir}"
+		compose_command "${release_dir}" ps
+	)
+	source_distribution_sha=$(sha256sum "${source_override}" | cut -d ' ' -f 1)
+	mv "${source_override}" "${digest_override_file}"
+	sync -f "${digest_override_file}"
+	recovery_record=$(
+		# Values are constrained by canonicalize_image_manifest.
+		source "${source_environment}"
+		target_sha=${compatibility_from_sha}
+		release_dir=${compatibility_from_release_dir}
+		target_manifest_sha=$(image_manifest_sha "${compatibility_from_sha}")
+		image_distribution_override_sha=${source_distribution_sha}
+		record_release forward-abort "${forward_target_sha}" \
+			"${active_database_sha}" "${compatibility_proof}"
+	)
+	rm -f -- \
+		"${source_canonical}" "${source_environment}"
+	activate_release_state \
+		"${compatibility_from_sha}" "${active_database_sha}" "${recovery_record}"
+	complete_forward_intent
+	exit 0
 fi
 
 install_caddy "${release_dir}"
@@ -1989,6 +2599,13 @@ if [[ "${action}" == deploy ]]; then
 	for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
 		run_job "${release_dir}" "${job}"
 	done
+	if [[ "${previous_runtime_compatibility}" == true &&
+		"${active_database_sha}" != "${target_sha}" ]]; then
+		boundary_record=$(record_forward_database_boundary \
+			"${source_sha}" "${target_sha}" "${compatibility_proof}")
+		activate_release_state \
+			"${source_sha}" "${target_sha}" "${boundary_record}"
+	fi
 
 	compose_command "${release_dir}" up -d --no-build \
 		user-api event-api magic-worker push-worker attachment-worker \
@@ -2018,6 +2635,9 @@ if [[ "${action}" == deploy ]]; then
 		"${release_action}" "${reset_from_sha:-${source_sha}}" "${target_sha}" \
 		"${compatibility_proof}")
 	activate_release_state "${target_sha}" "${target_sha}" "${release_record}"
+	if [[ "${previous_runtime_compatibility}" == true ]]; then
+		complete_forward_intent
+	fi
 	if [[ "${release_action}" == reset-deploy ]]; then
 		complete_greenfield_reset "${release_record}"
 	fi

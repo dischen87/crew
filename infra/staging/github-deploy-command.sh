@@ -22,6 +22,7 @@ action=
 target_sha=
 manifest_base64=
 reset_resume_id=
+forward_recovery=
 if [[ "${original_command}" =~ ^deploy\ ([0-9a-f]{40})\ ([A-Za-z0-9+/]+={0,2})$ ]]; then
 	action=deploy
 	target_sha=${BASH_REMATCH[1]}
@@ -36,6 +37,10 @@ elif [[ "${original_command}" =~ ^resume-reset\ ([0-9a-f]{40})\ (github-actions-
 	action=resume-reset
 	target_sha=${BASH_REMATCH[1]}
 	reset_resume_id=${BASH_REMATCH[2]}
+elif [[ "${original_command}" =~ ^(resume|abort)-forward\ ([0-9a-f]{40})$ ]]; then
+	action=forward-recovery
+	forward_recovery=${BASH_REMATCH[1]}
+	target_sha=${BASH_REMATCH[2]}
 else
 	echo "Crew deploy command is not permitted" >&2
 	exit 2
@@ -88,10 +93,16 @@ else
 			echo "Rollback target must be an ancestor of current main" >&2
 			exit 1
 		}
-	else
+	elif [[ "${action}" == resume-reset ]]; then
 		git --git-dir="${repository_dir}" merge-base --is-ancestor \
 			"${target_sha}" "${controller_sha}" || {
 			echo "Reset resume target must be an ancestor of current main" >&2
+			exit 1
+		}
+	else
+		git --git-dir="${repository_dir}" merge-base --is-ancestor \
+			"${target_sha}" "${controller_sha}" || {
+			echo "Forward recovery target must be an ancestor of current main" >&2
 			exit 1
 		}
 	fi
@@ -137,6 +148,12 @@ elif [[ "${action}" == resume-reset ]]; then
 		PATH="${PATH}" HOME="${HOME}" GIT_TERMINAL_PROMPT=0 \
 		CREW_DEPLOY_ROOT="${deploy_root}" \
 		CREW_RESET_RESUME_ID="${reset_resume_id}" \
+		bash "${controller}" deploy "${target_sha}"
+elif [[ "${action}" == forward-recovery ]]; then
+	env -i \
+		PATH="${PATH}" HOME="${HOME}" GIT_TERMINAL_PROMPT=0 \
+		CREW_DEPLOY_ROOT="${deploy_root}" \
+		CREW_FORWARD_RECOVERY="${forward_recovery}" \
 		bash "${controller}" deploy "${target_sha}"
 else
 	env -i \

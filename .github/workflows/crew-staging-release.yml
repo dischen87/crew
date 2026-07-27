@@ -32,6 +32,20 @@ on:
         required: false
         default: ""
         type: string
+      compatibility_from_sha:
+        description: Exact previous staging SHA to prove against the target database contract
+        required: false
+        default: ""
+        type: string
+      forward_recovery:
+        description: Resume or abort an existing forward compatibility transition
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - resume
+          - abort
 
 permissions:
   contents: read
@@ -44,7 +58,7 @@ jobs:
   publish:
     name: Publish immutable Crew images
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       actions: read
       contents: read
@@ -56,7 +70,14 @@ jobs:
       RESET_STAGING_DATA: ${{ inputs.reset_staging_data }}
       EXPECTED_CURRENT_STAGING_SHA: ${{ inputs.expected_current_staging_sha }}
       RESUME_RESET_ID: ${{ inputs.resume_reset_id }}
+      COMPATIBILITY_FROM_SHA: ${{ inputs.compatibility_from_sha }}
+      FORWARD_RECOVERY: ${{ inputs.forward_recovery }}
       IMAGE_SOURCE: https://github.com/dischen87/crew
+      AUDITED_COMPATIBILITY_FROM_SHA: 9e2d70c0cc367085d48cc80db5e739bc813580e7
+      AUDITED_FROM_RUNTIME_CONTRACT_SHA: 7d7a783b3bd0aa6c5bda2c2e5d036a4805967ff6e7350f96d8eedc71e7e35b41
+      AUDITED_TARGET_DATABASE_CONTRACT_SHA: 25b18715f31538144e3e63f5b4b4c8bbf5901b3d245936601a7d79034bc07b17
+      AUDITED_TARGET_GRANT_SHA: 4ac716f6ea109571d2ba1d6555a00349060f8702d6c5392b4fef3d0dcaf34957
+      AUDITED_TARGET_RUNTIME_CONTRACT_SHA: 0250b362d12b96b3034fdaefef82791b01b2812e795407f23f499d235c4d73d6
     steps:
       - name: Check out requested release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -72,21 +93,41 @@ jobs:
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           test "$(git rev-parse "$RELEASE_SHA^{commit}")" = "$RELEASE_SHA"
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-          if [[ "$DEPLOY_REQUESTED" == true && -z "$RESUME_RESET_ID" ]]; then
+          [[ "$FORWARD_RECOVERY" =~ ^(none|resume|abort)$ ]]
+          if [[ "$DEPLOY_REQUESTED" == true && -z "$RESUME_RESET_ID" &&
+            "$FORWARD_RECOVERY" == none ]]; then
             test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
           fi
-          if [[ -n "$RESUME_RESET_ID" ]]; then
+          if [[ "$FORWARD_RECOVERY" != none ]]; then
+            test "$DEPLOY_REQUESTED" = true
+            test "$REUSE_STORED_MANIFEST" = true
+            test "$RESET_STAGING_DATA" = false
+            test -z "$EXPECTED_CURRENT_STAGING_SHA"
+            test -z "$RESUME_RESET_ID"
+            test -z "$COMPATIBILITY_FROM_SHA"
+          elif [[ -n "$RESUME_RESET_ID" ]]; then
             [[ "$RESUME_RESET_ID" =~ ^github-actions-[0-9]+$ ]]
             test "$DEPLOY_REQUESTED" = true
             test "$REUSE_STORED_MANIFEST" = true
             test "$RESET_STAGING_DATA" = false
             test -z "$EXPECTED_CURRENT_STAGING_SHA"
+            test -z "$COMPATIBILITY_FROM_SHA"
           elif [[ "$RESET_STAGING_DATA" == true ]]; then
             test "$DEPLOY_REQUESTED" = true
             test "$REUSE_STORED_MANIFEST" = false
             [[ "$EXPECTED_CURRENT_STAGING_SHA" =~ ^[0-9a-f]{40}$ ]]
+            test -z "$COMPATIBILITY_FROM_SHA"
           else
             test -z "$EXPECTED_CURRENT_STAGING_SHA"
+          fi
+          if [[ -n "$COMPATIBILITY_FROM_SHA" ]]; then
+            [[ "$COMPATIBILITY_FROM_SHA" =~ ^[0-9a-f]{40}$ ]]
+            test "$FORWARD_RECOVERY" = none
+            test "$COMPATIBILITY_FROM_SHA" = "$AUDITED_COMPATIBILITY_FROM_SHA"
+            test "$REUSE_STORED_MANIFEST" = false
+            test "$COMPATIBILITY_FROM_SHA" != "$RELEASE_SHA"
+            test "$(git rev-parse "$COMPATIBILITY_FROM_SHA^{commit}")" = "$COMPATIBILITY_FROM_SHA"
+            git merge-base --is-ancestor "$COMPATIBILITY_FROM_SHA" "$RELEASE_SHA"
           fi
 
       - name: Require successful Crew CI
@@ -221,6 +262,375 @@ jobs:
             org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
             org.opencontainers.image.revision=${{ inputs.release_sha }}
 
+      - name: Prove previous runtime on target contract
+        if: ${{ !inputs.reuse_stored_manifest && inputs.compatibility_from_sha != '' }}
+        run: |
+          set -euo pipefail
+          test "$COMPATIBILITY_FROM_SHA" = "$AUDITED_COMPATIBILITY_FROM_SHA"
+          compatibility_checkout=$(mktemp -d "$RUNNER_TEMP/crew-compatibility.XXXXXX")
+          rmdir "$compatibility_checkout"
+          previous_override=$(mktemp "$RUNNER_TEMP/crew-previous-images.XXXXXX.yaml")
+          target_compose=(
+            docker compose
+            --project-name crew-compatibility
+            --project-directory "$GITHUB_WORKSPACE"
+            --file "$GITHUB_WORKSPACE/compose.yaml"
+          )
+          runtime_services=(
+            api-gateway user-api event-api magic-worker push-worker
+            attachment-worker notification-worker recap-retention-worker
+          )
+          restored_services=(
+            redis-rate-limit provider-sink
+            "${runtime_services[@]}"
+            web
+          )
+          worker_services=(
+            magic-worker push-worker attachment-worker notification-worker
+            recap-retention-worker
+          )
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              "${target_compose[@]}" ps --all || :
+              "${target_compose[@]}" logs --no-color --tail=200 || :
+            fi
+            "${target_compose[@]}" down --volumes --remove-orphans || :
+            git worktree remove --force "$compatibility_checkout" || :
+            rm -f -- "$previous_override"
+            exit "$status"
+          }
+          trap cleanup EXIT
+          git worktree add --detach "$compatibility_checkout" "$COMPATIBILITY_FROM_SHA"
+          test "$(git -C "$compatibility_checkout" rev-parse HEAD)" = "$COMPATIBILITY_FROM_SHA"
+          test -z "$(git -C "$compatibility_checkout" status --porcelain)"
+
+          database_contract_sha() {
+            (
+              cd "$1"
+              find \
+                services/user-service/migrations \
+                services/event-service/migrations \
+                infra/postgres/grant-runtime.sql \
+                -type f -print0 |
+                sort -z |
+                xargs -0 -r sha256sum
+            ) | sha256sum | cut -d ' ' -f 1
+          }
+          runtime_contract_sha() {
+            (
+              cd "$1"
+              sha256sum \
+                compose.yaml \
+                infra/Dockerfile \
+                infra/provider-sink.ts \
+                infra/redis/Dockerfile \
+                infra/redis/start.sh \
+                infra/staging/compose.staging.yaml \
+                infra/staging/haproxy.cfg
+            ) | sha256sum | cut -d ' ' -f 1
+          }
+          TARGET_DATABASE_CONTRACT_SHA=$(database_contract_sha "$GITHUB_WORKSPACE")
+          TARGET_GRANT_SHA=$(sha256sum infra/postgres/grant-runtime.sql | cut -d ' ' -f 1)
+          FROM_RUNTIME_CONTRACT_SHA=$(runtime_contract_sha "$compatibility_checkout")
+          TARGET_RUNTIME_CONTRACT_SHA=$(runtime_contract_sha "$GITHUB_WORKSPACE")
+          test "$FROM_RUNTIME_CONTRACT_SHA" = "$AUDITED_FROM_RUNTIME_CONTRACT_SHA"
+          test "$TARGET_DATABASE_CONTRACT_SHA" = "$AUDITED_TARGET_DATABASE_CONTRACT_SHA"
+          test "$TARGET_GRANT_SHA" = "$AUDITED_TARGET_GRANT_SHA"
+          test "$TARGET_RUNTIME_CONTRACT_SHA" = "$AUDITED_TARGET_RUNTIME_CONTRACT_SHA"
+          export TARGET_DATABASE_CONTRACT_SHA TARGET_GRANT_SHA
+          export FROM_RUNTIME_CONTRACT_SHA TARGET_RUNTIME_CONTRACT_SHA
+
+          resolve_previous_image() {
+            repository=$1
+            tag="$repository:$COMPATIBILITY_FROM_SHA"
+            docker pull "$tag" >&2
+            test "$(docker image inspect "$tag" \
+              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" \
+              = "$COMPATIBILITY_FROM_SHA"
+            test "$(docker image inspect "$tag" \
+              --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" \
+              = "$IMAGE_SOURCE"
+            mapfile -t references < <(
+              docker image inspect "$tag" --format '{{range .RepoDigests}}{{println .}}{{end}}' |
+                awk -v prefix="$repository@sha256:" 'index($0, prefix) == 1'
+            )
+            test "${#references[@]}" -eq 1
+            reference=${references[0]}
+            digest=${reference#"$repository@"}
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s\n' "$reference"
+          }
+          PREVIOUS_API_GATEWAY_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-api-gateway)
+          PREVIOUS_USER_SERVICE_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-user-service)
+          PREVIOUS_EVENT_SERVICE_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-event-service)
+          PREVIOUS_INFRA_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-infra)
+          PREVIOUS_RATE_LIMIT_REDIS_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-rate-limit-redis)
+          PREVIOUS_WEB_IMAGE=$(resolve_previous_image ghcr.io/dischen87/crew-web)
+          export PREVIOUS_API_GATEWAY_IMAGE PREVIOUS_USER_SERVICE_IMAGE
+          export PREVIOUS_EVENT_SERVICE_IMAGE
+          export PREVIOUS_INFRA_IMAGE PREVIOUS_RATE_LIMIT_REDIS_IMAGE PREVIOUS_WEB_IMAGE
+
+          cat >"$previous_override" <<YAML
+          services:
+            redis-rate-limit:
+              image: $PREVIOUS_RATE_LIMIT_REDIS_IMAGE
+              pull_policy: never
+            provider-sink:
+              image: $PREVIOUS_INFRA_IMAGE
+              pull_policy: never
+            api-gateway:
+              image: $PREVIOUS_API_GATEWAY_IMAGE
+              pull_policy: never
+            user-api:
+              image: $PREVIOUS_USER_SERVICE_IMAGE
+              pull_policy: never
+            magic-worker:
+              image: $PREVIOUS_USER_SERVICE_IMAGE
+              pull_policy: never
+            push-worker:
+              image: $PREVIOUS_USER_SERVICE_IMAGE
+              pull_policy: never
+            event-api:
+              image: $PREVIOUS_EVENT_SERVICE_IMAGE
+              pull_policy: never
+            attachment-worker:
+              image: $PREVIOUS_EVENT_SERVICE_IMAGE
+              pull_policy: never
+            notification-worker:
+              image: $PREVIOUS_EVENT_SERVICE_IMAGE
+              pull_policy: never
+            recap-retention-worker:
+              image: $PREVIOUS_EVENT_SERVICE_IMAGE
+              pull_policy: never
+            fixture-bootstrap:
+              image: $PREVIOUS_INFRA_IMAGE
+              pull_policy: never
+            web:
+              image: $PREVIOUS_WEB_IMAGE
+              pull_policy: never
+              ports:
+                - 127.0.0.1:8080:80
+              healthcheck:
+                test: [CMD, wget, --spider, --quiet, http://127.0.0.1/]
+                interval: 2s
+                timeout: 5s
+                retries: 30
+          YAML
+          previous_compose=(
+            docker compose
+            --project-name crew-compatibility
+            --project-directory "$compatibility_checkout"
+            --file "$compatibility_checkout/compose.yaml"
+            --file "$previous_override"
+          )
+          "${target_compose[@]}" config --quiet
+          "${previous_compose[@]}" config --quiet
+
+          "${target_compose[@]}" build --pull redis-rate-limit jwt-bootstrap
+          "${target_compose[@]}" up --wait --wait-timeout 180 \
+            postgres redis-rate-limit minio typesense provider-sink \
+            jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap
+
+          event_migrations=$(find services/event-service/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)
+          test "$("${target_compose[@]}" exec -T postgres psql \
+            --username crew_local_admin --dbname crew_event --tuples-only --no-align \
+            --command 'SELECT count(*) FROM event_schema_migrations')" -eq "$event_migrations"
+          test "$("${target_compose[@]}" exec -T postgres psql \
+            --username crew_local_admin --dbname crew_event --tuples-only --no-align \
+            --command "SELECT count(*) FROM event_schema_migrations WHERE name = '0035_place_enrichment_worker_health.sql'")" -eq 1
+          enrichment_worker_acl="$(
+            "${target_compose[@]}" exec -T postgres psql \
+              --username crew_local_admin --dbname crew_event --tuples-only --no-align \
+              --command "
+                SELECT
+                  (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'crew_event_enrichment_worker'),
+                  has_database_privilege('crew_event_enrichment_worker', 'crew_event', 'CONNECT'),
+                  has_schema_privilege('crew_event_enrichment_worker', 'public', 'USAGE'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_worker_health', 'SELECT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_worker_health', 'INSERT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_worker_health', 'UPDATE'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_worker_health', 'DELETE'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'SELECT'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'INSERT'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'UPDATE'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'DELETE')
+              "
+          )"
+          test "$enrichment_worker_acl" = "f|t|t|t|t|t|f|t|f|f|f"
+
+          previous_api_gateway_image_id=$(
+            docker image inspect "$PREVIOUS_API_GATEWAY_IMAGE" --format '{{.Id}}'
+          )
+          previous_user_service_image_id=$(
+            docker image inspect "$PREVIOUS_USER_SERVICE_IMAGE" --format '{{.Id}}'
+          )
+          previous_event_service_image_id=$(
+            docker image inspect "$PREVIOUS_EVENT_SERVICE_IMAGE" --format '{{.Id}}'
+          )
+          previous_infra_image_id=$(
+            docker image inspect "$PREVIOUS_INFRA_IMAGE" --format '{{.Id}}'
+          )
+          previous_rate_limit_redis_image_id=$(
+            docker image inspect "$PREVIOUS_RATE_LIMIT_REDIS_IMAGE" --format '{{.Id}}'
+          )
+          previous_web_image_id=$(
+            docker image inspect "$PREVIOUS_WEB_IMAGE" --format '{{.Id}}'
+          )
+          for image_id in \
+            "$previous_api_gateway_image_id" \
+            "$previous_user_service_image_id" \
+            "$previous_event_service_image_id" \
+            "$previous_infra_image_id" \
+            "$previous_rate_limit_redis_image_id" \
+            "$previous_web_image_id"; do
+            [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          done
+          "${previous_compose[@]}" up --no-build --no-deps --wait --wait-timeout 180 \
+            "${restored_services[@]}"
+
+          expected_previous_image_id() {
+            case "$1" in
+              redis-rate-limit)
+                printf '%s\n' "$previous_rate_limit_redis_image_id"
+                ;;
+              provider-sink | fixture-bootstrap)
+                printf '%s\n' "$previous_infra_image_id"
+                ;;
+              api-gateway) printf '%s\n' "$previous_api_gateway_image_id" ;;
+              user-api | magic-worker | push-worker)
+                printf '%s\n' "$previous_user_service_image_id"
+                ;;
+              event-api | attachment-worker | notification-worker | recap-retention-worker)
+                printf '%s\n' "$previous_event_service_image_id"
+                ;;
+              web) printf '%s\n' "$previous_web_image_id" ;;
+              *) return 1 ;;
+            esac
+          }
+          verify_previous_runtime() {
+            running_services=$("${previous_compose[@]}" ps --status running --services)
+            for service in "${restored_services[@]}"; do
+              grep -Fxq "$service" <<<"$running_services"
+              container_id=$("${previous_compose[@]}" ps --quiet "$service")
+              test -n "$container_id"
+              expected_image_id=$(expected_previous_image_id "$service")
+              test "$(docker inspect --format '{{.Image}}' "$container_id")" = "$expected_image_id"
+              test "$(docker inspect --format '{{.RestartCount}}' "$container_id")" -eq 0
+            done
+            for port in 3000 3001 3002; do
+              curl --fail --silent --show-error "http://127.0.0.1:${port}/internal/ready" >/dev/null
+              curl --fail --silent --show-error "http://127.0.0.1:${port}/docs/openapi.json" |
+                python3 -c 'import json,sys; raise SystemExit(json.load(sys.stdin).get("openapi") != "3.1.0")'
+            done
+            curl --fail --silent --show-error http://127.0.0.1:8080/ |
+              grep -Fq 'Der gemeinsame Plan für eure Gruppe.'
+            test "$("${previous_compose[@]}" --profile tools config --format json |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["fixture-bootstrap"]["image"])')" \
+              = "$PREVIOUS_INFRA_IMAGE"
+          }
+          verify_previous_runtime
+          "${target_compose[@]}" --profile tools run --no-deps --rm place-golf-import
+          "${target_compose[@]}" --profile tools run --no-deps --rm place-search-reindex
+          "${previous_compose[@]}" --profile tools run --no-deps --rm \
+            -e CREW_FIXTURE_AUTH_RUN_ID=000000000000000000000011 \
+            -e CREW_FIXTURE_SCENARIO=golf-tour fixture-bootstrap
+          "${previous_compose[@]}" --profile tools run --no-deps --rm \
+            -e CREW_FIXTURE_AUTH_RUN_ID=000000000000000000000011 \
+            -e CREW_FIXTURE_ATTACHMENT_E2E=1 \
+            -e CREW_FIXTURE_SCENARIO=team-event fixture-bootstrap
+          verify_previous_runtime
+          worker_logs=$("${previous_compose[@]}" logs --no-color "${worker_services[@]}")
+          if grep -Eiq \
+            'worker (tick|heartbeat) failed|permission denied|relation .* does not exist|column .* does not exist' \
+            <<<"$worker_logs"; then
+            printf '%s\n' "$worker_logs" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          sha = re.compile(r"[0-9a-f]{40}")
+          digest = re.compile(r"[0-9a-f]{64}")
+          run_id = os.environ["GITHUB_RUN_ID"]
+          if not sha.fullmatch(os.environ["COMPATIBILITY_FROM_SHA"]):
+              raise SystemExit("Invalid compatibility source SHA")
+          if not sha.fullmatch(os.environ["RELEASE_SHA"]):
+              raise SystemExit("Invalid compatibility target SHA")
+          for name in (
+              "TARGET_DATABASE_CONTRACT_SHA",
+              "TARGET_GRANT_SHA",
+              "FROM_RUNTIME_CONTRACT_SHA",
+              "TARGET_RUNTIME_CONTRACT_SHA",
+          ):
+              if not digest.fullmatch(os.environ[name]):
+                  raise SystemExit(f"Invalid compatibility digest: {name}")
+          if not re.fullmatch(r"[0-9]+", run_id):
+              raise SystemExit("Invalid GitHub Actions run ID")
+          previous_repositories = {
+              "api-gateway": "ghcr.io/dischen87/crew-api-gateway",
+              "user-service": "ghcr.io/dischen87/crew-user-service",
+              "event-service": "ghcr.io/dischen87/crew-event-service",
+              "infra": "ghcr.io/dischen87/crew-infra",
+              "rate-limit-redis": "ghcr.io/dischen87/crew-rate-limit-redis",
+              "web": "ghcr.io/dischen87/crew-web",
+          }
+          previous_images = {
+              "api-gateway": os.environ["PREVIOUS_API_GATEWAY_IMAGE"],
+              "user-service": os.environ["PREVIOUS_USER_SERVICE_IMAGE"],
+              "event-service": os.environ["PREVIOUS_EVENT_SERVICE_IMAGE"],
+              "infra": os.environ["PREVIOUS_INFRA_IMAGE"],
+              "rate-limit-redis": os.environ["PREVIOUS_RATE_LIMIT_REDIS_IMAGE"],
+              "web": os.environ["PREVIOUS_WEB_IMAGE"],
+          }
+          for name, repository in previous_repositories.items():
+              if not re.fullmatch(
+                  rf"{re.escape(repository)}@sha256:[0-9a-f]{{64}}",
+                  previous_images[name],
+              ):
+                  raise SystemExit(f"Invalid previous image: {name}")
+          proof = {
+              "schemaVersion": 1,
+              "kind": "previous-runtime-on-target-contract",
+              "fromReleaseId": os.environ["COMPATIBILITY_FROM_SHA"],
+              "toReleaseId": os.environ["RELEASE_SHA"],
+              "targetDatabaseReleaseId": os.environ["RELEASE_SHA"],
+              "targetDatabaseContractSha256": os.environ["TARGET_DATABASE_CONTRACT_SHA"],
+              "targetGrantSha256": os.environ["TARGET_GRANT_SHA"],
+              "fromRuntimeInfrastructureContractSha256": os.environ[
+                  "FROM_RUNTIME_CONTRACT_SHA"
+              ],
+              "targetRuntimeInfrastructureContractSha256": os.environ[
+                  "TARGET_RUNTIME_CONTRACT_SHA"
+              ],
+              "previousImages": previous_images,
+              "testedServices": [
+                  "api-gateway",
+                  "user-api",
+                  "event-api",
+                  "magic-worker",
+                  "push-worker",
+                  "attachment-worker",
+                  "notification-worker",
+                  "recap-retention-worker",
+                  "redis-rate-limit",
+                  "provider-sink",
+                  "fixture-bootstrap",
+                  "web",
+              ],
+              "githubActionsRunId": run_id,
+              "outcome": "passed",
+          }
+          with open(
+              "crew-staging-rollback-compatibility.json", "w", encoding="utf-8"
+          ) as output:
+              json.dump(proof, output, sort_keys=True, separators=(",", ":"))
+              output.write("\n")
+          PY
+
       - name: Create immutable image manifest
         if: ${{ !inputs.reuse_stored_manifest }}
         id: manifest
@@ -259,6 +669,91 @@ jobs:
               "platform": "linux/amd64",
               "images": images,
           }
+          compatibility_from_sha = os.environ["COMPATIBILITY_FROM_SHA"]
+          if compatibility_from_sha:
+              with open(
+                  "crew-staging-rollback-compatibility.json", encoding="utf-8"
+              ) as input_file:
+                  compatibility = json.load(input_file)
+              tested_services = [
+                  "api-gateway",
+                  "user-api",
+                  "event-api",
+                  "magic-worker",
+                  "push-worker",
+                  "attachment-worker",
+                  "notification-worker",
+                  "recap-retention-worker",
+                  "redis-rate-limit",
+                  "provider-sink",
+                  "fixture-bootstrap",
+                  "web",
+              ]
+              expected_fields = {
+                  "schemaVersion",
+                  "kind",
+                  "fromReleaseId",
+                  "toReleaseId",
+                  "targetDatabaseReleaseId",
+                  "targetDatabaseContractSha256",
+                  "targetGrantSha256",
+                  "fromRuntimeInfrastructureContractSha256",
+                  "targetRuntimeInfrastructureContractSha256",
+                  "previousImages",
+                  "testedServices",
+                  "githubActionsRunId",
+                  "outcome",
+              }
+              if not isinstance(compatibility, dict) or set(compatibility) != expected_fields:
+                  raise SystemExit("Invalid rollback compatibility fields")
+              if (
+                  compatibility["schemaVersion"] != 1
+                  or compatibility["kind"] != "previous-runtime-on-target-contract"
+                  or compatibility["fromReleaseId"] != compatibility_from_sha
+                  or compatibility["fromReleaseId"]
+                  != os.environ["AUDITED_COMPATIBILITY_FROM_SHA"]
+                  or compatibility["toReleaseId"] != os.environ["RELEASE_SHA"]
+                  or compatibility["targetDatabaseReleaseId"] != os.environ["RELEASE_SHA"]
+                  or compatibility["testedServices"] != tested_services
+                  or compatibility["githubActionsRunId"] != os.environ["GITHUB_RUN_ID"]
+                  or compatibility["outcome"] != "passed"
+              ):
+                  raise SystemExit("Invalid rollback compatibility proof")
+              for field in (
+                  "targetDatabaseContractSha256",
+                  "targetGrantSha256",
+                  "fromRuntimeInfrastructureContractSha256",
+                  "targetRuntimeInfrastructureContractSha256",
+              ):
+                  expected_variable = {
+                      "targetDatabaseContractSha256": "AUDITED_TARGET_DATABASE_CONTRACT_SHA",
+                      "targetGrantSha256": "AUDITED_TARGET_GRANT_SHA",
+                      "fromRuntimeInfrastructureContractSha256": "AUDITED_FROM_RUNTIME_CONTRACT_SHA",
+                      "targetRuntimeInfrastructureContractSha256": "AUDITED_TARGET_RUNTIME_CONTRACT_SHA",
+                  }[field]
+                  if compatibility[field] != os.environ[expected_variable]:
+                      raise SystemExit(f"Invalid rollback compatibility digest: {field}")
+              previous_repositories = {
+                  "api-gateway": "ghcr.io/dischen87/crew-api-gateway",
+                  "user-service": "ghcr.io/dischen87/crew-user-service",
+                  "event-service": "ghcr.io/dischen87/crew-event-service",
+                  "infra": "ghcr.io/dischen87/crew-infra",
+                  "rate-limit-redis": "ghcr.io/dischen87/crew-rate-limit-redis",
+                  "web": "ghcr.io/dischen87/crew-web",
+              }
+              previous_images = compatibility["previousImages"]
+              if (
+                  not isinstance(previous_images, dict)
+                  or set(previous_images) != set(previous_repositories)
+              ):
+                  raise SystemExit("Invalid rollback compatibility previous images")
+              for name, repository in previous_repositories.items():
+                  if not isinstance(previous_images[name], str) or not re.fullmatch(
+                      rf"{re.escape(repository)}@sha256:[0-9a-f]{{64}}",
+                      previous_images[name],
+                  ):
+                      raise SystemExit(f"Invalid rollback compatibility image: {name}")
+              manifest["rollbackCompatibility"] = compatibility
           reset_staging_data = os.environ["RESET_STAGING_DATA"]
           if reset_staging_data not in {"true", "false"}:
               raise SystemExit("Invalid staging reset intent")
@@ -308,6 +803,7 @@ jobs:
       RELEASE_SHA: ${{ inputs.release_sha }}
       REUSE_STORED_MANIFEST: ${{ inputs.reuse_stored_manifest }}
       RESUME_RESET_ID: ${{ inputs.resume_reset_id }}
+      FORWARD_RECOVERY: ${{ inputs.forward_recovery }}
     steps:
       - name: Download immutable image manifest
         if: ${{ !inputs.reuse_stored_manifest }}
@@ -324,6 +820,10 @@ jobs:
           if [[ -n "$RESUME_RESET_ID" ]]; then
             [[ "$RESUME_RESET_ID" =~ ^github-actions-[0-9]+$ ]]
             remote_command="resume-reset $RELEASE_SHA $RESUME_RESET_ID"
+          elif [[ "$FORWARD_RECOVERY" == resume ]]; then
+            remote_command="resume-forward $RELEASE_SHA"
+          elif [[ "$FORWARD_RECOVERY" == abort ]]; then
+            remote_command="abort-forward $RELEASE_SHA"
           elif [[ "$REUSE_STORED_MANIFEST" == true ]]; then
             remote_command="redeploy $RELEASE_SHA"
           else
