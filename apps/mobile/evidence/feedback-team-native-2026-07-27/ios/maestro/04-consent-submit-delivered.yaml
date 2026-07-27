@@ -1,0 +1,63 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-title
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-title
+- inputText: Team iOS Delivery 0727
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    point: 20%,20%
+- inputText: Nativer Screenshot wird ohne App Neustart zugestellt.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-consent
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: false
+    enabled: true
+- tapOn:
+    id: feedback-screenshot-consent
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
+- assertVisible: Feedback mit Screenshot senden
+- tapOn:
+    id: feedback-compose-submit
+- extendedWaitUntil:
+    visible: ZUGESTELLT
+    timeout: 60000
+- scrollUntilVisible:
+    element: Text und Screenshot wurden vom Server bestätigt.
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: Text und Screenshot wurden vom Server bestätigt.
+- assertVisible:
+    id: feedback-compose-return
+    enabled: true

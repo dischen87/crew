@@ -1,0 +1,63 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-title
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-title
+- inputText: Android Team Feedback Final 0727
+- assertVisible:
+    id: feedback-compose-title
+    text: Android Team Feedback Final 0727
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-body
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: feedback-compose-body
+    enabled: true
+    point: 20%,20%
+- inputText: Native Android Final Capture Upload Commit Restart.
+- assertVisible:
+    id: feedback-compose-body
+    text: Native Android Final Capture Upload Commit Restart.
+    enabled: true
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: feedback-screenshot-consent
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: false
+    enabled: true
+- tapOn:
+    id: feedback-screenshot-consent
+    enabled: true
+- assertVisible:
+    id: feedback-screenshot-consent
+    checked: true
+    enabled: true
+- scrollUntilVisible:
+    element:
+      id: feedback-compose-submit
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible: Feedback mit Screenshot senden
+- assertVisible:
+    id: feedback-compose-submit
+    enabled: true
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/android/screenshots/03-consent-on-submit-ready-1080x2400

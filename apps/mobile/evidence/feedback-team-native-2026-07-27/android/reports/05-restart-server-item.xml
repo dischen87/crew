@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-api-36-emulator" tests="1" failures="0" time="20.0">
+    <testcase id="05-restart-server-item" name="05-restart-server-item" classname="05-restart-server-item" file="apps/mobile/evidence/feedback-team-native-2026-07-27/android/flows/05-restart-server-item.yaml" time="20.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

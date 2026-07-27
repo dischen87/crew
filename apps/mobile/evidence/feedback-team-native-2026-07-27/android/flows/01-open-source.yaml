@@ -1,0 +1,18 @@
+appId: ${APP_ID}
+---
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: community-feedback-compose-screenshot
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: community-feedback-compose-screenshot
+    enabled: true
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/android/screenshots/01-team-feedback-source-1080x2400

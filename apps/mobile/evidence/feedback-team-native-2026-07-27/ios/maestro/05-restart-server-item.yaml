@@ -1,0 +1,30 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: community-feedback-refresh
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 60
+    centerElement: true
+- tapOn:
+    id: community-feedback-refresh
+- scrollUntilVisible:
+    element: '.*Team iOS Delivery 0727.*'
+    direction: DOWN
+    timeout: 30000
+- assertVisible: '.*Team iOS Delivery 0727.*'
+- assertVisible: '.*Nativer Screenshot wird ohne App Neustart zugestellt.*'
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/ios/screenshots/05-cold-restart-server-item

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-api-36-emulator" tests="1" failures="0" time="48.0">
+    <testcase id="03-fill-and-consent" name="03-fill-and-consent" classname="03-fill-and-consent" file="apps/mobile/evidence/feedback-team-native-2026-07-27/android/flows/03-fill-and-consent.yaml" time="48.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

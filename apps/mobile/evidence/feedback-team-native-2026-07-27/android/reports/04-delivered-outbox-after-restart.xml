@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-api-36-emulator" tests="1" failures="0" time="14.0">
+    <testcase id="04-delivered-outbox-after-restart" name="04-delivered-outbox-after-restart" classname="04-delivered-outbox-after-restart" file="apps/mobile/evidence/feedback-team-native-2026-07-27/android/flows/04-delivered-outbox-after-restart.yaml" time="14.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

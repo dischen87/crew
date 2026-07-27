@@ -1,0 +1,38 @@
+{
+  "rootEventId": "evt_local_team_day_2026",
+  "fixtureRole": "participant",
+  "feedback": {
+    "count": 1,
+    "title": "Android Team Feedback Final 0727",
+    "visibility": "public",
+    "status": "open"
+  },
+  "attachmentLinks": {
+    "count": 1
+  },
+  "eventAttachments": {
+    "count": 1,
+    "contentType": "image/png",
+    "byteCount": 652292,
+    "sha256": "137a7cbf2e8dc75940c8633d6c6debb7786fbc9addc64e35fc5891e33f6d79b5"
+  },
+  "participantUploads": {
+    "count": 1,
+    "state": "committed"
+  },
+  "committedObject": {
+    "sha256": "137a7cbf2e8dc75940c8633d6c6debb7786fbc9addc64e35fc5891e33f6d79b5",
+    "matchesDatabase": true,
+    "matchesNativeCapture": true
+  },
+  "gatewayTrace": {
+    "operation": "feedback-create",
+    "outcome": "forwarded",
+    "downstreamStatus": 201,
+    "facadeStatus": 201,
+    "replayed": false,
+    "bodyFingerprintPresent": true,
+    "feedbackFingerprintPresent": true,
+    "idempotencyFingerprintPresent": true
+  }
+}

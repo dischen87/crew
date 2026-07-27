@@ -1,0 +1,26 @@
+appId: ${APP_ID}
+---
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: community-feedback-mode-feedback
+    direction: UP
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn:
+    id: community-feedback-mode-feedback
+- scrollUntilVisible:
+    element:
+      id: community-feedback-compose-screenshot
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: community-feedback-compose-screenshot
+    enabled: true

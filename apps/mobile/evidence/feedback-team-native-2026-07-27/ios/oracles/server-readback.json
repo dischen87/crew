@@ -1,0 +1,27 @@
+{
+  "platform": "ios-simulator",
+  "fixture": "team-event",
+  "rootEventId": "evt_local_team_day_2026",
+  "feedback": {
+    "id": "fbk_b720572c-3c9c-4f00-998f-9ab156b81699",
+    "title": "Team iOS Delivery 0727",
+    "status": "open",
+    "visibility": "public",
+    "attachmentCount": 1
+  },
+  "attachment": {
+    "id": "att_24632c69-1450-4799-aa3b-2b000ccdde7f",
+    "uploadId": "upl_288e78b0ca0944589855c00c6c47dba5",
+    "state": "committed",
+    "contentType": "image/png",
+    "byteCount": 2015409,
+    "sha256": "011421deacab502d03304def696c115fa221c9429ae33e74332fb5b063a1949e",
+    "objectStoreByteCountMatches": true,
+    "objectStoreSha256Matches": true
+  },
+  "client": {
+    "deliveredVisible": true,
+    "coldRestartReadbackVisible": true,
+    "logoutRetainedPngCount": 0
+  }
+}

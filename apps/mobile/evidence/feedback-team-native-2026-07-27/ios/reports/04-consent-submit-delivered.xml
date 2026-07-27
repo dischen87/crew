@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iOS Simulator" tests="1" failures="0" time="42.0">
+    <testcase id="04-consent-submit-delivered" name="04-consent-submit-delivered" classname="04-consent-submit-delivered" file="apps/mobile/evidence/feedback-team-native-2026-07-27/ios/maestro/04-consent-submit-delivered.yaml" time="42.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

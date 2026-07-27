@@ -1,0 +1,34 @@
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+- runFlow:
+    when:
+      visible: '^Abmelden\?$'
+    commands:
+      - tapOn: Abbrechen
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: events-logout
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn:
+    id: events-logout
+- extendedWaitUntil:
+    visible: '^Abmelden\?$'
+    timeout: 10000
+- tapOn:
+    point: 70%,59%
+- extendedWaitUntil:
+    visible:
+      id: private-access-signed-out
+    timeout: 30000
+- assertVisible: Bitte anmelden
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/ios/screenshots/06-signed-out-after-purge

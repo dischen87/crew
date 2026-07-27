@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="android-api-36-emulator" tests="1" failures="0" time="2.0">
+    <testcase id="01-open-source" name="01-open-source" classname="01-open-source" file="apps/mobile/evidence/feedback-team-native-2026-07-27/android/flows/01-open-source.yaml" time="2.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iOS Simulator" tests="1" failures="0" time="12.0">
+    <testcase id="06-logout" name="06-logout" classname="06-logout" file="apps/mobile/evidence/feedback-team-native-2026-07-27/ios/maestro/06-logout.yaml" time="12.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,21 @@
+appId: ${APP_ID}
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: events-view
+    timeout: 30000
+- openLink: ${FEEDBACK_ROUTE}
+- extendedWaitUntil:
+    visible:
+      id: community-feedback-list-view
+    timeout: 30000
+- extendedWaitUntil:
+    visible: Android Team Feedback Final 0727
+    timeout: 30000
+- assertVisible: Android Team Feedback Final 0727
+- assertVisible:
+    id: community-feedback-compose-screenshot
+    enabled: true
+- takeScreenshot: apps/mobile/evidence/feedback-team-native-2026-07-27/android/screenshots/05-cold-restart-server-item-1080x2400
