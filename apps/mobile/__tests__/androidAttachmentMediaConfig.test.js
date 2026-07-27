@@ -82,8 +82,33 @@ test('registers the complete bounded Android attachment TurboModule', () => {
   expect(native).toContain('connection.instanceFollowRedirects = false');
   expect(native).toContain('connection.useCaches = false');
   expect(native).toContain('connection.defaultUseCaches = false');
+  expect(native).toContain(
+    'connection.setRequestProperty("Cache-Control", "no-store")',
+  );
+  expect(native).toContain(
+    'connection.setRequestProperty("Pragma", "no-cache")',
+  );
+  expect(native).toContain('connection.setRequestProperty("Cookie", "")');
+  expect(native).toContain('connection.setRequestProperty("Cookie2", "")');
   expect(native).not.toMatch(/connection\.(?:inputStream|errorStream)/);
   expect(native).not.toMatch(/Log\.|println\(|printStackTrace/);
+
+  expect(native).toContain(
+    '!ACCOUNT.matches(accountUserId) || !RETAINED_KEY.matches(retainedFileKey)',
+  );
+  expect(native).toContain(
+    'file.canonicalFile.parentFile != directory.canonicalFile',
+  );
+  expect(native).toContain(
+    "sha256(file) != retainedFileKey.substringBeforeLast('.')",
+  );
+  expect(native).toContain(
+    'val targets = keys.mapNotNull { purgeTarget(directory, it) }',
+  );
+  expect(native).toContain(
+    'val current = purgeTarget(directory, target.name) ?: continue',
+  );
+  expect(native).not.toMatch(/directory\.(?:delete|deleteRecursively)\(/);
   expect(manifest).not.toMatch(
     /READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE/,
   );

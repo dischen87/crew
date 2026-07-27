@@ -99,11 +99,42 @@ afterEach(() => {
 });
 
 describe("durable feedback screenshot delivery", () => {
-	test("lists every account screenshot file exactly once for logout purge", async () => {
+	test("builds the complete account-private media logout allow-list without another account", async () => {
 		const database = new BunDatabase();
 		await migrate(database);
 		await seedRoot(database, accountA);
 		await seedRoot(database, accountB);
+		const attachmentStore = new LocalAttachmentStore(database);
+		const accountAMediaKey = `${"a".repeat(64)}.jpg`;
+		const accountBMediaKey = `${"b".repeat(64)}.webp`;
+		await attachmentStore.retain({
+			accountUserId: accountA,
+			attachmentId: "att_logout_account_a",
+			rootEventId,
+			targetEntryId: "fed_logout_account_a",
+			retainedFileKey: accountAMediaKey,
+			contentType: "image/jpeg",
+			byteCount: 2_048,
+			sha256: "a".repeat(64),
+			pixelWidth: 1_200,
+			pixelHeight: 800,
+			wasNormalized: true,
+			retainedAt: new Date(baseTime).toISOString(),
+		});
+		await attachmentStore.retain({
+			accountUserId: accountB,
+			attachmentId: "att_logout_account_b",
+			rootEventId,
+			targetEntryId: "fed_logout_account_b",
+			retainedFileKey: accountBMediaKey,
+			contentType: "image/webp",
+			byteCount: 2_048,
+			sha256: "b".repeat(64),
+			pixelWidth: 800,
+			pixelHeight: 1_200,
+			wasNormalized: true,
+			retainedAt: new Date(baseTime).toISOString(),
+		});
 		const states = [
 			"retained",
 			"consented",
@@ -119,9 +150,23 @@ describe("durable feedback screenshot delivery", () => {
 		await seedScreenshotState(database, accountA, "retained", 7, 0);
 		await seedScreenshotState(database, accountB, "committed", 0, 8);
 
+		const screenshotKeys = states.map(
+			(_, index) => `${`${index}`.repeat(64)}.png`,
+		);
 		expect(
 			await listFeedbackScreenshotFileKeysForPurge(database, accountA),
-		).toEqual(states.map((_, index) => `${`${index}`.repeat(64)}.png`));
+		).toEqual(screenshotKeys);
+		const accountALogoutKeys = [
+			...new Set([
+				...(await attachmentStore.listRetainedFileKeys(accountA)),
+				...(await listFeedbackScreenshotFileKeysForPurge(database, accountA)),
+			]),
+		].sort();
+		expect(accountALogoutKeys).toEqual(
+			[accountAMediaKey, ...screenshotKeys].sort(),
+		);
+		expect(accountALogoutKeys).not.toContain(accountBMediaKey);
+		expect(accountALogoutKeys).not.toContain(`${"8".repeat(64)}.png`);
 		database.close();
 	});
 

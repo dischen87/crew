@@ -310,6 +310,7 @@ test('plan identifies every unconfirmed local change before discard', async () =
   const callbacks = planCallbacks();
   const firstMutationId = '11111111-1111-4111-8111-111111111111';
   const secondMutationId = '22222222-2222-4222-8222-222222222222';
+  const thirdMutationId = '33333333-3333-4333-8333-333333333333';
   const snapshot = planSnapshot('owner');
   const transfer = snapshot.items[0]!.values;
   const round = snapshot.items[1]!.values;
@@ -339,6 +340,14 @@ test('plan identifies every unconfirmed local change before discard', async () =
           mutationId: secondMutationId,
           resolution: 'retry',
         },
+        {
+          attempted: { ...round, title: 'Lokal erhaltener gelöschter Punkt' },
+          code: 'deleted',
+          current: null,
+          itemId: 'iti_deleted',
+          mutationId: thirdMutationId,
+          resolution: 'discard',
+        },
       ],
     },
   };
@@ -350,17 +359,31 @@ test('plan identifies every unconfirmed local change before discard', async () =
   const secondDiscard = renderer.root.findByProps({
     testID: `plan-discard-issue-${secondMutationId}`,
   });
+  const thirdDiscard = renderer.root.findByProps({
+    testID: `plan-discard-issue-${thirdMutationId}`,
+  });
   expect(textInside(renderer)).toContain(
     'Berechtigung: Diese lokale Änderung wurde nicht übernommen.',
   );
+  expect(textInside(renderer)).toContain(
+    'Entfernt: Der Programmpunkt existiert im aktuellen Plan nicht mehr.',
+  );
   expect(textInside(renderer)).toContain('Lokaler Transfer · Turkey Golf Tour');
   expect(textInside(renderer)).toContain('Lokale Golfrunde · Carya Golf');
+  expect(textInside(renderer)).toContain(
+    'Lokal erhaltener gelöschter Punkt · Carya Golf',
+  );
   expect(firstDiscard.props.accessibilityLabel).toContain('Lokaler Transfer');
   expect(secondDiscard.props.accessibilityLabel).toContain('Lokale Golfrunde');
+  expect(thirdDiscard.props.accessibilityLabel).toContain(
+    'Lokal erhaltener gelöschter Punkt',
+  );
   expect(secondDiscard.props.label).toBe('Erneut versuchen');
   await ReactTestRenderer.act(() => firstDiscard.props.onPress());
   await ReactTestRenderer.act(() => secondDiscard.props.onPress());
+  await ReactTestRenderer.act(() => thirdDiscard.props.onPress());
   expect(callbacks.onDiscardIssue).toHaveBeenCalledWith(firstMutationId);
+  expect(callbacks.onDiscardIssue).toHaveBeenCalledWith(thirdMutationId);
   expect(callbacks.onRetryIssue).toHaveBeenCalledWith(secondMutationId);
 
   await ReactTestRenderer.act(() => renderer.unmount());
@@ -482,8 +505,12 @@ test('manager opens non-canonical plan rows read-only instead of entering the ed
       testID: `plan-item-${row.id}`,
     });
     expect(action.props.accessibilityHint).toContain('ohne weitere Änderung');
+    if (row.id === 'iti_queued') {
+      expect(action.props.accessibilityLabel).toContain('Lokal gespeichert');
+    }
     await ReactTestRenderer.act(() => action.props.onPress());
   }
+  expect(textInside(renderer)).toContain('Lokal gespeichert');
   expect(callbacks.onOpenItem.mock.calls).toEqual(
     nonCanonical.map(row => [row.id]),
   );

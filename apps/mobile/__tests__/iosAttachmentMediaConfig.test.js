@@ -86,10 +86,33 @@ test('registers bounded native iOS attachment processing', () => {
   expect(native).toContain('MaxCapturePixelDimension = 2048');
   expect(native).toContain('CrewPreviewRetainedImage');
   expect(native).toContain('MaxPreviewPixelDimension = 512');
+  expect(native).toContain('MaxPreviewBytes = 512 * 1024');
+  expect(native).toContain('!CrewIsValidAccountUserId(accountUserId)');
+  expect(native).toContain('!CrewIsRetainedFileKey(retainedFileKey)');
+  expect(native).toContain('![CrewSHA256Data(data) isEqualToString:sha256]');
+  expect(native).toContain(
+    'URLByAppendingPathComponent:fileKey\n                                                isDirectory:NO',
+  );
+  expect(native).toContain(
+    'CrewValidatePurgeTarget(target, directory, &exists, error)',
+  );
+  expect(native).not.toContain('removeItemAtURL:directory');
   expect(native).toContain(
     'NSURLSessionConfiguration.ephemeralSessionConfiguration',
   );
   expect(native).toContain('HTTPShouldHandleCookies = NO');
+  expect(native).toContain('configuration.URLCache = nil');
+  expect(native).toContain('configuration.HTTPCookieStorage = nil');
+  expect(native).toContain(
+    'configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyNever',
+  );
+  expect(native).toContain('NSURLRequestReloadIgnoringLocalAndRemoteCacheData');
+  expect(native).toContain(
+    '[uploadRequest setValue:@"no-store" forHTTPHeaderField:@"Cache-Control"]',
+  );
+  expect(native).toContain(
+    '[uploadRequest setValue:@"no-cache" forHTTPHeaderField:@"Pragma"]',
+  );
   expect(native).toContain('completionHandler(nil)');
   expect(native).toContain('didReceiveData:(__unused NSData *)data');
   expect(native).not.toContain('completionHandler:^(__unused NSData *data');
