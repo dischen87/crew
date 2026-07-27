@@ -157,7 +157,7 @@ test('offers exactly one primary action and only working bottom tabs', async () 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
-test('offers only routed itinerary rows as actions', async () => {
+test('offers every itinerary row as an action', async () => {
   const onTimelineSelect = jest.fn();
   const { renderer } = await renderHub(turkeyGolfEventHubModel, {
     onTimelineSelect,
@@ -171,13 +171,13 @@ test('offers only routed itinerary rows as actions', async () => {
   const transfer = renderer.root.findByProps({
     accessibilityLabel: '13:30, Transfer zum Club, Hotellobby',
   });
-  expect(transfer.props.accessibilityRole).toBe('text');
-  expect(transfer.props.accessibilityHint).toBeUndefined();
-  expect(transfer.props.onPress).toBeUndefined();
+  expect(transfer.props.accessibilityRole).toBe('button');
 
   await ReactTestRenderer.act(() => golf.props.onPress());
   expect(onTimelineSelect).toHaveBeenCalledWith('carya-round-one');
-  expect(onTimelineSelect).toHaveBeenCalledTimes(1);
+  await ReactTestRenderer.act(() => transfer.props.onPress());
+  expect(onTimelineSelect).toHaveBeenCalledWith('transfer-club');
+  expect(onTimelineSelect).toHaveBeenCalledTimes(2);
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -478,14 +478,10 @@ test('keeps viewer models read-only and suppresses an invalid write action', asy
     ...turkeyGolfEventHubModel,
     primaryAction: {
       access: 'read',
-      accessibilityLabel: 'Route zur Hotellobby öffnen',
-      destination: {
-        label: 'Hotellobby',
-        latitude: null,
-        longitude: null,
-      },
-      id: 'route-welcome-dinner',
-      label: 'Route öffnen',
+      accessibilityLabel: 'Welcome Dinner öffnen',
+      id: 'open-welcome-dinner',
+      label: 'Programmpunkt öffnen',
+      target: { itemId: 'welcome-dinner', route: 'LiveItem' },
     },
     role: 'viewer',
   };

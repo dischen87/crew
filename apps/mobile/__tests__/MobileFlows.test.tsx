@@ -697,7 +697,7 @@ test('conceals an unauthorized event root after the generated Gateway check', as
   client.clear();
 });
 
-test('retries an item route and replaces it with the exact account/root-scoped Event Hub target', async () => {
+test('retries an item route and replaces it with the exact account/root-scoped Live Item target', async () => {
   mockLifecycle.accountId = accountId;
   mockLifecycle.status = 'ready';
   let projectedRows: ReturnType<typeof itineraryRow>[] = [];
@@ -707,7 +707,10 @@ test('retries an item route and replaces it with the exact account/root-scoped E
   mockSyncRoot.mockImplementation(async () => {
     projectedRows = [
       itineraryRow('iti_other', 'Andere Session'),
-      itineraryRow('iti_private_item', 'Workshop'),
+      {
+        ...itineraryRow('iti_private_item', 'Workshop'),
+        status: 'cancelled',
+      },
     ];
     return {} as never;
   });
@@ -781,14 +784,69 @@ test('retries an item route and replaces it with the exact account/root-scoped E
   expect(
     mockPrivateDatabase.database.all.mock.invocationCallOrder[0],
   ).toBeLessThan(replace.mock.invocationCallOrder[0]!);
-  expect(replace).toHaveBeenCalledWith('EventInbound', {
-    focusItemId: 'iti_private_item',
+  expect(replace).toHaveBeenCalledWith('LiveItem', {
+    itemId: 'iti_private_item',
     rootEventId: 'evt_private_root',
   });
   expect(textInside(renderer!)).toContain('Event wird geprüft');
   expect(textInside(renderer!)).not.toContain('Andere Session');
   expect(textInside(renderer!)).not.toMatch(
     /Workshop|evt_private_root|iti_private_item|request-recovered-root/,
+  );
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+  client.clear();
+});
+
+test('routes a removed item target to the updated authorized plan', async () => {
+  mockLifecycle.accountId = accountId;
+  mockLifecycle.status = 'ready';
+  mockPrivateDatabase.database.all.mockResolvedValue([]);
+  mockSyncRoot.mockResolvedValue({} as never);
+  mockGatewayClient.request.mockResolvedValue({
+    data: { event: { title: 'Sommerfest' } },
+    requestId: 'request-authorized-root',
+    status: 200,
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const replace = jest.fn();
+
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <QueryClientProvider client={client}>
+        <InboundGateScreen
+          navigation={{ navigate: jest.fn(), replace } as never}
+          route={
+            {
+              name: 'ItemInbound',
+              params: {
+                rootEventId: 'evt_private_root',
+                itemId: 'iti_removed_item',
+              },
+            } as never
+          }
+        />
+      </QueryClientProvider>,
+    );
+    await flush();
+  });
+  await ReactTestRenderer.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await flush();
+  });
+
+  expect(replace).toHaveBeenCalledWith('Plan', {
+    rootEventId: 'evt_private_root',
+  });
+  expect(replace).not.toHaveBeenCalledWith(
+    'LiveItem',
+    expect.objectContaining({ itemId: 'iti_removed_item' }),
+  );
+  expect(textInside(renderer!)).not.toMatch(
+    /Sommerfest|evt_private_root|iti_removed_item|request-authorized-root/,
   );
 
   await ReactTestRenderer.act(async () => renderer!.unmount());

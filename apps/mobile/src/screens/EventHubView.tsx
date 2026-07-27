@@ -72,13 +72,11 @@ export type EventHubCrewTarget =
 type EventHubReadAction = {
   access: 'read';
   accessibilityLabel: string;
-  destination?: {
-    label: string;
-    latitude: number | null;
-    longitude: number | null;
-  };
   id: string;
   label: string;
+  target:
+    | { route: 'LiveItem'; itemId: string }
+    | { route: 'Plan' };
 };
 
 type EventHubWriteAction = {
@@ -232,14 +230,10 @@ export const turkeyGolfEventHubModel: EventHubModel = {
     '8 Teilnehmende: Marco, Lena, Nico, Sara und weitere',
   primaryAction: {
     access: 'read',
-    accessibilityLabel: 'Route zur Hotellobby öffnen',
-    destination: {
-      label: 'Hotellobby',
-      latitude: null,
-      longitude: null,
-    },
-    id: 'route-welcome-dinner',
-    label: 'Route öffnen',
+    accessibilityLabel: 'Welcome Dinner öffnen',
+    id: 'open-welcome-dinner',
+    label: 'Programmpunkt öffnen',
+    target: { itemId: 'welcome-dinner', route: 'LiveItem' },
   },
   role: 'participant',
   status: 'published',
@@ -657,11 +651,7 @@ export function EventHubView({
                   focusedRowYRef.current = y;
                   scrollToFocusedItem();
                 }}
-                onPress={
-                  item.icon === 'golf'
-                    ? () => onTimelineSelect(item.id)
-                    : undefined
-                }
+                onPress={() => onTimelineSelect(item.id)}
               />
             ))
           ) : (

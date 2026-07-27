@@ -53,7 +53,10 @@ claims.
 | `EventInbound` | `SCR-004` |
 | `EventPublish` | `SCR-013` |
 | `EventSetupRecovery` | narrow recovery in `SCR-013` |
-| `ItemInbound` | inbound gate for `SCR-014`; full screen remains design-required |
+| `Plan` | `SCR-010` |
+| `PlanItemEditor` | itinerary-item slice of `SCR-011` |
+| `LiveItem` | `SCR-014` |
+| `ItemInbound` | exact-target inbound gate for `SCR-014` |
 | `FeedInbound` | inbound gate for `SCR-040` |
 | `FeedbackInbound` | inbound gate for `SCR-061` |
 | `FeedbackCompose` | `SCR-060` |
@@ -94,11 +97,11 @@ masters and replace them only in a named fixture instance.
 | `SCR-002` | Starting shape              | `COPY-SCR-002-*` | `NATIVE-CURRENT-ROUTED` inside `CreateEvent`; remaining template/state variants `DESIGN-REQUIRED`                                                                                      |
 | `SCR-003` | Event details editor        | `COPY-SCR-003-*` | new-root and existing-draft `NATIVE-CURRENT-ROUTED`; remaining state variants `DESIGN-REQUIRED`                                                                                        |
 | `SCR-004` | Event hub and action center | `COPY-SCR-004-*` | `NATIVE-CURRENT-ROUTED`, `VISUAL-EVIDENCE-IOS` for participant baseline/feed                                                                                                           |
-| `SCR-010` | Plan tree and timeline      | `COPY-SCR-010-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
-| `SCR-011` | Plan item editor            | `COPY-SCR-011-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
+| `SCR-010` | Plan tree and timeline      | `COPY-SCR-010-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; recursive cached plan, subtree filtering, role-correct actions, durable optimistic rows, and explicit dead-letter discard are code/test current; native/device visual evidence pending |
+| `SCR-011` | Plan item editor            | `COPY-SCR-011-*` | itinerary-item create/update slice `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; named cached place selection and conflict retry are current; generalized place creation, child-event editing, reorder, and native/device visual evidence remain `DESIGN-REQUIRED` |
 | `SCR-012` | Capability setup            | `COPY-SCR-012-*` | `DESIGN-REQUIRED`                                                                                                                                                                      |
 | `SCR-013` | Readiness review            | `COPY-SCR-013-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; basics plus narrow template/capability/place recovery actions are code/test current; native/device and service-backed publish evidence pending |
-| `SCR-014` | Live item detail            | `COPY-SCR-014-*` | inbound gate exists; full screen `DESIGN-REQUIRED`                                                                                                                                     |
+| `SCR-014` | Live item detail            | `COPY-SCR-014-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; exact optimistic/offline item, role-safe one-primary-action resolution, adjacent-item navigation, removed-target return to the updated plan, and sync truth are code/test current; native/device visual evidence pending |
 | `SCR-020` | Invite manager              | `COPY-SCR-020-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; owner/organizer concealment, token-free cache, pagination, revoke retry, and offline states are code/test current; native/device visual evidence pending                                                                                                                                        |
 | `SCR-021` | Invite editor               | `COPY-SCR-021-*` | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`; role policy, local token-free draft, stable create replay, and once-only in-memory native sharing are code/test current; native expiry picker and device visual evidence pending                                                                                                                                        |
 | `SCR-022` | Invite preview              | `COPY-SCR-022-*` | `NATIVE-CURRENT-ROUTED`; state expansion `DESIGN-REQUIRED`                                                                                                                             |
@@ -135,8 +138,8 @@ Do not modify fixture content inside a reference frame. Create a new
   participants, `Welcome Dinner` at `18:30`, timeline at `09:00` and `13:30`,
   Marco feed update `vor 28 Min.`
 - Delivery: `Offline bereit · vor 2 Min. synchronisiert`
-- Primary action: `COPY-SCR-004-CTA-READY-DE` = `Route öffnen`
-- Read-only action ID: `route-welcome-dinner`
+- Primary action: `COPY-SCR-004-CTA-READY-DE` = `Programmpunkt öffnen`
+- Read-only action ID: `open-welcome-dinner`
 - Source data: background `API-S2`; `SQL-ROOTS`, `SQL-GRAPH`, `SQL-PLAN`,
   `SQL-ACTIONS`, `SQL-FEED`, `SQL-SYNC`, `SQL-RECAP`; no write mutation
 

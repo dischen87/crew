@@ -101,6 +101,35 @@ jest.mock('../src/screens/InviteManagerScreen', () => {
   };
 });
 
+jest.mock('../src/screens/PlanScreen', () => {
+  const { Text: NativeText } = require('react-native');
+  return {
+    PlanRouteScreen: () => (
+      <NativeText testID="production-plan">Plan</NativeText>
+    ),
+  };
+});
+
+jest.mock('../src/screens/PlanItemEditorScreen', () => {
+  const { Text: NativeText } = require('react-native');
+  return {
+    PlanItemEditorRouteScreen: () => (
+      <NativeText testID="production-plan-item-editor">
+        Plan Item Editor
+      </NativeText>
+    ),
+  };
+});
+
+jest.mock('../src/screens/LiveItemScreen', () => {
+  const { Text: NativeText } = require('react-native');
+  return {
+    LiveItemScreen: () => (
+      <NativeText testID="production-live-item">Live Item</NativeText>
+    ),
+  };
+});
+
 jest.mock('../src/screens/FeedbackRoutes', () => {
   const { Text: NativeText } = require('react-native');
   return {
@@ -186,6 +215,12 @@ jest.mock('@react-navigation/native-stack', () => ({
               }
             : name === 'EventBasicsEdit'
             ? { focusField: 'title', rootEventId: 'evt_root' }
+            : name === 'Plan'
+            ? { rootEventId: 'evt_root' }
+            : name === 'PlanItemEditor'
+            ? { eventId: 'evt_session', rootEventId: 'evt_root' }
+            : name === 'LiveItem'
+            ? { itemId: 'iti_session', rootEventId: 'evt_root' }
             : name === 'Invites' || name === 'InviteEditor'
             ? { rootEventId: 'evt_root' }
             : undefined;
@@ -241,6 +276,12 @@ test('keeps public invite and auth screens available while private screens are s
   ).toContain('Bitte anmelden');
   expect(
     textInside(renderer!.root.findByProps({ testID: 'screen-InviteEditor' })),
+  ).toContain('Bitte anmelden');
+  expect(
+    textInside(renderer!.root.findByProps({ testID: 'screen-Plan' })),
+  ).toContain('Bitte anmelden');
+  expect(
+    textInside(renderer!.root.findByProps({ testID: 'screen-LiveItem' })),
   ).toContain('Bitte anmelden');
   expect(
     renderer!.root
@@ -404,6 +445,33 @@ test('gates setup recovery privately and routes ready accounts to production', a
     renderer!.root
       .findByProps({ testID: 'screen-EventSetupRecovery' })
       .findByProps({ testID: 'production-event-setup-recovery' }),
+  ).toBeTruthy();
+
+  await ReactTestRenderer.act(async () => renderer!.unmount());
+});
+
+test('routes the private plan, editor and live item production vertical', async () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    renderer = ReactTestRenderer.create(
+      <RootNavigator privateStatus="ready" />,
+    );
+  });
+
+  expect(
+    renderer!.root
+      .findByProps({ testID: 'screen-Plan' })
+      .findByProps({ testID: 'production-plan' }),
+  ).toBeTruthy();
+  expect(
+    renderer!.root
+      .findByProps({ testID: 'screen-PlanItemEditor' })
+      .findByProps({ testID: 'production-plan-item-editor' }),
+  ).toBeTruthy();
+  expect(
+    renderer!.root
+      .findByProps({ testID: 'screen-LiveItem' })
+      .findByProps({ testID: 'production-live-item' }),
   ).toBeTruthy();
 
   await ReactTestRenderer.act(async () => renderer!.unmount());

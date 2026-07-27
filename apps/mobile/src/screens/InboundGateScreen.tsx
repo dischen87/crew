@@ -136,14 +136,17 @@ export function InboundGateScreen({ navigation, route }: Props) {
         return record &&
           record.accountUserId === accountId &&
           record.rootEventId === route.params.rootEventId &&
-          record.deletedAt === null &&
-          record.status === 'active'
+          record.deletedAt === null
           ? {
               eventId: record.eventId,
               id: record.id,
               title: authorizedEvent.title,
             }
-          : null;
+          : {
+              eventId: route.params.rootEventId,
+              id: route.params.rootEventId,
+              title: authorizedEvent.title,
+            };
       }
       const record = (
         await store.listFeed(accountId, route.params.rootEventId)
@@ -168,10 +171,16 @@ export function InboundGateScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!event.data) return;
     if (route.name === 'ItemInbound') {
-      navigation.replace('EventInbound', {
-        focusItemId: event.data.id,
-        rootEventId: route.params.rootEventId,
-      });
+      if (event.data.id === route.params.itemId) {
+        navigation.replace('LiveItem', {
+          itemId: event.data.id,
+          rootEventId: route.params.rootEventId,
+        });
+      } else {
+        navigation.replace('Plan', {
+          rootEventId: route.params.rootEventId,
+        });
+      }
     } else if (route.name === 'FeedInbound') {
       navigation.replace('TeamFeed', {
         eventId: event.data.eventId,

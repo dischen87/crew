@@ -296,6 +296,7 @@ change. `ST-*` points to the exact state-frame row in the next section.
 | State frames          | `ST-SCR-010`; golf and team fixture content are separate data frames, not separate screens                                                                                      |
 | Accessibility / focus | Focus `Plan`; tree rows expose heading level, parent, expanded state, and sibling position without indentation alone                                                            |
 | Deep link             | Root-plan link focuses heading; child/item link selects target or shows `OVR-012` tombstone before current plan                                                                 |
+| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: recursive cached tree and itinerary, role-correct actions, durable optimistic item rows, sync state, and issue truth are code/test current. Reorder controls and native/device visual evidence remain pending. |
 
 ### `SCR-011` - Plan item editor
 
@@ -309,6 +310,7 @@ change. `ST-*` points to the exact state-frame row in the next section.
 | State frames          | `ST-SCR-011`; capture travel, golf round, session/activity, and generic note field schemas                                  |
 | Accessibility / focus | Focus title or first invalid field; type/time/place controls have text labels and preserve entered values on every recovery |
 | Deep link             | Organizer-only editor link; downgrade opens read-only `SCR-014` and preserves local draft through `SCR-051`                 |
+| Native status         | The itinerary-item create/update slice is `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT` with restart-safe outbox, account fencing, role enforcement, and conflict/permission/deleted recovery. Child-event editing, reorder, and native/device visual evidence remain pending. |
 
 ### `SCR-012` - Capability setup
 
@@ -346,14 +348,15 @@ review intentionally has no publish or sync CTA because publication is never
 queued. Template adoption, default-capability restoration, first-party place
 search/creation, and primary-place binding are current online-only recovery
 actions with manager, version, conflict, account-switch, and refetch guards.
-They do not make the generalized `SCR-011/012` editors current. Native/device
-visual and service-backed publish evidence remain pending.
+They do not make generalized child-event editing in `SCR-011` or `SCR-012`
+capability setup current. Native/device visual and service-backed publish
+evidence remain pending.
 
 ### `SCR-014` - Live item detail
 
 | Field                 | Specification                                                                                                           |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Route / purpose       | `LiveItem({rootEventId,eventId,itemId})`; now/next flight, transfer, stay, round, session, activity, or meal in context |
+| Route / purpose       | `LiveItem({rootEventId,itemId})`; derives the authorized event and shows now/next flight, transfer, stay, round, session, activity, or meal in context |
 | Roles / journeys      | All roles; `G-P-02`, `T-P-02`, `C-01`, `T-O-03`                                                                         |
 | Entry -> exit         | Hub, plan, feed, or deep link -> adjacent item, feed context, or updated plan                                           |
 | One primary action    | Current/upcoming `Open next item`; moved/cancelled `View updated plan`; after last team item `View recap`               |
@@ -361,6 +364,7 @@ visual and service-backed publish evidence remain pending.
 | State frames          | `ST-SCR-014`; travel and team content variants share the route                                                          |
 | Accessibility / focus | Focus item title then status; local day/time/zone, moved/cancelled state, room/place, and last sync are spoken          |
 | Deep link             | Gate root first, apply pull, then focus target; tombstone opens `OVR-012` and current plan                              |
+| Native status         | `NATIVE-CURRENT-ROUTED`, `DATA-CURRENT`: exact optimistic/offline item lookup, role-safe one-primary-action resolution, adjacent-item navigation, local time/named place/details, sync truth, denial concealment, and removed-target return to the updated plan are code/test current. Explicit tombstone overlay and native/device visual evidence remain pending. |
 
 ### `SCR-020` - Invite manager
 

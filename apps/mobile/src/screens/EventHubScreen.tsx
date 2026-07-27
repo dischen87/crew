@@ -19,7 +19,7 @@ import {
 } from '@crew/mobile-data';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Button } from '../design/primitives';
 import { spacing } from '../design/theme';
 import { useGatewayClient } from '../app/GatewayProvider';
@@ -37,7 +37,6 @@ import {
   type EventHubCrewTarget,
   type EventHubDate,
   type EventHubModel,
-  type EventHubPrimaryAction,
   type EventHubTimelineItem,
 } from './EventHubView';
 import { ScreenFrame, ScreenIcon } from './ScreenFrame';
@@ -224,15 +223,21 @@ export function eventHubModelFromReadModels(input: {
         id: 'review-event',
         label: 'Event prüfen',
       }
-    : nextItem && nextPlace
+    : nextItem
     ? {
         access: 'read' as const,
-        accessibilityLabel: `Route zu ${nextPlace.label} öffnen`,
-        destination: nextPlace,
-        id: `route-${nextItem.id}`,
-        label: 'Route öffnen',
+        accessibilityLabel: `${nextItem.title} öffnen`,
+        id: `open-${nextItem.id}`,
+        label: 'Programmpunkt öffnen',
+        target: { itemId: nextItem.id, route: 'LiveItem' as const },
       }
-    : null;
+    : {
+        access: 'read' as const,
+        accessibilityLabel: 'Vollständigen Plan ansehen',
+        id: 'view-plan',
+        label: 'Plan ansehen',
+        target: { route: 'Plan' as const },
+      };
 
   return {
     crewTarget: eventHubCrewTarget(snapshot.feed, role),
@@ -256,35 +261,6 @@ export function eventHubModelFromReadModels(input: {
     timeline: visibleTimeline,
     title: snapshot.root.title,
   } as EventHubModel;
-}
-
-export async function openEventHubPrimaryAction(
-  action: EventHubPrimaryAction,
-): Promise<boolean> {
-  if (action.access !== 'read' || !action.destination) return false;
-  const { label, latitude, longitude } = action.destination;
-  const query =
-    latitude !== null && longitude !== null
-      ? `${latitude},${longitude}`
-      : label;
-  const encoded = encodeURIComponent(query);
-  const url =
-    Platform.OS === 'ios'
-      ? `maps://?q=${encoded}`
-      : Platform.OS === 'android'
-      ? `geo:0,0?q=${encoded}`
-      : `https://www.google.com/maps/search/?api=1&query=${encoded}`;
-  try {
-    if (!(await Linking.canOpenURL(url))) throw new Error('No maps app');
-    await Linking.openURL(url);
-    return true;
-  } catch {
-    Alert.alert(
-      'Route nicht verfügbar',
-      'Auf diesem Gerät konnte keine Karten-App geöffnet werden.',
-    );
-    return false;
-  }
 }
 
 export function EventHubScreen({ navigation, route }: Props) {
@@ -565,11 +541,20 @@ export function EventHubScreen({ navigation, route }: Props) {
           navigation.navigate('EventPublish', { rootEventId });
           return;
         }
-        openEventHubPrimaryAction(action).catch(() => undefined);
+        if (action.access === 'read' && action.target.route === 'LiveItem') {
+          navigation.navigate('LiveItem', {
+            itemId: action.target.itemId,
+            rootEventId,
+          });
+        } else if (action.access === 'read') {
+          navigation.navigate('Plan', { rootEventId });
+        }
       }}
       onSyncStatusPress={() => setRefreshRequest(value => value + 1)}
       onTabSelect={tab => {
-        if (tab === 'feed') {
+        if (tab === 'plan') {
+          navigation.navigate('Plan', { rootEventId });
+        } else if (tab === 'feed') {
           navigation.navigate('TeamFeed', { eventId: null, rootEventId });
         } else if (tab === 'crew' && model.crewTarget?.route === 'TeamSetup') {
           navigation.navigate('TeamSetup', {
@@ -592,6 +577,8 @@ export function EventHubScreen({ navigation, route }: Props) {
             eventId: item.eventId,
             rootEventId,
           });
+        } else if (item) {
+          navigation.navigate('LiveItem', { itemId: item.id, rootEventId });
         }
       }}
       selectedTab="plan"

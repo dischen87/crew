@@ -16,6 +16,13 @@ export type RootStackParamList = {
     eventId?: string;
     rootEventId: string;
   };
+  Plan: { rootEventId: string; eventId?: string };
+  PlanItemEditor: {
+    rootEventId: string;
+    eventId: string;
+    itemId?: string;
+  };
+  LiveItem: { rootEventId: string; itemId: string };
   ItemInbound: { rootEventId: string; itemId: string };
   FeedInbound: { rootEventId: string; entryId: string };
   FeedbackInbound: { feedbackId: string };

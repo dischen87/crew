@@ -1,4 +1,7 @@
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import {
+  createNativeStackNavigator,
+  type NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import type { PrivateNavigationStatus } from '../app/PrivateBootstrapGate';
 import { EmailIdentityScreen } from '../screens/EmailIdentityScreen';
 import { EventBasicsScreen } from '../screens/EventBasicsScreen';
@@ -17,7 +20,10 @@ import { InboundGateScreen } from '../screens/InboundGateScreen';
 import { InviteEditorScreen } from '../screens/InviteEditorScreen';
 import { InviteManagerScreen } from '../screens/InviteManagerScreen';
 import { InvitePreviewScreen } from '../screens/InvitePreviewScreen';
+import { LiveItemScreen } from '../screens/LiveItemScreen';
 import { NativeE2EEvidenceRouteScreen } from '../screens/NativeE2EEvidenceScreen';
+import { PlanItemEditorRouteScreen } from '../screens/PlanItemEditorScreen';
+import { PlanRouteScreen } from '../screens/PlanScreen';
 import { RecapScreen } from '../screens/RecapScreen';
 import {
   PrivateLoadingScreen,
@@ -36,6 +42,38 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 type RootNavigatorProps = {
   privateStatus: PrivateNavigationStatus;
 };
+
+function LiveItemRouteScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'LiveItem'>) {
+  const { itemId, rootEventId } = route.params;
+  return (
+    <LiveItemScreen
+      itemId={itemId}
+      onBack={() => {
+        if (navigation.canGoBack()) navigation.goBack();
+        else navigation.navigate('Plan', { rootEventId });
+      }}
+      onEdit={target => navigation.navigate('PlanItemEditor', target)}
+      onOpenGolfScorecard={target =>
+        navigation.navigate('GolfScorecard', target)
+      }
+      onPrimaryAction={target => {
+        if (target.kind === 'item') {
+          navigation.replace('LiveItem', target);
+        } else if (target.kind === 'recap') {
+          navigation.navigate('RecapInbound', {
+            rootEventId: target.rootEventId,
+          });
+        } else {
+          navigation.replace('Plan', { rootEventId: target.rootEventId });
+        }
+      }}
+      rootEventId={rootEventId}
+    />
+  );
+}
 
 export function RootNavigator({ privateStatus }: RootNavigatorProps) {
   const PrivateFallback =
@@ -84,6 +122,27 @@ export function RootNavigator({ privateStatus }: RootNavigatorProps) {
           privateStatus === 'ready' ? EventSetupRecoveryScreen : PrivateFallback
         }
         options={{ headerShown: false, title: 'Event-Setup' }}
+      />
+      <Stack.Screen
+        name="Plan"
+        component={privateStatus === 'ready' ? PlanRouteScreen : PrivateFallback}
+        options={{ headerShown: false, title: 'Plan' }}
+      />
+      <Stack.Screen
+        name="PlanItemEditor"
+        component={
+          privateStatus === 'ready'
+            ? PlanItemEditorRouteScreen
+            : PrivateFallback
+        }
+        options={{ headerShown: false, title: 'Planeintrag' }}
+      />
+      <Stack.Screen
+        name="LiveItem"
+        component={
+          privateStatus === 'ready' ? LiveItemRouteScreen : PrivateFallback
+        }
+        options={{ headerShown: false, title: 'Programmpunkt' }}
       />
       <Stack.Screen
         name="ItemInbound"

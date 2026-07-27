@@ -12,7 +12,7 @@ import {
   type RootSyncState,
 } from '@crew/mobile-data';
 import React from 'react';
-import { Alert, Linking, Text } from 'react-native';
+import { Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ReactTestRenderer from 'react-test-renderer';
 import {
@@ -132,9 +132,6 @@ beforeEach(() => {
       ((database: { sync: Pick<MobileSyncEngine, 'syncRoot'> }) =>
         database.sync) as never,
     );
-  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
-  jest.spyOn(Linking, 'canOpenURL').mockResolvedValue(true);
-  jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -502,8 +499,8 @@ test('renders the Turkey participant travel, transfer, lodging and golf plan fro
   });
   expect(model.primaryAction).toMatchObject({
     access: 'read',
-    destination: { label: 'Antalya Airport' },
-    label: 'Route öffnen',
+    label: 'Programmpunkt öffnen',
+    target: { itemId: 'iti_flight', route: 'LiveItem' },
   });
 });
 
@@ -536,7 +533,11 @@ test('resolves private draft review only for owners and organizers, never publis
     syncStatus: null,
   });
   expect(publishedModel.status).toBe('published');
-  expect(publishedModel.primaryAction).toBeNull();
+  expect(publishedModel.primaryAction).toMatchObject({
+    access: 'read',
+    label: 'Plan ansehen',
+    target: { route: 'Plan' },
+  });
 
   const viewerDraft = snapshot(
     accountA,
@@ -553,7 +554,10 @@ test('resolves private draft review only for owners and organizers, never publis
     snapshot: viewerDraft,
     syncStatus: null,
   });
-  expect(viewerModel.primaryAction).toBeNull();
+  expect(viewerModel.primaryAction).toMatchObject({
+    access: 'read',
+    target: { route: 'Plan' },
+  });
 });
 
 test('opens the real private-draft review and publish route', async () => {
@@ -586,7 +590,6 @@ test('opens the real private-draft review and publish route', async () => {
   expect(navigate).toHaveBeenCalledWith('EventPublish', {
     rootEventId: rootA,
   });
-  expect(Alert.alert).not.toHaveBeenCalled();
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -635,7 +638,7 @@ test('uses singular participant copy in the screen accessibility summary', () =>
   );
 });
 
-test('makes route, date, sync and available-tab callbacks safe', async () => {
+test('opens plan items and keeps date, sync and available-tab callbacks safe', async () => {
   const store = storeFor(snapshot(accountA, rootA, 'Interaktive Reise'));
   const syncRoot = jest.fn(async () => syncStatus());
   mockPrivateDatabase = {
@@ -648,9 +651,12 @@ test('makes route, date, sync and available-tab callbacks safe', async () => {
   const timeline = renderer.root.findByProps({
     accessibilityLabel: '18:30, Welcome Dinner, Hotellobby',
   });
-  expect(timeline.props.accessibilityRole).toBe('text');
-  expect(timeline.props.onPress).toBeUndefined();
-  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(timeline.props.accessibilityRole).toBe('button');
+  await ReactTestRenderer.act(() => timeline.props.onPress());
+  expect(navigate).toHaveBeenCalledWith('LiveItem', {
+    itemId: 'iti_welcome',
+    rootEventId: rootA,
+  });
 
   await ReactTestRenderer.act(async () => {
     renderer.root
@@ -669,6 +675,11 @@ test('makes route, date, sync and available-tab callbacks safe', async () => {
     await flush();
   });
   expect(syncRoot).toHaveBeenLastCalledWith(accountA, rootA, { force: true });
+
+  await ReactTestRenderer.act(async () => {
+    renderer.root.findByProps({ testID: 'event-hub-tab-plan' }).props.onPress();
+  });
+  expect(navigate).toHaveBeenCalledWith('Plan', { rootEventId: rootA });
 
   await ReactTestRenderer.act(async () => {
     renderer.root.findByProps({ testID: 'event-hub-tab-feed' }).props.onPress();
@@ -697,9 +708,10 @@ test('makes route, date, sync and available-tab callbacks safe', async () => {
       .props.onPress();
     await flush();
   });
-  expect(Linking.openURL).toHaveBeenCalledWith(
-    expect.stringMatching(/^(maps|geo):/),
-  );
+  expect(navigate).toHaveBeenCalledWith('LiveItem', {
+    itemId: 'iti_welcome',
+    rootEventId: rootA,
+  });
 
   await ReactTestRenderer.act(() => renderer.unmount());
 });
@@ -780,20 +792,14 @@ test('opens a synced golf itinerary on the production scorecard route with its r
   };
   const navigate = jest.fn();
   const renderer = await renderScreen(rootA, true, navigate);
-  const round = renderer.root.find(
-    node =>
-      node.props.accessibilityRole === 'button' &&
-      String(node.props.accessibilityLabel).includes('Carya Golf Club'),
-  );
+  const round = renderer.root.findByProps({
+    testID: 'event-hub-timeline-iti_carya_round_one',
+  });
   await ReactTestRenderer.act(async () => round.props.onPress());
   expect(navigate).toHaveBeenCalledWith('GolfScorecard', {
     eventId: 'evt_carya_round_one',
     rootEventId: rootA,
   });
-  expect(Alert.alert).not.toHaveBeenCalledWith(
-    '1. Runde · Carya Golf Club',
-    expect.any(String),
-  );
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
