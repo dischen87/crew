@@ -1426,6 +1426,14 @@ export class PostgresEventRepository implements EventRepository {
 		}
 	}
 
+	async placeEnrichmentWorkerHealthy() {
+		try {
+			return await new PostgresPlaceEnrichmentJobs(this.sql).workerHealthy();
+		} catch {
+			return false;
+		}
+	}
+
 	async createRoot(actor: Actor, input: EventInput): Promise<EventRecord> {
 		validateTimeZone(input.timeZone);
 		validateTimeRange(input.startsAt, input.endsAt);
@@ -4457,6 +4465,11 @@ export class PostgresEventRepository implements EventRepository {
 			await lockAttachmentTarget(tx, actor, input.rootEventId, input.target, {
 				feedbackMayExist: false,
 			});
+			await tx`
+				UPDATE event_attachment_uploads SET state = 'expired'
+				WHERE attachment_id = ${input.attachmentId}
+					AND state = 'prepared' AND expires_at <= now()
+			`;
 			const [capacity] = await tx<
 				{
 					targetAttachments: number;

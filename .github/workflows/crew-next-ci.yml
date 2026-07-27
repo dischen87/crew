@@ -334,6 +334,41 @@ jobs:
               "
             )"
             test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"
+            enrichment_worker_acl="$(
+              docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command "
+                SELECT
+                  (SELECT rolcanlogin FROM pg_roles WHERE rolname = 'crew_event_enrichment_worker'),
+                  has_database_privilege('crew_event_enrichment_worker', 'crew_event', 'CONNECT'),
+                  has_schema_privilege('crew_event_enrichment_worker', 'public', 'USAGE'),
+                  has_database_privilege('crew_event_enrichment_worker', 'crew_event', 'TEMPORARY'),
+                  has_schema_privilege('crew_event_enrichment_worker', 'public', 'CREATE'),
+                  COALESCE((
+                    SELECT string_agg(
+                      format('%s:%s', relation.relname, expanded_acl.privilege_type),
+                      ',' ORDER BY relation.relname, expanded_acl.privilege_type
+                    )
+                    FROM pg_class AS relation
+                    JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+                    CROSS JOIN LATERAL aclexplode(relation.relacl) AS expanded_acl
+                    JOIN pg_roles AS grantee ON grantee.oid = expanded_acl.grantee
+                    WHERE namespace.nspname = 'public'
+                      AND relation.relkind IN ('r', 'p')
+                      AND grantee.rolname = 'crew_event_enrichment_worker'
+                  ), ''),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_jobs', 'INSERT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_jobs', 'DELETE'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_fields', 'SELECT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'event_roots', 'SELECT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_candidates', 'SELECT'),
+                  has_table_privilege('crew_event_enrichment_worker', 'place_enrichment_worker_health', 'DELETE'),
+                  has_function_privilege('crew_event_enrichment_worker', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'SELECT'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'INSERT'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'UPDATE'),
+                  has_table_privilege('crew_event_api', 'place_enrichment_worker_health', 'DELETE')
+              "
+            )"
+            test "$enrichment_worker_acl" = "f|t|t|f|f|place_enrichment_attempts:INSERT,place_enrichment_attempts:SELECT,place_enrichment_attempts:UPDATE,place_enrichment_fields:INSERT,place_enrichment_job_associations:SELECT,place_enrichment_jobs:SELECT,place_enrichment_jobs:UPDATE,place_enrichment_provider_calls:INSERT,place_enrichment_provider_calls:SELECT,place_enrichment_provider_calls:UPDATE,place_enrichment_worker_health:INSERT,place_enrichment_worker_health:SELECT,place_enrichment_worker_health:UPDATE|f|f|f|f|f|f|f|t|f|f|f"
             runtime_default_acl_count="$(
               docker compose exec -T postgres psql --username crew_local_admin --dbname crew_event --tuples-only --no-align --command "
                 SELECT count(*)
@@ -344,6 +379,7 @@ jobs:
                   OR grantee.rolname IN (
                     'crew_event_api',
                     'crew_event_attachment_worker',
+                    'crew_event_enrichment_worker',
                     'crew_event_notification_worker',
                     'crew_event_recap_retention_worker'
                   )

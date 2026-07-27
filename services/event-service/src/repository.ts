@@ -110,6 +110,7 @@ export type PlaceEnrichmentScope = {
 
 export interface EventRepository {
 	ready(): Promise<boolean>;
+	placeEnrichmentWorkerHealthy(): Promise<boolean>;
 	findIdempotent<T extends Record<string, unknown>>(
 		input: {
 			actor: Actor;

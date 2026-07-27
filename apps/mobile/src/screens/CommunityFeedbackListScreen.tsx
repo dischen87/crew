@@ -179,6 +179,7 @@ export function CommunityFeedbackListScreen({
 
     const load = async () => {
       let hasMembership = false;
+      let rootVerified = false;
       let items: readonly CommunityFeedbackSummary[] = previous?.items ?? [];
       let updates: readonly CommunityFeedbackUpdate[] = previous?.updates ?? [];
       try {
@@ -186,6 +187,15 @@ export function CommunityFeedbackListScreen({
           accountUserId,
           rootEventId,
         );
+        if (!hasMembership && online) {
+          await runtime.verifyRoot(accountUserId, rootEventId);
+          rootVerified = true;
+          if (cancelled) return;
+          hasMembership = await runtime.hasCachedMembership(
+            accountUserId,
+            rootEventId,
+          );
+        }
         if (!hasMembership) {
           publish(unavailableState(scopeKey));
           return;
@@ -224,11 +234,15 @@ export function CommunityFeedbackListScreen({
 
       if (!online || cancelled) return;
       try {
-        await runtime.verifyRoot(accountUserId, rootEventId);
-        if (cancelled) return;
-        if (!(await runtime.hasCachedMembership(accountUserId, rootEventId))) {
-          publish(unavailableState(scopeKey));
-          return;
+        if (!rootVerified) {
+          await runtime.verifyRoot(accountUserId, rootEventId);
+          if (cancelled) return;
+          if (
+            !(await runtime.hasCachedMembership(accountUserId, rootEventId))
+          ) {
+            publish(unavailableState(scopeKey));
+            return;
+          }
         }
         const refresh = await refreshCommunityFeedback(runtime, rootEventId);
         if (cancelled) return;
@@ -473,7 +487,7 @@ export async function refreshCommunityFeedback(
 ): Promise<{ partial: boolean }> {
   const results = await Promise.all([
     refreshPages(cursor =>
-      runtime.controller.refreshList(rootEventId, { cursor, limit: 50 }),
+      runtime.controller.refreshList(rootEventId, { cursor, limit: 10 }),
     ),
     refreshPages(cursor =>
       runtime.controller.refreshUpdates(rootEventId, { cursor, limit: 50 }),

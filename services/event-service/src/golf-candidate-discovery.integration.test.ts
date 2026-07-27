@@ -82,7 +82,11 @@ if (!databaseUrl) {
 		});
 
 		beforeEach(async () => {
-			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates CASCADE`;
+			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates, place_enrichment_worker_health CASCADE`;
+			await new PostgresPlaceEnrichmentJobs(sql).heartbeat(
+				"golf-discovery-test-worker",
+				60_000,
+			);
 			await service.createRoot(
 				{ id: actorId },
 				{

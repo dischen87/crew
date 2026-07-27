@@ -47,7 +47,7 @@ if (!databaseUrl) {
 		});
 
 		beforeEach(async () => {
-			await sql`TRUNCATE event_roots, place_enrichment_jobs, place_candidates CASCADE`;
+			await sql`TRUNCATE event_roots, place_enrichment_jobs, place_candidates, place_enrichment_worker_health CASCADE`;
 			await createGolfRoot(sql, rootA, managerA.id);
 			const [imported] = await new PostgresPlaceCandidateRepository(
 				sql,
@@ -89,6 +89,18 @@ if (!databaseUrl) {
 				>
 			>;
 		}
+
+		test("reports only a current database heartbeat as worker health", async () => {
+			expect(await jobs.workerHealthy()).toBe(false);
+			await jobs.heartbeat("place-enrichment-integration-worker", 60_000);
+			expect(await jobs.workerHealthy()).toBe(true);
+			await sql`
+				UPDATE place_enrichment_worker_health
+				SET healthy_until = clock_timestamp() - interval '1 second',
+					updated_at = clock_timestamp() - interval '2 seconds'
+			`;
+			expect(await jobs.workerHealthy()).toBe(false);
+		});
 
 		test("deduplicates concurrent candidate and normalized search-miss requests", async () => {
 			const candidateJobs = await Promise.all(

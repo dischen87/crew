@@ -688,6 +688,75 @@ describe("durable event feed and attachments", () => {
 		expect(wrongFeedback.status).toBe(404);
 	});
 
+	test("reuses an expired feedback attachment identity after finalize reports expiry", async () => {
+		const rootEventId = "evt_feedbackreuse1";
+		const feedbackId = "fbk_feedbackreuse1";
+		const attachmentId = "att_feedbackreuse1";
+		await service.createRoot(owner, rootInput(rootEventId, "published"));
+		await addMember(rootEventId, participant.id, "participant");
+		const app = createApp({
+			service,
+			verifyUserToken: async (token) => ({ id: token }),
+		});
+		const prepare = async (idempotencyKey: string) => {
+			const response = await app.request(
+				`/v1/event-roots/${rootEventId}/attachments/uploads`,
+				{
+					method: "POST",
+					headers: commandHeaders(
+						participant.id,
+						idempotencyKey,
+						`${idempotencyKey}-request`,
+					),
+					body: JSON.stringify({
+						attachmentId,
+						target: { kind: "feedback", feedbackId },
+						contentType: "image/png",
+						byteCount: png.byteLength,
+						sha256: sha256(png),
+					}),
+				},
+			);
+			expect(response.status).toBe(201);
+			return (await response.json()) as { upload: { id: string } };
+		};
+
+		const first = await prepare("feedback-reuse-prepare-01");
+		await sql`
+			UPDATE event_attachment_uploads SET
+				created_at = now() - interval '2 minutes',
+				expires_at = now() - interval '1 minute'
+			WHERE id = ${first.upload.id}
+		`;
+		const expiredFinalize = await app.request(
+			`/v1/event-roots/${rootEventId}/attachments/uploads/${first.upload.id}/finalize`,
+			{
+				method: "POST",
+				headers: commandHeaders(
+					participant.id,
+					"feedback-reuse-finalize-01",
+					"feedback-reuse-finalize-request",
+				),
+				body: JSON.stringify({ caption: null }),
+			},
+		);
+		expect(expiredFinalize.status).toBe(409);
+		expect(await expiredFinalize.json()).toMatchObject({
+			error: { code: "UPLOAD_EXPIRED" },
+		});
+
+		const second = await prepare("feedback-reuse-prepare-02");
+		expect(second.upload.id).not.toBe(first.upload.id);
+		const [states] = await sql<{ firstState: string; secondState: string }[]>`
+			SELECT
+				(SELECT state FROM event_attachment_uploads
+				 WHERE id = ${first.upload.id}) AS "firstState",
+				(SELECT state FROM event_attachment_uploads
+				 WHERE id = ${second.upload.id}) AS "secondState"
+		`;
+		expect(states).toEqual({ firstState: "expired", secondState: "prepared" });
+	});
+
 	test("deletes only unbound committed feedback screenshots after retention", async () => {
 		const rootEventId = "evt_feedbackgc01";
 		await service.createRoot(owner, rootInput(rootEventId, "published"));

@@ -1899,7 +1899,7 @@ export class EventService {
 		);
 	}
 
-	requestPlaceEnrichmentCandidate(
+	async requestPlaceEnrichmentCandidate(
 		actor: Actor,
 		scope: PlaceEnrichmentScope,
 		candidateId: string,
@@ -1909,16 +1909,16 @@ export class EventService {
 				actor,
 				scope,
 				candidateId,
-				this.requiredPlaceEnrichmentPolicy(),
+				await this.requiredPlaceEnrichmentPolicy(),
 			),
 		);
 	}
 
-	assertPlaceEnrichmentAvailable() {
-		this.requiredPlaceEnrichmentPolicy();
+	async assertPlaceEnrichmentAvailable() {
+		await this.requiredPlaceEnrichmentPolicy();
 	}
 
-	requestPlaceEnrichmentSearchMiss(
+	async requestPlaceEnrichmentSearchMiss(
 		actor: Actor,
 		scope: PlaceEnrichmentScope,
 		input: {
@@ -1932,7 +1932,7 @@ export class EventService {
 				actor,
 				scope,
 				input,
-				this.requiredPlaceEnrichmentPolicy(),
+				await this.requiredPlaceEnrichmentPolicy(),
 			),
 		);
 	}
@@ -1972,7 +1972,7 @@ export class EventService {
 		rootEventId: string,
 		id: string,
 	) {
-		this.requiredPlaceEnrichmentPolicy();
+		await this.requiredPlaceEnrichmentPolicy();
 		if (!/^pej_[a-f0-9]{64}$/.test(id)) throw placeEnrichmentNotFound();
 		await concealPlaceEnrichmentAccess(
 			this.repository.requestPlaceEnrichmentRetry(actor, rootEventId, id),
@@ -2115,8 +2115,11 @@ export class EventService {
 		return this.attachments;
 	}
 
-	private requiredPlaceEnrichmentPolicy() {
-		if (!this.placeEnrichmentPolicy)
+	private async requiredPlaceEnrichmentPolicy() {
+		if (
+			!this.placeEnrichmentPolicy ||
+			!(await this.repository.placeEnrichmentWorkerHealthy())
+		)
 			throw new DomainError(
 				503,
 				"SERVICE_UNAVAILABLE",

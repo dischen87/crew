@@ -25,7 +25,28 @@ const attachmentCleanupFunctionRevoke = `REVOKE EXECUTE ON FUNCTION delete_claim
 	TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT
 ) FROM
 	PUBLIC, crew_event_api, crew_event_notification_worker,
-	crew_event_recap_retention_worker;`;
+	crew_event_recap_retention_worker, crew_event_enrichment_worker;`;
+const eventApiTableExclusions = `AND tablename NOT IN (
+		'event_schema_migrations',
+		'event_attachments',
+		'place_enrichment_worker_health'
+	)`;
+const enrichmentWorkerTableGrants = [
+	`GRANT SELECT, UPDATE ON TABLE place_enrichment_jobs
+TO crew_event_enrichment_worker;`,
+	`GRANT SELECT, INSERT, UPDATE ON TABLE place_enrichment_attempts
+TO crew_event_enrichment_worker;`,
+	`GRANT SELECT, INSERT, UPDATE ON TABLE place_enrichment_provider_calls
+TO crew_event_enrichment_worker;`,
+	`GRANT INSERT ON TABLE place_enrichment_fields
+TO crew_event_enrichment_worker;`,
+	`GRANT SELECT ON TABLE place_enrichment_job_associations
+TO crew_event_enrichment_worker;`,
+	`GRANT SELECT, INSERT, UPDATE ON TABLE place_enrichment_worker_health
+TO crew_event_enrichment_worker;`,
+] as const;
+const enrichmentWorkerAclExpectation =
+	'test "$enrichment_worker_acl" = "f|t|t|f|f|place_enrichment_attempts:INSERT,place_enrichment_attempts:SELECT,place_enrichment_attempts:UPDATE,place_enrichment_fields:INSERT,place_enrichment_job_associations:SELECT,place_enrichment_jobs:SELECT,place_enrichment_jobs:UPDATE,place_enrichment_provider_calls:INSERT,place_enrichment_provider_calls:SELECT,place_enrichment_provider_calls:UPDATE,place_enrichment_worker_health:INSERT,place_enrichment_worker_health:SELECT,place_enrichment_worker_health:UPDATE|f|f|f|f|f|f|f|t|f|f|f"';
 const checkoutSha = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 const setupBunSha = "0c5077e51419868618aeaa5fe8019c62421857d6";
 const githubShaExpression = ["$", "{{ github.sha }}"].join("");
@@ -108,6 +129,10 @@ describe("Crew Next GitHub Actions workflow", () => {
 			[
 				'            test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"\n',
 				"            true # removed attachment ACL oracle\n",
+			],
+			[
+				`            ${enrichmentWorkerAclExpectation}\n`,
+				"            true # removed enrichment worker ACL oracle\n",
 			],
 			[
 				'            test "$runtime_default_acl_count" -eq 0\n',
@@ -255,13 +280,29 @@ describe("Crew Next GitHub Actions workflow", () => {
 				"provider-sink"
 			],
 		).toEqual({ condition: "service_healthy" });
+		const enrichmentWorker = object(
+			services["place-enrichment-worker"],
+			"place enrichment worker service",
+		);
+		expect(enrichmentWorker.profiles).toEqual(["enrichment"]);
+		expect(enrichmentWorker).not.toHaveProperty("ports");
+		expect(
+			object(
+				enrichmentWorker.environment,
+				"place enrichment worker environment",
+			),
+		).toMatchObject({
+			EVENT_ENRICHMENT_EXA_API_KEY: `\${EVENT_ENRICHMENT_EXA_API_KEY:-}`,
+			EVENT_ENRICHMENT_LLM_URL: `\${EVENT_ENRICHMENT_LLM_URL:-}`,
+			EVENT_ENRICHMENT_LLM_API_KEY: `\${EVENT_ENRICHMENT_LLM_API_KEY:-}`,
+		});
 	});
 
 	test("grants each runtime worker the database operations it executes", () => {
 		validateRuntimeGrants(runtimeGrantSource);
 		for (const drifted of [
 			runtimeGrantSource.replace(
-				"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
+				eventApiTableExclusions,
 				"AND tablename <> 'event_schema_migrations'",
 			),
 			runtimeGrantSource.replace(
@@ -279,6 +320,7 @@ describe("Crew Next GitHub Actions workflow", () => {
 			`${runtimeGrantSource}\nGRANT DELETE ON TABLE "public"."event_attachments" TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT ALL ON ALL TABLES IN SCHEMA public TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nGRANT INSERT ON ALL TABLES IN SCHEMA public TO crew_event_attachment_worker;\n`,
+			`${runtimeGrantSource}\nGRANT DELETE ON TABLE place_enrichment_jobs TO crew_event_enrichment_worker;\n`,
 			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO crew_event_api;\n`,
 			`${runtimeGrantSource}\nALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO PUBLIC;\n`,
 			`${runtimeGrantSource}\nGRANT EXECUTE ON FUNCTION public.delete_claimed_feedback_attachment(TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) TO crew_event_api;\n`,
@@ -296,6 +338,9 @@ describe("Crew Next GitHub Actions workflow", () => {
 				"GRANT SELECT ON TABLE event_attachments\nTO crew_event_attachment_worker;",
 				"GRANT SELECT, TRUNCATE ON TABLE event_attachments\nTO crew_event_attachment_worker;",
 			),
+			...enrichmentWorkerTableGrants.map((grant) =>
+				runtimeGrantSource.replace(grant, "-- missing enrichment grant"),
+			),
 		]) {
 			expect(drifted).not.toBe(runtimeGrantSource);
 			expect(() => validateRuntimeGrants(drifted)).toThrow();
@@ -311,12 +356,10 @@ function validateRuntimeGrants(source: string) {
 		(match) => normalizeSql(match[1] as string),
 	);
 	expect(dynamicApiGrantFormats).toEqual([normalizeSql(blanketEventApiGrant)]);
-	expect(source).toContain(
-		"AND tablename NOT IN ('event_schema_migrations', 'event_attachments')",
-	);
+	expect(source).toContain(eventApiTableExclusions);
 	const statements = privilegeStatements(source);
 	const runtimeStatements = statements.filter((statement) =>
-		/\bto\b[^;]*\bcrew_event_(?:api|attachment_worker|notification_worker|recap_retention_worker)\b/.test(
+		/\bto\b[^;]*\bcrew_event_(?:api|attachment_worker|enrichment_worker|notification_worker|recap_retention_worker)\b/.test(
 			statement,
 		),
 	);
@@ -333,7 +376,7 @@ function validateRuntimeGrants(source: string) {
 			(statement) =>
 				statement.startsWith("alter default privileges ") &&
 				/\bon (?:tables|functions|routines)\b/.test(statement) &&
-				/\bto\b[^;]*(?:\bpublic\b|\bcrew_event_(?:api|attachment_worker|notification_worker|recap_retention_worker)\b)/.test(
+				/\bto\b[^;]*(?:\bpublic\b|\bcrew_event_(?:api|attachment_worker|enrichment_worker|notification_worker|recap_retention_worker)\b)/.test(
 					statement,
 				),
 		),
@@ -389,10 +432,23 @@ function validateRuntimeGrants(source: string) {
 	).toEqual([
 		"grant select on table event_attachments to crew_event_attachment_worker;",
 	]);
+	expect(
+		statements.filter(
+			(statement) =>
+				statement.startsWith("grant ") &&
+				/\bto\b[^;]*\bcrew_event_enrichment_worker\b/.test(statement),
+		),
+	).toEqual(
+		[
+			"GRANT CONNECT ON DATABASE crew_event TO crew_event_enrichment_worker;",
+			"GRANT USAGE ON SCHEMA public TO crew_event_enrichment_worker;",
+			...enrichmentWorkerTableGrants,
+		].map(normalizeSql),
+	);
 	expect(statements).not.toEqual(
 		expect.arrayContaining([
 			expect.stringMatching(
-				/^grant\b[^;]*\binsert\b[^;]*\bto\b[^;]*\bcrew_(?:user|event)_[a-z_]+_worker\b/,
+				/^grant\b[^;]*\binsert\b[^;]*\bto\b[^;]*\bcrew_(?:user|event)_(?!enrichment_worker\b)[a-z_]+_worker\b/,
 			),
 		]),
 	);
@@ -671,6 +727,9 @@ function validateWorkflow(source: string) {
 		"has_table_privilege('crew_event_attachment_worker', 'event_attachments', 'TRUNCATE')",
 		"has_function_privilege('crew_event_api', 'delete_claimed_feedback_attachment(text,text,text,text,text,bigint)', 'EXECUTE')",
 		'test "$event_attachment_acl" = "t|t|f|f|f|f|f|f|f|t|f|f|f|f|f|f|f|t|f|f|f"',
+		"enrichment_worker_acl",
+		"grantee.rolname = 'crew_event_enrichment_worker'",
+		enrichmentWorkerAclExpectation,
 		"FROM pg_default_acl AS default_acl",
 		"aclexplode(default_acl.defaclacl)",
 		"LEFT JOIN pg_roles AS grantee",

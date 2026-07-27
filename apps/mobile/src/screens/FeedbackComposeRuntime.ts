@@ -99,12 +99,6 @@ export class FeedbackComposeRuntime {
         const captured = await captureCurrentScreenAttachment(
           this.#accountUserId,
         );
-        await this.#assertActive();
-        const previewDataUri = await previewRetainedAttachment(
-          this.#accountUserId,
-          captured.retainedFileKey,
-        );
-        await this.#assertActive();
         await this.#screenshots.retain({
           accountUserId: this.#accountUserId,
           attachmentId,
@@ -120,6 +114,11 @@ export class FeedbackComposeRuntime {
           wasNormalized: true,
         });
         await this.#assertActive();
+        const previewDataUri = await previewRetainedAttachment(
+          this.#accountUserId,
+          captured.retainedFileKey,
+        );
+        await this.#assertActive();
         return {
           attachmentId,
           feedbackId,
@@ -128,7 +127,9 @@ export class FeedbackComposeRuntime {
           previewDataUri,
         };
       } catch (error) {
-        await this.#discardAndReconcile(feedbackId);
+        if (!(error instanceof FeedbackSubmissionAccountChangedError)) {
+          await this.#discardAndReconcile(feedbackId);
+        }
         throw error;
       }
     });

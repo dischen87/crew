@@ -108,6 +108,40 @@ export class PostgresPlaceEnrichmentJobs {
 		private readonly inTransaction = false,
 	) {}
 
+	async heartbeat(workerId: string, ttlMs: number) {
+		if (
+			workerId.length < 1 ||
+			workerId.length > 128 ||
+			!Number.isInteger(ttlMs) ||
+			ttlMs < 1_000 ||
+			ttlMs > 300_000
+		) {
+			throw new Error("Place-enrichment worker heartbeat is invalid");
+		}
+		await this.sql`
+			INSERT INTO place_enrichment_worker_health (
+				singleton, worker_id, healthy_until, updated_at
+			) VALUES (
+				TRUE, ${workerId},
+				clock_timestamp() + (${ttlMs} * interval '1 millisecond'),
+				clock_timestamp()
+			)
+			ON CONFLICT (singleton) DO UPDATE SET
+				worker_id = EXCLUDED.worker_id,
+				healthy_until = EXCLUDED.healthy_until,
+				updated_at = EXCLUDED.updated_at
+		`;
+	}
+
+	async workerHealthy() {
+		const [health] = await this.sql<{ healthy: boolean }[]>`
+			SELECT TRUE AS healthy
+			FROM place_enrichment_worker_health
+			WHERE singleton AND healthy_until > clock_timestamp()
+		`;
+		return health?.healthy === true;
+	}
+
 	async enqueueCandidate(
 		candidateId: string,
 		policy: PlaceEnrichmentPolicy,

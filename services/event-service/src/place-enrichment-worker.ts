@@ -25,6 +25,7 @@ type WorkerConfig = Omit<
 >;
 export type PlaceEnrichmentJobs = Pick<
 	PostgresPlaceEnrichmentJobs,
+	| "heartbeat"
 	| "claim"
 	| "reserveProviderCall"
 	| "recordProviderCall"
@@ -249,16 +250,51 @@ export function createPlaceEnrichmentWorker(
 		processOne,
 		tick: processOne,
 		async run(signal: AbortSignal) {
-			while (!signal.aborted) {
-				try {
-					await processOne();
-				} catch {
-					console.error("Place enrichment worker tick failed", {
-						workerId: config.workerId,
-						code: "PLACE_ENRICHMENT_WORKER_TICK_FAILED",
+			const heartbeatIntervalMs = Math.max(
+				100,
+				Math.min(config.pollIntervalMs, Math.floor(config.leaseMs / 3)),
+			);
+			let heartbeatFailed = false;
+			let heartbeatPending: Promise<void> | undefined;
+			const heartbeat = () => {
+				if (heartbeatPending) return;
+				heartbeatPending = jobs
+					.heartbeat(config.workerId, config.leaseMs)
+					.catch(() => {
+						heartbeatFailed = true;
+						console.error("Place enrichment worker heartbeat failed", {
+							workerId: config.workerId,
+							code: "PLACE_ENRICHMENT_WORKER_HEARTBEAT_FAILED",
+						});
+					})
+					.finally(() => {
+						heartbeatPending = undefined;
 					});
+			};
+
+			try {
+				await jobs.heartbeat(config.workerId, config.leaseMs);
+			} catch {
+				throw new Error("Place enrichment worker heartbeat failed");
+			}
+			const heartbeatTimer = setInterval(heartbeat, heartbeatIntervalMs);
+			try {
+				while (!signal.aborted) {
+					if (heartbeatFailed)
+						throw new Error("Place enrichment worker heartbeat failed");
+					try {
+						await processOne();
+					} catch {
+						console.error("Place enrichment worker tick failed", {
+							workerId: config.workerId,
+							code: "PLACE_ENRICHMENT_WORKER_TICK_FAILED",
+						});
+					}
+					if (!signal.aborted) await Bun.sleep(config.pollIntervalMs);
 				}
-				if (!signal.aborted) await Bun.sleep(config.pollIntervalMs);
+			} finally {
+				clearInterval(heartbeatTimer);
+				await heartbeatPending;
 			}
 		},
 	};

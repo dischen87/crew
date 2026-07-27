@@ -11,6 +11,7 @@ import { migrate } from "../scripts/migrate";
 import { createApp } from "./app";
 import { EventNotificationPayloadCodec } from "./event-notification-payload";
 import type { PlaceEnrichmentPolicy } from "./place-enrichment";
+import { PostgresPlaceEnrichmentJobs } from "./place-enrichment-jobs";
 import { PostgresPlaceCandidateRepository } from "./postgres-place-candidate-repository";
 import { PostgresEventRepository } from "./postgres-repository";
 import { EventService } from "./service";
@@ -59,7 +60,11 @@ if (!databaseUrl) {
 		});
 
 		beforeEach(async () => {
-			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates CASCADE`;
+			await sql`TRUNCATE event_idempotency_records, event_roots, place_candidates, place_enrichment_worker_health CASCADE`;
+			await new PostgresPlaceEnrichmentJobs(sql).heartbeat(
+				"enrichment-api-test-worker",
+				60_000,
+			);
 			await service.createRoot(
 				{ id: actorId },
 				{

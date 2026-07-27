@@ -62,6 +62,7 @@ test("worker loops log fixed classifications without inspecting raw failures", a
 
 		const enrichmentAbort = new AbortController();
 		const enrichmentJobs = {
+			async heartbeat() {},
 			async claim() {
 				enrichmentAbort.abort();
 				throw failure;
@@ -71,6 +72,7 @@ test("worker loops log fixed classifications without inspecting raw failures", a
 			{
 				workerId: "event-enrichment-safe-worker",
 				pollIntervalMs: 1,
+				leaseMs: 1_000,
 			} as Parameters<typeof createPlaceEnrichmentWorker>[0],
 			enrichmentJobs,
 		).run(enrichmentAbort.signal);

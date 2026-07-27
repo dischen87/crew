@@ -56,6 +56,7 @@ services:
       EVENT_DB_ATTACHMENT_WORKER_PASSWORD: ${EVENT_DB_ATTACHMENT_WORKER_PASSWORD:-crew-local-event-attachment-change-2026}
       EVENT_DB_NOTIFICATION_WORKER_PASSWORD: ${EVENT_DB_NOTIFICATION_WORKER_PASSWORD:-crew-local-event-notification-change-2026}
       EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD: ${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:-crew-local-event-recap-retention-change-2026}
+      EVENT_DB_ENRICHMENT_WORKER_PASSWORD: ${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-crew-databases.sh:ro
@@ -142,6 +143,7 @@ services:
     entrypoint: [/bin/bash, /infra/postgres/grant-runtime.sh]
     environment:
       POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-crew-local-postgres-admin-change-2026}
+      EVENT_DB_ENRICHMENT_WORKER_PASSWORD: ${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}
     volumes:
       - ./infra/postgres:/infra/postgres:ro
     depends_on:
@@ -478,6 +480,23 @@ services:
       NODE_ENV: development
       EVENT_RECAP_RETENTION_WORKER_ID: local-recap-retention-worker
       EVENT_RECAP_RETENTION_WORKER_DATABASE_URL: postgres://crew_event_recap_retention_worker:${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD:-crew-local-event-recap-retention-change-2026}@postgres:5432/crew_event
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+
+  place-enrichment-worker:
+    <<: *bun-runtime
+    profiles: [enrichment]
+    restart: unless-stopped
+    command: [bun, services/event-service/scripts/run-enrichment-worker.ts]
+    environment:
+      NODE_ENV: development
+      EVENT_ENRICHMENT_WORKER_ID: local-place-enrichment-worker
+      EVENT_ENRICHMENT_WORKER_DATABASE_URL: postgres://crew_event_enrichment_worker:${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}@postgres:5432/crew_event
+      EVENT_ENRICHMENT_LLM_MODEL: ${EVENT_ENRICHMENT_LLM_MODEL:-local-fixture-model}
+      EVENT_ENRICHMENT_EXA_API_KEY: ${EVENT_ENRICHMENT_EXA_API_KEY:-}
+      EVENT_ENRICHMENT_LLM_URL: ${EVENT_ENRICHMENT_LLM_URL:-}
+      EVENT_ENRICHMENT_LLM_API_KEY: ${EVENT_ENRICHMENT_LLM_API_KEY:-}
     depends_on:
       db-grants:
         condition: service_completed_successfully

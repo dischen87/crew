@@ -31,7 +31,8 @@ psql \
 	--set event_api_password="${EVENT_DB_API_PASSWORD}" \
 	--set event_attachment_password="${EVENT_DB_ATTACHMENT_WORKER_PASSWORD}" \
 	--set event_notification_password="${EVENT_DB_NOTIFICATION_WORKER_PASSWORD}" \
-	--set event_recap_retention_password="${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD}" <<'SQL'
+	--set event_recap_retention_password="${EVENT_DB_RECAP_RETENTION_WORKER_PASSWORD}" \
+	--set event_enrichment_password="${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}" <<'SQL'
 CREATE ROLE crew_user_owner LOGIN PASSWORD :'user_owner_password'
 	NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE crew_user_api LOGIN PASSWORD :'user_api_password'
@@ -51,6 +52,14 @@ CREATE ROLE crew_event_notification_worker LOGIN PASSWORD :'event_notification_p
 	NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE crew_event_recap_retention_worker LOGIN PASSWORD :'event_recap_retention_password'
 	NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+CREATE ROLE crew_event_enrichment_worker NOLOGIN
+	NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+SELECT format(
+	'ALTER ROLE crew_event_enrichment_worker LOGIN PASSWORD %L',
+	:'event_enrichment_password'
+)
+WHERE :'event_enrichment_password' <> ''
+\gexec
 
 CREATE DATABASE crew_user OWNER crew_user_owner;
 CREATE DATABASE crew_event OWNER crew_event_owner;
@@ -62,6 +71,7 @@ GRANT CONNECT, TEMPORARY ON DATABASE crew_user TO
 GRANT CONNECT, TEMPORARY ON DATABASE crew_event TO
 	crew_event_owner, crew_event_api, crew_event_attachment_worker,
 	crew_event_notification_worker, crew_event_recap_retention_worker;
+GRANT CONNECT ON DATABASE crew_event TO crew_event_enrichment_worker;
 
 \connect crew_user
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
@@ -76,7 +86,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE, CREATE ON SCHEMA public TO crew_event_owner;
 GRANT USAGE ON SCHEMA public TO
 	crew_event_api, crew_event_attachment_worker, crew_event_notification_worker,
-	crew_event_recap_retention_worker;
+	crew_event_recap_retention_worker, crew_event_enrichment_worker;
 ALTER DEFAULT PRIVILEGES FOR ROLE crew_event_owner IN SCHEMA public
 	REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 SQL

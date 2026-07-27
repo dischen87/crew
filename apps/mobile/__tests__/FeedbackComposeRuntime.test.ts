@@ -199,10 +199,10 @@ test('registers screenshot reads, cleanup, and fallback delivery with the accoun
   ).toBe(true);
 });
 
-test('account change during capture deletes the unbound retained file', async () => {
+test('logout during native capture binds the retained file before rejecting the inactive account', async () => {
   let activeAccount: string | null = accountUserId;
   mockCapture.mockImplementation(async () => {
-    activeAccount = `usr_${'2'.repeat(32)}`;
+    activeAccount = null;
     return captured;
   });
   const runtime = createRuntime({
@@ -214,20 +214,24 @@ test('account change during capture deletes the unbound retained file', async ()
   });
 
   await expect(runtime.capture(rootEventId)).rejects.toThrow();
-  expect(mockScreenshotStore.discard).toHaveBeenCalled();
-  expect(mockReconcile).toHaveBeenCalledWith(
-    mockAttachmentStore,
-    accountUserId,
+  expect(mockScreenshotStore.retain).toHaveBeenCalledWith(
+    expect.objectContaining({
+      accountUserId,
+      feedbackId: 'fbk_00000000-0000-4000-8000-000000000001',
+      retainedFileKey: captured.retainedFileKey,
+    }),
   );
   expect(mockPreview).not.toHaveBeenCalled();
+  expect(mockScreenshotStore.discard).not.toHaveBeenCalled();
+  expect(mockReconcile).not.toHaveBeenCalled();
 });
 
 test.each([
-  ['preview', 2, 0],
-  ['retention', 3, 1],
+  ['retention', 1, false],
+  ['preview', 2, true],
 ] as const)(
-  'account change after awaited %s discards the retained screenshot',
-  async (_boundary, activeChecks, expectedRetains) => {
+  'account change after awaited %s preserves the durable screenshot binding',
+  async (_boundary, activeChecks, expectedPreview) => {
     let checks = 0;
     const runtime = createRuntime({
       activeAccountUserId: () =>
@@ -239,19 +243,10 @@ test.each([
     });
 
     await expect(runtime.capture(rootEventId)).rejects.toThrow();
-    expect(mockPreview).toHaveBeenCalledWith(
-      accountUserId,
-      captured.retainedFileKey,
-    );
-    expect(mockScreenshotStore.retain).toHaveBeenCalledTimes(expectedRetains);
-    expect(mockScreenshotStore.discard).toHaveBeenCalledWith(
-      accountUserId,
-      'fbk_00000000-0000-4000-8000-000000000001',
-    );
-    expect(mockReconcile).toHaveBeenCalledWith(
-      mockAttachmentStore,
-      accountUserId,
-    );
+    expect(mockScreenshotStore.retain).toHaveBeenCalledTimes(1);
+    expect(mockPreview).toHaveBeenCalledTimes(expectedPreview ? 1 : 0);
+    expect(mockScreenshotStore.discard).not.toHaveBeenCalled();
+    expect(mockReconcile).not.toHaveBeenCalled();
   },
 );
 

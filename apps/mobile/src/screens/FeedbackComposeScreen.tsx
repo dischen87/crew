@@ -114,6 +114,11 @@ export function FeedbackComposeScreen({
   const [duplicateSuggestionRetry, setDuplicateSuggestionRetry] = useState(0);
   const stateRef = useRef(state);
   const mountedRef = useRef(true);
+  const deliveryRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const submissionFlightRef = useRef<Promise<void> | null>(null);
   const screenshotActionFlightRef = useRef<Promise<boolean> | null>(null);
   const feedbackIdRef = useRef<string | null>(null);
@@ -153,6 +158,10 @@ export function FeedbackComposeScreen({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (deliveryRetryTimerRef.current !== null) {
+        clearTimeout(deliveryRetryTimerRef.current);
+        deliveryRetryTimerRef.current = null;
+      }
       deferPendingScreenshotCleanup(
         pendingScreenshotRef,
         submissionFlightRef.current,
@@ -168,6 +177,10 @@ export function FeedbackComposeScreen({
     sourceBindingKeyRef.current = sourceBindingKey;
     consentResetKeyRef.current = consentResetKey;
     if (sourceBindingChanged) {
+      if (deliveryRetryTimerRef.current !== null) {
+        clearTimeout(deliveryRetryTimerRef.current);
+        deliveryRetryTimerRef.current = null;
+      }
       deferPendingScreenshotCleanup(
         pendingScreenshotRef,
         submissionFlightRef.current,
@@ -447,6 +460,31 @@ export function FeedbackComposeScreen({
       ) {
         return Promise.resolve();
       }
+      if (deliveryRetryTimerRef.current !== null) {
+        clearTimeout(deliveryRetryTimerRef.current);
+        deliveryRetryTimerRef.current = null;
+      }
+      const scheduleNext = (receipt: FeedbackSubmissionReceipt) => {
+        const dueAt = Date.parse(receipt.nextAttemptAt ?? '');
+        if (!Number.isFinite(dueAt)) return;
+        deliveryRetryTimerRef.current = setTimeout(() => {
+          deliveryRetryTimerRef.current = null;
+          if (
+            !mountedRef.current ||
+            !onlineRef.current ||
+            activeAccountRef.current !== accountUserId ||
+            activeSourceBindingRef.current !== expectedSourceBindingKey
+          ) {
+            return;
+          }
+          drain(
+            accountUserId,
+            feedbackId,
+            false,
+            expectedSourceBindingKey,
+          ).catch(() => undefined);
+        }, Math.max(0, dueAt - Date.now()));
+      };
       const current = stateRef.current;
       if (current.kind === 'receipt') {
         publish({
@@ -477,6 +515,7 @@ export function FeedbackComposeScreen({
             activeSourceBindingRef.current === expectedSourceBindingKey
           ) {
             await showReceipt(receipt, false, expectedSourceBindingKey);
+            scheduleNext(receipt);
           }
         })
         .catch(async error => {
@@ -505,6 +544,7 @@ export function FeedbackComposeScreen({
               activeSourceBindingRef.current === expectedSourceBindingKey
             ) {
               await showReceipt(receipt, false, expectedSourceBindingKey);
+              scheduleNext(receipt);
             }
           } catch {
             // An account transition conceals the old account's receipt.

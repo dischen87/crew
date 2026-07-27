@@ -217,6 +217,49 @@ describe("place enrichment API projection", () => {
 		}
 	});
 
+	test("returns 503 before enqueue when the enabled worker heartbeat is stale", async () => {
+		let healthChecks = 0;
+		const repository = {
+			findIdempotent: async () => null,
+			placeEnrichmentWorkerHealthy: async () => {
+				healthChecks += 1;
+				return false;
+			},
+			runIdempotent: async () => {
+				throw new Error("Unhealthy enrichment must not claim idempotency");
+			},
+		} as unknown as EventRepository;
+		const app = createApp({
+			service: new EventService(
+				repository,
+				"place-enrichment-unhealthy-test-key-with-at-least-32-characters",
+				undefined,
+				"place-enrichment-unhealthy-sync-key-with-at-least-32-characters",
+				undefined,
+				policy(),
+			),
+			verifyUserToken: async (token) => ({ id: token }),
+		});
+
+		const response = await app.request("/v1/places/enrichment-jobs", {
+			method: "POST",
+			headers: commandHeaders("unhealthy-enrichment-01"),
+			body: JSON.stringify({
+				...scope,
+				target: "candidate",
+				candidateId:
+					"pcd_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			}),
+		});
+
+		expect(response.status).toBe(503);
+		expect(response.headers.get("retry-after")).toBe("60");
+		expect(await response.json()).toMatchObject({
+			error: { code: "SERVICE_UNAVAILABLE", retryable: true },
+		});
+		expect(healthChecks).toBe(1);
+	});
+
 	test("requires a strict root, event and capability scope", async () => {
 		const app = createApp({
 			verifyUserToken: async (token) => ({ id: token }),
@@ -522,6 +565,7 @@ describe("place enrichment API projection", () => {
 });
 
 function enabledApp(repository: EventRepository) {
+	repository.placeEnrichmentWorkerHealthy = async () => true;
 	return createApp({
 		service: new EventService(
 			repository,

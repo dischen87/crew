@@ -161,6 +161,64 @@ beforeEach(() => {
   mockComposeRuntime.cleanup.mockResolvedValue(undefined);
 });
 
+test('online cold membership verifies the root before reading community content', async () => {
+  mockRuntime.hasCachedMembership
+    .mockResolvedValueOnce(false)
+    .mockResolvedValue(true);
+  const renderer = await renderList();
+
+  expect(mockRuntime.verifyRoot).toHaveBeenCalledTimes(1);
+  expect(mockRuntime.verifyRoot).toHaveBeenCalledWith(
+    mockAccountUserId,
+    rootEventId,
+  );
+  expect(mockRuntime.verifyRoot.mock.invocationCallOrder[0]).toBeLessThan(
+    mockRuntime.hasCachedMembership.mock.invocationCallOrder[1],
+  );
+  expect(
+    mockRuntime.hasCachedMembership.mock.invocationCallOrder[1],
+  ).toBeLessThan(mockController.list.mock.invocationCallOrder[0]);
+  expect(textInside(renderer)).toContain('Gespeichertes Feedback');
+  expect(textInside(renderer)).not.toContain(
+    'Dieser Inhalt ist nicht verfügbar',
+  );
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('offline cold membership stays unavailable without network or community reads', async () => {
+  mockOnline = false;
+  mockRuntime.hasCachedMembership.mockResolvedValue(false);
+  const renderer = await renderList();
+
+  expect(textInside(renderer)).toContain('Dieser Inhalt ist nicht verfügbar');
+  expect(mockRuntime.verifyRoot).not.toHaveBeenCalled();
+  expect(mockController.list).not.toHaveBeenCalled();
+  expect(mockController.changelog).not.toHaveBeenCalled();
+  expect(mockController.refreshList).not.toHaveBeenCalled();
+  expect(mockController.refreshUpdates).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
+test('cold membership denial stays unavailable without community reads', async () => {
+  mockRuntime.hasCachedMembership.mockResolvedValue(false);
+  mockRuntime.verifyRoot.mockRejectedValue(
+    new MobileSyncRootAccessDeniedError(),
+  );
+  const renderer = await renderList();
+
+  expect(textInside(renderer)).toContain('Dieser Inhalt ist nicht verfügbar');
+  expect(textInside(renderer)).not.toContain('Gespeichertes Feedback');
+  expect(mockRuntime.verifyRoot).toHaveBeenCalledWith(
+    mockAccountUserId,
+    rootEventId,
+  );
+  expect(mockController.list).not.toHaveBeenCalled();
+  expect(mockController.changelog).not.toHaveBeenCalled();
+  expect(mockController.refreshList).not.toHaveBeenCalled();
+  expect(mockController.refreshUpdates).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 test('keeps cached list visible when community boundary fails but root remains active', async () => {
   mockController.refreshList.mockRejectedValue(gatewayError(403));
   const renderer = await renderList();
@@ -298,16 +356,20 @@ test('deduplicates concurrent votes and reuses the caller-stable key after failu
 
 test('bounds pagination at 200 and reports partial truth', async () => {
   const listCursors: (string | undefined)[] = [];
+  const listLimits: number[] = [];
   const updatesCursors: (string | undefined)[] = [];
+  const updatesLimits: number[] = [];
   const runtime = {
     controller: {
       refreshList: jest.fn((_root, query) => {
         listCursors.push(query.cursor);
+        listLimits.push(query.limit);
         const cursor = `list-${listCursors.length}`;
         return Promise.resolve(page([], true, cursor));
       }),
       refreshUpdates: jest.fn((_root, query) => {
         updatesCursors.push(query.cursor);
+        updatesLimits.push(query.limit);
         const cursor = `updates-${updatesCursors.length}`;
         return Promise.resolve(page([], true, cursor));
       }),
@@ -318,12 +380,14 @@ test('bounds pagination at 200 and reports partial truth', async () => {
     refreshCommunityFeedback(runtime as never, rootEventId),
   ).resolves.toEqual({ partial: true });
   expect(listCursors).toEqual([undefined, 'list-1', 'list-2', 'list-3']);
+  expect(listLimits).toEqual([10, 10, 10, 10]);
   expect(updatesCursors).toEqual([
     undefined,
     'updates-1',
     'updates-2',
     'updates-3',
   ]);
+  expect(updatesLimits).toEqual([50, 50, 50, 50]);
 });
 
 test('filters long Unicode text locally without changing controller scope', () => {

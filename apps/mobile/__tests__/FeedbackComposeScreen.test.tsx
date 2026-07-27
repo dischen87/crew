@@ -472,6 +472,53 @@ test('a source change during drain cannot restore an old delivered receipt', asy
   await ReactTestRenderer.act(() => renderer.unmount());
 });
 
+test('retries a verification-pending attachment when its receipt becomes due', async () => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date('2026-07-19T10:00:00.000Z'));
+  mockOnline = true;
+  mockController.drain
+    .mockResolvedValueOnce([
+      {
+        ...receipt('pending'),
+        attempts: 1,
+        failure: 'service_unavailable',
+        nextAttemptAt: '2026-07-19T10:00:01.000Z',
+      },
+    ])
+    .mockResolvedValueOnce([receipt('delivered')]);
+  const renderer = await renderScreen();
+  try {
+    await fill(
+      renderer,
+      'Upload verifizieren',
+      'Der zweite Finalize-Versuch muss automatisch laufen.',
+    );
+    await ReactTestRenderer.act(async () =>
+      renderer.root
+        .findByProps({ testID: 'feedback-compose-submit' })
+        .props.onPress(),
+    );
+    expect(mockController.drain).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(999);
+      await Promise.resolve();
+    });
+    expect(mockController.drain).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockController.drain).toHaveBeenCalledTimes(2);
+    expect(textInside(renderer)).toContain('ZUGESTELLT');
+  } finally {
+    await ReactTestRenderer.act(() => renderer.unmount());
+    jest.useRealTimers();
+  }
+});
+
 test('quiesce drains the compose controller flight and rejects a retry', async () => {
   mockOnline = true;
   let resolveDrain: (value: FeedbackSubmissionReceipt[]) => void = () => {};

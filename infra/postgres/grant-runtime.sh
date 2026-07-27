@@ -9,5 +9,5 @@ exec psql \
 	--port 5432 \
 	--username crew_local_admin \
 	--dbname postgres \
+	--set event_enrichment_password="${EVENT_DB_ENRICHMENT_WORKER_PASSWORD:-}" \
 	--file /infra/postgres/grant-runtime.sql
-

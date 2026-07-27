@@ -11,6 +11,41 @@ import {
 import type { PlaceEnrichmentWorkerConfig } from "./place-enrichment-worker-config";
 
 describe("place enrichment worker", () => {
+	test("publishes private worker health before polling for jobs", async () => {
+		const harness = workerHarness();
+		const controller = new AbortController();
+		let heartbeats = 0;
+		harness.jobs.heartbeat = async () => {
+			heartbeats += 1;
+			controller.abort();
+		};
+
+		await createPlaceEnrichmentWorker(harness.config, harness.jobs).run(
+			controller.signal,
+		);
+
+		expect(heartbeats).toBe(1);
+	});
+
+	test("does not claim work when the initial heartbeat cannot be published", async () => {
+		const harness = workerHarness();
+		let claims = 0;
+		harness.jobs.heartbeat = async () => {
+			throw new Error("database details must stay private");
+		};
+		harness.jobs.claim = async () => {
+			claims += 1;
+			return null;
+		};
+
+		await expect(
+			createPlaceEnrichmentWorker(harness.config, harness.jobs).run(
+				new AbortController().signal,
+			),
+		).rejects.toThrow("Place enrichment worker heartbeat failed");
+		expect(claims).toBe(0);
+	});
+
 	test("runs bounded Exa before LLM and persists validated field provenance", async () => {
 		const harness = workerHarness();
 		const requests: {
@@ -297,6 +332,7 @@ function workerHarness(
 	let retryCode: string | null = null;
 	let retryDelay: number | null = null;
 	const jobs: PlaceEnrichmentJobs = {
+		heartbeat: async () => {},
 		claim: async () => claim,
 		reserveProviderCall: async (_claim, reservation) => {
 			if (input.reservation) return input.reservation;
