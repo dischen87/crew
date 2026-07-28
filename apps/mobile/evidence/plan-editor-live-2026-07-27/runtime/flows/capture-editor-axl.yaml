@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+---
+- assertVisible:
+    id: plan-item-editor-view
+- scrollUntilVisible:
+    element: Programmpunkt ändern
+    direction: UP
+    timeout: 30000
+    centerElement: true
+- scrollUntilVisible:
+    element: ${EXPECTED_EDITOR_STATUS}
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: ${EXPECTED_EDITOR_STATUS}
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-editor-axl-top
+- scrollUntilVisible:
+    element: ${EXPECTED_EDITOR_TEXT}
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: ${EXPECTED_EDITOR_TEXT}
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-editor-axl

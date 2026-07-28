@@ -1,7 +1,9 @@
 {
   "schemaVersion": 1,
   "capturedOn": "2026-07-27",
-  "status": "simulator-state-matrix-closure-complete",
+  "status": "historical-retained-state-matrix-closure",
+  "provenanceClass": "historical-android-and-ios-closure",
+  "supersededForCurrentIosBy": "runtime/oracles/ios-current-state-matrix.json",
   "source": {
     "branch": "main",
     "baseSha": "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4",
@@ -154,13 +156,7 @@
     "ownedIosSimulatorErasedAndShutdown": true,
     "ownedAndroidEmulatorStopped": true,
     "androidDevicesConnected": 0,
-    "ownedPortsClosed": [
-      3000,
-      3101,
-      5433,
-      6380,
-      8082
-    ],
+    "ownedPortsClosed": [3000, 3101, 5433, 6380, 8082],
     "foreignMetro8081PidPreserved": 45252,
     "podfileLockMatchesHead": true,
     "generatedBuildAndTemporaryArtifactsMovedToTrash": true

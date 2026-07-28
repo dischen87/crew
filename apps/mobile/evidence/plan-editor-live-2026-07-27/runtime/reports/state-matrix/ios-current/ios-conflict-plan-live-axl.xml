@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e - iOS 26.2 - simulator identifier redacted" tests="1" failures="0" time="44.0">
+    <testcase id="capture-conflict-plan-live-axl" name="capture-conflict-plan-live-axl" classname="capture-conflict-plan-live-axl" file="apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-conflict-plan-live-axl.yaml" time="44.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

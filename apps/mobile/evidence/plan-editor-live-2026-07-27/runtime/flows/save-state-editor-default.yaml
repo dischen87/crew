@@ -1,0 +1,32 @@
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: plan-item-title
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: plan-item-title
+    point: 95%,50%
+- eraseText: 200
+- inputText: ${LOCAL_TITLE}
+- assertVisible: ${LOCAL_TITLE}
+- tapOn:
+    point: 95%,15%
+- scrollUntilVisible:
+    element:
+      id: plan-item-editor-primary-action
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: plan-item-editor-primary-action
+- scrollUntilVisible:
+    element: ${EXPECTED_EDITOR_TEXT}
+    direction: UP
+    timeout: 60000
+    centerElement: true
+- assertVisible:
+    id: plan-item-editor-view
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-editor-default

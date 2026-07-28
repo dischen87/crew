@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 1,
+  "preparedOn": "2026-07-28",
+  "finalizedOn": "2026-07-28",
+  "status": "accepted-sanitized-ios-simulator-state-matrix",
+  "provenanceClass": "current-source-bound-accepted-simulator-matrix",
+  "source": {
+    "branch": "main",
+    "baseSha": "91d65177cf2b4f443562f2ef98b40a84071b783e",
+    "localOriginMainShaAtPreparation": "91d65177cf2b4f443562f2ef98b40a84071b783e",
+    "finalProductCommitSha": "39f80fd49450028928b9679e2d09de3166eb8f88",
+    "worktreeModel": "base-plus-exact-content-addressed-product-test-and-harness-files",
+    "files": [
+      {
+        "path": "apps/mobile/src/design/primitives.tsx",
+        "sha256": "0ace47b86327d941841e28ecf5df17bce27f7b4d92ac4638170cfd7f61821ce6",
+        "runtimeBundled": true
+      },
+      {
+        "path": "apps/mobile/src/screens/PlanItemEditorScreen.tsx",
+        "sha256": "3b8f3f8b7e81d11953681b13847d3516de21d157fec3ae987b73c1591859901e",
+        "runtimeBundled": true
+      },
+      {
+        "path": "apps/mobile/__tests__/designPrimitives.test.tsx",
+        "sha256": "ae53d32e85704f0faa37aa13779d374d309f62afe83068fdf29de3a45690051f",
+        "runtimeBundled": false
+      },
+      {
+        "path": "apps/mobile/__tests__/PlanItemEditorScreen.test.tsx",
+        "sha256": "c2b590e1e67bdb45ec351a906b05bc02362258b4f0677024e0087a20d224db58",
+        "runtimeBundled": false
+      }
+    ],
+    "applicationSourceEditedByEvidenceRunner": false,
+    "finalCommitMappingPending": false
+  },
+  "harness": {
+    "files": [
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/control.mjs",
+        "sha256": "d1a0c8b0d057f310802b5e18328dca7990aebd702ffddbad5b1426b153ac68c0"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-conflict-plan-live-axl.yaml",
+        "sha256": "3f7e6a924bebffabd08650854d17196be7783dcf65d4d640a91c637135df8bdc"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-conflict-plan-live-default.yaml",
+        "sha256": "ea6e50275ebfefe272fceb9e63a26bbd7f8435960690bb22f54c74a524906b65"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-editor-axl.yaml",
+        "sha256": "f760238bffa44436ceda1ac9537c98f0c74f21a4baea2bd1d3fe9a009430b182"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-plan-live.yaml",
+        "sha256": "7ae106ef6682d05163c6c4cc36b9c2f390b69ec9c7ebe93465f2af29aaf07c6a"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-tombstone-plan-live-axl.yaml",
+        "sha256": "eb107a543ffacaff4d03759d9d9620ca19634445c3296848f747ebc4cf3e5517"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-tombstone-plan-live-default.yaml",
+        "sha256": "b45a5a4c4b9835857f1156eae0f1a7875fbf60c1a2cc12d02e1466a3f4a8a92d"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/open-gloria-editor.yaml",
+        "sha256": "72fc48686f49853a2ca2a0a1aab825e154c0bf57ea386747cf4217158709690e"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/open-plan.yaml",
+        "sha256": "ffefc372636e0df2c0cda30f080e0e500cb33095fcbe6587ae738c5326f64c3e"
+      },
+      {
+        "path": "apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/save-state-editor-default.yaml",
+        "sha256": "6725a2fb3cfceae9312ed1f2bae0f6b801badad51271464f35fd2ca58d4a4641"
+      }
+    ],
+    "hashesRecheckedAfterFinalCapture": true
+  },
+  "runtime": {
+    "platform": "ios-simulator",
+    "appId": "app.crew.next",
+    "deviceModel": "iPhone 16e",
+    "osVersion": "26.2",
+    "resolution": "1170x2532",
+    "contentSizes": ["medium", "accessibility-extra-large"],
+    "signing": "simulator debug",
+    "fixture": "evt_local_turkey_golf_2026",
+    "executableSha256": "242260115e2c766ce766a7fd90cebc41446276dc92a57cd0a0f15e23d9909f4f",
+    "debugDylibSha256": "8cf0c35467ebaad657843ed3f0c5b781836005e54538397c525e007f7992d803",
+    "artifactHashScope": "Final refreshed simulator app; the conflict-editor-default timing exception is recorded on that run.",
+    "artifactHashesPending": false
+  },
+  "runs": [
+    {
+      "runId": "queued-editor-default",
+      "state": "queued",
+      "textSetting": "medium",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/queued-editor-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-queued-editor-default.xml"
+    },
+    {
+      "runId": "queued-plan-live-default",
+      "state": "queued",
+      "textSetting": "medium",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/queued-plan-default.png",
+        "runtime/screenshots/state-matrix/ios-current/queued-live-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-queued-plan-live-default.xml"
+    },
+    {
+      "runId": "queued-editor-axl",
+      "state": "queued",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/queued-editor-axl.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-queued-editor-axl.xml"
+    },
+    {
+      "runId": "queued-plan-live-axl",
+      "state": "queued",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/queued-plan-axl.png",
+        "runtime/screenshots/state-matrix/ios-current/queued-live-axl-top.png",
+        "runtime/screenshots/state-matrix/ios-current/queued-live-axl-status.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-queued-plan-live-axl.xml"
+    },
+    {
+      "runId": "conflict-editor-default",
+      "state": "conflict",
+      "textSetting": "medium",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "captureTiming": "Captured before the final AXL-only StatusChip v3 refresh. At medium/fontScale 1, the accepted Default-size state is source-equivalent; this run is not claimed as exact final-refresh bundle timing.",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/conflict-editor-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-conflict-editor-default.xml"
+    },
+    {
+      "runId": "conflict-plan-live-default",
+      "state": "conflict",
+      "textSetting": "medium",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/conflict-plan-default.png",
+        "runtime/screenshots/state-matrix/ios-current/conflict-live-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-conflict-plan-live-default.xml"
+    },
+    {
+      "runId": "conflict-editor-axl",
+      "state": "conflict",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/conflict-editor-axl.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-conflict-editor-axl.xml"
+    },
+    {
+      "runId": "conflict-plan-live-axl",
+      "state": "conflict",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/conflict-plan-axl.png",
+        "runtime/screenshots/state-matrix/ios-current/conflict-live-axl-top.png",
+        "runtime/screenshots/state-matrix/ios-current/conflict-live-axl-status.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-conflict-plan-live-axl.xml"
+    },
+    {
+      "runId": "tombstone-editor-default",
+      "state": "tombstone",
+      "textSetting": "medium",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/tombstone-editor-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-tombstone-editor-default.xml"
+    },
+    {
+      "runId": "tombstone-plan-live-default",
+      "state": "tombstone",
+      "textSetting": "medium",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/tombstone-plan-default.png",
+        "runtime/screenshots/state-matrix/ios-current/tombstone-live-default.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-tombstone-plan-live-default.xml"
+    },
+    {
+      "runId": "tombstone-editor-axl",
+      "state": "tombstone",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["editor"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/tombstone-editor-axl.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-tombstone-editor-axl.xml"
+    },
+    {
+      "runId": "tombstone-plan-live-axl",
+      "state": "tombstone",
+      "textSetting": "accessibility-extra-large",
+      "routeCoverage": ["plan", "live"],
+      "status": "accepted",
+      "screenshots": [
+        "runtime/screenshots/state-matrix/ios-current/tombstone-plan-axl-top.png",
+        "runtime/screenshots/state-matrix/ios-current/tombstone-live-axl-top.png",
+        "runtime/screenshots/state-matrix/ios-current/tombstone-live-axl-status.png"
+      ],
+      "report": "runtime/reports/state-matrix/ios-current/ios-tombstone-plan-live-axl.xml"
+    }
+  ],
+  "artifacts": {
+    "screenshots": 21,
+    "reports": 12,
+    "tests": 12,
+    "failures": 0,
+    "errors": 0,
+    "byteIdenticalScreenshotsRetained": false,
+    "issueOnlyCropsRetained": false
+  },
+  "retentionRules": {
+    "retainOnlyGreenStateSpecificReports": true,
+    "retainOnlyIndependentlyVisuallyAcceptedScreenshots": true,
+    "retainAuthenticationOpenAndDebugArtifacts": false,
+    "deduplicateByteIdenticalScreenshots": true,
+    "sha256SumsRegeneratedAndVerified": true
+  },
+  "privacy": {
+    "sanitized": true,
+    "credentialsRetained": false,
+    "invitationTokensRetained": false,
+    "uniqueDeviceIdentifiersRetained": false,
+    "absoluteUserWorkspaceOrTempPathsRetained": false,
+    "standardSystemExecutablePathsRetained": true,
+    "reportDeviceIdentifiersRedacted": true,
+    "finalArtifactPrivacyAuditPending": false
+  },
+  "acceptanceBoundaries": {
+    "simulatorOnly": true,
+    "distributionSignedBuild": false,
+    "physicalDevice": false,
+    "voiceOver": false,
+    "talkBack": false,
+    "externalFigmaUpdated": false,
+    "nativeDstOverlapRoundTrip": "NO-GO: the current native picker harness cannot deterministically distinguish the repeated Zurich fold instant.",
+    "iosShareSheetDismissal": "Not final: no green sanitized share-dismiss artifact is retained in this package."
+  }
+}

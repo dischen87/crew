@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "capturedOn": "2026-07-27",
+  "status": "historical-retained",
+  "provenanceClass": "historical-layout-baseline",
   "source": {
     "branch": "main",
     "sha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
@@ -18,10 +20,7 @@
     "device": "SwissActivities_API36",
     "apiLevel": 36,
     "resolution": "1080x2400",
-    "fontScales": [
-      1.0,
-      2.0
-    ],
+    "fontScales": [1.0, 2.0],
     "apkSha256": "21a2d49eeefb9ababbc9f20e4f6ba21328c906b148d322aa6e9e143e26330a0e",
     "installedArtifactMatched": true,
     "runs": 2,
@@ -32,10 +31,7 @@
     "device": "iPhone 16e",
     "osVersion": "26.2",
     "resolution": "1170x2532",
-    "contentSizes": [
-      "medium",
-      "accessibility-extra-large"
-    ],
+    "contentSizes": ["medium", "accessibility-extra-large"],
     "executableSha256": "c4c19dfdedc9a2fa3b68547c2a6e71e497a725e44a14016015685731b31a80ae",
     "installedArtifactMatched": true,
     "signing": "simulator debug",

@@ -1,7 +1,9 @@
 {
   "schemaVersion": 1,
   "capturedOn": "2026-07-27",
-  "status": "partial-stop-gate",
+  "status": "historical-retained-superseded-partial",
+  "provenanceClass": "historical-partial-ios-state-run",
+  "supersededForCurrentIosBy": "runtime/oracles/ios-current-state-matrix.json",
   "source": {
     "branch": "main",
     "sha": "fecd688a79a6fc2801774c5d1d0c74721825656b",
@@ -62,13 +64,7 @@
     "iosAppRemoved": true,
     "iosSimulatorErasedAndShutdown": true,
     "androidDevicesConnected": 0,
-    "ownedPortsClosed": [
-      3000,
-      3101,
-      5433,
-      6380,
-      8082
-    ],
+    "ownedPortsClosed": [3000, 3101, 5433, 6380, 8082],
     "foreignMetro8081Unchanged": true,
     "podfileLockMatchesHead": true,
     "generatedBuildAndTemporaryArtifactsMovedToTrash": true

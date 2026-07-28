@@ -1,9 +1,12 @@
 {
-  "schemaVersion": 2,
-  "status": "simulator-state-matrix-complete",
+  "schemaVersion": 3,
+  "status": "historical-evidence-plus-current-accepted-ios-matrix",
+  "sha256SumsStatus": "regenerated-and-verified-after-final-insertion",
+  "currentIosOracle": "runtime/oracles/ios-current-state-matrix.json",
   "groups": [
     {
       "kind": "layout-baseline",
+      "provenanceClass": "historical-retained",
       "platform": "android",
       "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "1.0",
@@ -12,6 +15,7 @@
     },
     {
       "kind": "layout-baseline",
+      "provenanceClass": "historical-retained",
       "platform": "android",
       "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "2.0",
@@ -20,6 +24,7 @@
     },
     {
       "kind": "layout-baseline",
+      "provenanceClass": "historical-retained",
       "platform": "ios",
       "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "medium",
@@ -28,6 +33,7 @@
     },
     {
       "kind": "layout-baseline",
+      "provenanceClass": "historical-retained",
       "platform": "ios",
       "sourceSha": "ab0e54008b1df9b6edde63292ba9dde0cd8af32f",
       "textSetting": "accessibility-extra-large",
@@ -36,12 +42,10 @@
     },
     {
       "kind": "earlier-state-run",
+      "provenanceClass": "historical-retained-superseded-for-current-ios",
       "platform": "ios",
       "sourceSha": "fecd688a79a6fc2801774c5d1d0c74721825656b",
-      "states": [
-        "queued",
-        "conflict"
-      ],
+      "states": ["queued", "conflict"],
       "screenshots": 2,
       "report": "runtime/reports/ios-plan-open.xml",
       "reportScope": "plan-route-open",
@@ -50,42 +54,61 @@
     },
     {
       "kind": "state-matrix-closure",
+      "provenanceClass": "historical-retained",
       "sourceBaseSha": "f9087f4d002e76a1c0e202cf9a4af26a5df1fff4",
       "sourceDiffSha256": "2b68844fc40dad1e5689fdfc5721ee76ab2fe8edd0b3232a73944756d8797024",
       "sourceCommitSha": "a705063bbe6479e4281e889da0054b0d53c60459",
-      "platforms": [
-        "ios",
-        "android"
-      ],
-      "states": [
-        "queued",
-        "conflict",
-        "tombstone"
-      ],
+      "platforms": ["ios", "android"],
+      "states": ["queued", "conflict", "tombstone"],
       "screenshots": 7,
       "reports": 7,
       "failures": 0,
       "oracle": "runtime/oracles/plan-state-matrix.json"
+    },
+    {
+      "kind": "current-ios-state-matrix",
+      "provenanceClass": "current-source-bound-accepted-simulator-matrix",
+      "status": "accepted-sanitized-ios-simulator-state-matrix",
+      "sourceBaseSha": "91d65177cf2b4f443562f2ef98b40a84071b783e",
+      "sourceCommitSha": "39f80fd49450028928b9679e2d09de3166eb8f88",
+      "platform": "ios",
+      "states": ["queued", "conflict", "tombstone"],
+      "routes": ["editor", "plan", "live"],
+      "textSettings": ["medium", "accessibility-extra-large"],
+      "screenshots": 21,
+      "reports": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "provenanceException": "conflict-editor-default predates the final AXL-only StatusChip v3 refresh; it is accepted Default-size state evidence at fontScale 1, not exact final-refresh bundle-timing evidence",
+      "oracle": "runtime/oracles/ios-current-state-matrix.json"
     }
   ],
   "totals": {
-    "screenshots": 29,
-    "reports": 12,
-    "tests": 12,
+    "scope": "all retained historical and current artifacts",
+    "screenshots": 50,
+    "reports": 24,
+    "tests": 24,
     "failures": 0,
     "errors": 0
   },
   "privacy": {
-    "sanitized": true,
+    "historicalArtifactsSanitized": true,
+    "currentArtifactsRetained": true,
+    "currentArtifactsSanitized": true,
+    "finalCurrentArtifactAuditPending": false,
     "credentialsRetained": false,
     "uniqueDeviceIdentifiersRetained": false,
-    "absoluteLocalPathsRetained": false,
+    "absoluteUserWorkspaceOrTempPathsRetained": false,
+    "standardSystemExecutablePathsRetained": true,
     "failedOrAmbiguousRunsRetained": false
   },
   "remainingBoundaries": [
     "distribution signing",
     "physical devices",
     "VoiceOver and TalkBack",
-    "external Figma handoff"
+    "external Figma handoff",
+    "native DST-overlap round trip is NO-GO with the current harness",
+    "iOS share-sheet dismissal is not yet final"
   ]
 }

@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 16e - iOS 26.2 - simulator identifier redacted" tests="1" failures="0" time="43.0">
+    <testcase id="capture-tombstone-plan-live-axl" name="capture-tombstone-plan-live-axl" classname="capture-tombstone-plan-live-axl" file="apps/mobile/evidence/plan-editor-live-2026-07-27/runtime/flows/capture-tombstone-plan-live-axl.yaml" time="43.0" status="SUCCESS"/>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,57 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_local_turkey_golf_2026
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- tapOn:
+    id: event-hub-tab-plan
+    retryTapIfNoChange: true
+- runFlow:
+    when:
+      visible:
+        id: event-hub
+    commands:
+      - tapOn:
+          id: event-hub-tab-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: plan-event-evt_local_turkey_golf_2026_round_gloria
+    direction: DOWN
+    timeout: 120000
+    centerElement: true
+- tapOn:
+    id: plan-event-evt_local_turkey_golf_2026_round_gloria
+- scrollUntilVisible:
+    element:
+      id: plan-item-iti_local_turkey_golf_round_gloria
+    direction: DOWN
+    timeout: 120000
+    centerElement: true
+- assertVisible:
+    id: plan-item-iti_local_turkey_golf_round_gloria
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-plan-${TEXT_SIZE}
+- tapOn:
+    id: plan-item-iti_local_turkey_golf_round_gloria
+- extendedWaitUntil:
+    visible:
+      id: live-item-view
+    timeout: 30000
+- assertVisible: ${LOCAL_TITLE}
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-live-${TEXT_SIZE}-top
+- scrollUntilVisible:
+    element: ${EXPECTED_LIVE_TEXT}
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- takeScreenshot: ${CAPTURE_DIR}/${STATE}-live-${TEXT_SIZE}-status

@@ -1,0 +1,47 @@
+appId: ${APP_ID}
+---
+- openLink: crewnext://events/evt_local_turkey_golf_2026
+- runFlow:
+    when:
+      visible: Öffnen
+    commands:
+      - tapOn: Öffnen
+- extendedWaitUntil:
+    visible:
+      id: event-hub
+    timeout: 30000
+- tapOn:
+    id: event-hub-tab-plan
+    retryTapIfNoChange: true
+- runFlow:
+    when:
+      visible:
+        id: event-hub
+    commands:
+      - tapOn:
+          id: event-hub-tab-plan
+- extendedWaitUntil:
+    visible:
+      id: plan-view
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: plan-item-iti_local_turkey_golf_round_gloria
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: plan-item-iti_local_turkey_golf_round_gloria
+- extendedWaitUntil:
+    visible:
+      id: plan-item-editor-view
+    timeout: 30000
+- assertVisible: Programmpunkt ändern
+- scrollUntilVisible:
+    element:
+      id: plan-item-title
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- assertVisible:
+    id: plan-item-title
