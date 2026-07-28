@@ -54,6 +54,12 @@ let mockPlaceRuntime: {
   createEventPlace: jest.Mock;
   searchEventPlaces: jest.Mock;
 };
+const mockNavigation = {
+  canGoBack: jest.fn(() => true),
+  goBack: jest.fn(),
+  navigate: jest.fn(),
+  replace: jest.fn(),
+};
 
 jest.mock('../src/app/GatewayProvider', () => ({
   useGatewayClient: () => ({}),
@@ -264,20 +270,64 @@ test('shows the full title in a multiline field at large text', async () => {
   dimensions.mockRestore();
 });
 
+test('reloads the plan after a fresh edit returns a conflict', async () => {
+  const initial = planItem();
+  const current = planItem({
+    values: { ...initial.values, title: 'Titel vom Server' },
+    version: 2,
+  });
+  const conflicted = snapshot([], [current]);
+  conflicted.issues = [
+    {
+      attempted: { ...current.values, title: 'Lokaler Konflikt' },
+      code: 'conflict',
+      current: current.values,
+      itemId: current.id,
+      mutationId: '11111111-1111-4111-8111-111111111111',
+      resolution: 'discard',
+    },
+  ];
+  const clean = snapshot([], [initial]);
+  mockPlanRuntime.load.mockResolvedValue(clean);
+  mockPlanRuntime.refresh.mockReset().mockResolvedValue(clean);
+  mockPlanRuntime.updateItem.mockResolvedValue(conflicted);
+  const renderer = await renderScreen(current.id);
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-title' })
+      .props.onChangeText('Lokaler Konflikt'),
+  );
+  await ReactTestRenderer.act(async () => {
+    renderer.root
+      .findByProps({ testID: 'plan-item-editor-primary-action' })
+      .props.onPress();
+    await flush();
+  });
+  expect(textInside(renderer)).toContain('Änderung nicht bestätigt');
+
+  await ReactTestRenderer.act(() =>
+    renderer.root
+      .findByProps({ testID: 'plan-item-editor-back' })
+      .props.onPress(),
+  );
+
+  expect(mockNavigation.replace).toHaveBeenCalledWith('Plan', {
+    eventId: rootEventId,
+    rootEventId,
+  });
+  expect(mockNavigation.goBack).not.toHaveBeenCalled();
+
+  await ReactTestRenderer.act(() => renderer.unmount());
+});
+
 async function renderScreen(itemId?: string) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(async () => {
     renderer = ReactTestRenderer.create(
       <SafeAreaProvider initialMetrics={metrics}>
         <PlanItemEditorScreen
-          navigation={
-            {
-              canGoBack: jest.fn(() => true),
-              goBack: jest.fn(),
-              navigate: jest.fn(),
-              replace: jest.fn(),
-            } as never
-          }
+          navigation={mockNavigation as never}
           route={
             {
               key: 'plan-editor',

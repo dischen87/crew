@@ -144,6 +144,41 @@ test('stacks the icon above the complete label for Large Text', async () => {
   }
 });
 
+test('lets status-chip labels expand with Large Text', async () => {
+  setFontScale(3.2);
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+  try {
+    renderer = await render(
+      <StatusChip
+        icon={<View testID="golf-icon" />}
+        label="Golfrunde"
+        testID="large-text-status"
+      />,
+    );
+    const chip = renderer.root.find(
+      node =>
+        node.props.testID === 'large-text-status' &&
+        node.props.accessibilityRole === 'text',
+    );
+    expect(StyleSheet.flatten(chip.props.style).minHeight).toBe(
+      componentMetrics.status.chipMinimumHeight,
+    );
+    const label = renderer.root.findByProps({ children: 'Golfrunde' });
+    const labelStyle = StyleSheet.flatten(label.props.style);
+    expect(labelStyle.fontSize).toBeCloseTo(typography.caption.fontSize * 3.2);
+    expect(labelStyle.lineHeight).toBeCloseTo(
+      typography.caption.lineHeight * 3.2,
+    );
+    expect(label.props.allowFontScaling).toBe(false);
+    expect(label.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(label.props.numberOfLines).toBeUndefined();
+  } finally {
+    await ReactTestRenderer.act(() => renderer?.unmount());
+    setFontScale(1);
+  }
+});
+
 test('preserves ScreenFrame base typography and natural wrapping for Large Text', async () => {
   const normal = await render(
     <SafeAreaProvider initialMetrics={metrics}>

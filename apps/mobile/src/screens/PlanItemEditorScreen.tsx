@@ -689,7 +689,10 @@ export function PlanItemEditorScreen({ navigation, route }: Props) {
   );
   const back = () => {
     const current = stateRef.current;
-    if (current.phase === 'ready' && current.saved) {
+    if (
+      current.phase === 'ready' &&
+      (current.saved || current.issue !== null)
+    ) {
       navigation.replace('Plan', { eventId, rootEventId });
       return;
     }

@@ -170,6 +170,8 @@ export function StatusChip({
   testID,
   tone = 'lavender',
 }: StatusChipProps) {
+  const fontScale = useWindowDimensions().fontScale;
+
   return (
     <View
       accessibilityLabel={label}
@@ -179,7 +181,18 @@ export function StatusChip({
       testID={testID}
     >
       {icon}
-      <Text style={styles.statusChipLabel}>{label}</Text>
+      <Text
+        allowFontScaling={false}
+        style={[
+          styles.statusChipLabel,
+          {
+            fontSize: typography.caption.fontSize * fontScale,
+            lineHeight: typography.caption.lineHeight * fontScale,
+          },
+        ]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -811,8 +824,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   statusChipLabel: {
-    ...typography.caption,
     color: colors.text,
+    fontFamily: typography.caption.fontFamily,
+    fontSize: typography.caption.fontSize,
+    fontWeight: typography.caption.fontWeight,
   },
   syncIndicator: {
     alignItems: 'center',
