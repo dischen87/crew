@@ -280,6 +280,23 @@ test("host executor preserves data on rollback and leaves auditable proof", () =
 			/^\s+reconcile_place_enrichment_worker "\$\{release_dir\}"$/gm,
 		)?.length,
 	).toBe(3);
+	const grantJobLoops = hostDeploy.matchAll(
+		/for job in jwt-bootstrap user-migrate event-migrate db-grants/g,
+	);
+	const grantJobIndexes = [...grantJobLoops].map((match) => match.index ?? -1);
+	expect(grantJobIndexes).toHaveLength(2);
+	for (const grantJobIndex of grantJobIndexes) {
+		const preGrant = hostDeploy.slice(
+			hostDeploy.lastIndexOf("ensure_typesense_search_key", grantJobIndex),
+			grantJobIndex,
+		);
+		expect(preGrant).toContain(
+			`set_place_enrichment_feature_state "\${release_dir}"`,
+		);
+		expect(preGrant).toContain(
+			`arm_place_enrichment_failure_cleanup "\${release_dir}"`,
+		);
+	}
 	expect(hostDeploy.indexOf("place-golf-import")).toBeLessThan(
 		hostDeploy.indexOf('\n\tsmoke "'),
 	);
@@ -1482,7 +1499,7 @@ compose_with_override \
 	}
 });
 
-test("place-enrichment start and initial-gate failures always remove runtime state", () => {
+test("place-enrichment reconciliation fails closed without disabling a healthy start", () => {
 	const runtimeFunctions = hostDeploy.slice(
 		hostDeploy.indexOf("release_supports_place_enrichment()"),
 		hostDeploy.indexOf("\nverify_service_image_references()"),
@@ -1500,15 +1517,27 @@ log=$2
 target_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 event_service_image=event-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 place_enrichment_requested=true
+if [[ "$scenario" == disabled || "$scenario" == disabled-retry ]]; then
+	place_enrichment_requested=false
+fi
 place_enrichment_enabled=false
 place_enrichment_feature_state=disabled-no-provider-worker
 place_enrichment_cleanup_armed=false
 place_enrichment_cleanup_release_dir=
 place_enrichment_cleanup_running=false
-release_supports_place_enrichment() { return 0; }
+role_attempts=0
+release_supports_place_enrichment() {
+	[[ "$scenario" != unsupported && "$scenario" != unsupported-retry ]]
+}
 compose_command() {
 	printf '%s\n' "$*" >>"$log"
 	case "$*" in
+		*"ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL"*)
+			role_attempts=$((role_attempts + 1))
+			if [[ "$scenario" == *-retry && "$role_attempts" -eq 1 ]]; then
+				return 1
+			fi
+			;;
 		*" up -d "*"place-enrichment-worker"*)
 			[[ "$scenario" != up-fail ]]
 			;;
@@ -1516,7 +1545,11 @@ compose_command() {
 			printf 'worker-container\n'
 			;;
 		*"SELECT count(*) FROM place_enrichment_worker_health"*)
-			printf '0\n'
+			if [[ "$scenario" == healthy ]]; then
+				printf '1\n'
+			else
+				printf '0\n'
+			fi
 			;;
 	esac
 }
@@ -1538,11 +1571,27 @@ sleep() {
 		return 9
 	fi
 }
+on_exit() {
+	local status=$?
+	place_enrichment_exit_cleanup "$status"
+	if [[ "$scenario" == *-retry ]]; then
+		printf 'final-armed:%s\n' "$place_enrichment_cleanup_armed" >>"$log"
+	fi
+	exit "$status"
+}
 trap 'place_enrichment_failure_cleanup' ERR
-trap 'place_enrichment_exit_cleanup "$?"' EXIT
+trap on_exit EXIT
 if [[ "$scenario" == poll-abort ]]; then
 	reconcile_place_enrichment_worker /release
 	exit 99
+fi
+if [[ "$scenario" == *-retry ]]; then
+	if reconcile_place_enrichment_worker /release; then
+		status=0
+	else
+		status=$?
+	fi
+	exit "$status"
 fi
 set +e
 reconcile_place_enrichment_worker /release
@@ -1572,7 +1621,83 @@ exit "$status"
 					/DELETE FROM place_enrichment_worker_health WHERE singleton/g,
 				)?.length,
 			).toBe(2);
+			expect(
+				calls.match(
+					/ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL/g,
+				)?.length,
+			).toBe(1);
 		}
+		for (const scenario of ["disabled", "unsupported"]) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).toBe(0);
+			const calls = readFileSync(log, "utf8");
+			expect(calls).not.toContain(
+				"up -d --no-build --no-deps --force-recreate place-enrichment-worker",
+			);
+			expect(
+				calls.match(/rm --stop --force place-enrichment-worker/g)?.length,
+			).toBe(1);
+			expect(
+				calls.match(
+					/DELETE FROM place_enrichment_worker_health WHERE singleton/g,
+				)?.length,
+			).toBe(1);
+			expect(
+				calls.match(
+					/ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL/g,
+				)?.length,
+			).toBe(1);
+		}
+		for (const scenario of ["disabled-retry", "unsupported-retry"]) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status, `${scenario}: ${result.stderr}`).not.toBe(0);
+			const calls = readFileSync(log, "utf8");
+			expect(
+				calls.match(
+					/ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL/g,
+				)?.length,
+			).toBe(2);
+			expect(calls).toContain("final-armed:false");
+		}
+		const healthyLog = join(directory, "healthy.log");
+		writeFileSync(healthyLog, "");
+		const healthy = spawnSync(
+			"node",
+			["-e", nativeSpawn, "/bin/bash", script, "healthy", healthyLog],
+			{
+				encoding: "utf8",
+				env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+			},
+		);
+		expect(healthy.status, healthy.stderr).toBe(0);
+		const healthyCalls = readFileSync(healthyLog, "utf8");
+		expect(healthyCalls).toContain(
+			"up -d --no-build --no-deps --force-recreate place-enrichment-worker",
+		);
+		expect(
+			healthyCalls.match(/rm --stop --force place-enrichment-worker/g)?.length,
+		).toBe(1);
+		expect(healthyCalls).not.toContain(
+			"ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL",
+		);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
@@ -1755,7 +1880,7 @@ fi
 
 test("place-enrichment late release failures trigger armed cleanup", () => {
 	const failureHelpers = hostDeploy.slice(
-		hostDeploy.indexOf("arm_place_enrichment_failure_cleanup()"),
+		hostDeploy.indexOf("fail_close_place_enrichment_worker()"),
 		hostDeploy.indexOf("\nplace_enrichment_runtime_is_current()"),
 	);
 	const directory = mkdtempSync(join(tmpdir(), "crew-enrichment-late-"));
@@ -1768,13 +1893,31 @@ ${String.raw`
 set -Eeuo pipefail
 scenario=$1
 log=$2
+exec 2>>"$log"
+attempts=0
 place_enrichment_enabled=true
 place_enrichment_cleanup_armed=false
 place_enrichment_cleanup_release_dir=
 place_enrichment_cleanup_running=false
-cleanup_place_enrichment_worker() { printf 'cleanup\n' >>"$log"; }
+cleanup_place_enrichment_worker() { printf 'runtime-cleanup\n' >>"$log"; }
+disable_place_enrichment_role() {
+	attempts=$((attempts + 1))
+	printf 'role-disabled:%s\n' "$attempts" >>"$log"
+	if [[ ( "$scenario" == retry || "$scenario" == permanent ) &&
+		( "$scenario" == permanent || "$attempts" -eq 1 ) ]]; then
+		return 1
+	fi
+}
+on_exit() {
+	local status=$?
+	place_enrichment_exit_cleanup "$status"
+	if [[ "$scenario" == retry || "$scenario" == permanent ]]; then
+		printf 'final-armed:%s\n' "$place_enrichment_cleanup_armed" >>"$log"
+	fi
+	exit "$status"
+}
 trap 'place_enrichment_failure_cleanup' ERR
-trap 'place_enrichment_exit_cleanup "$?"' EXIT
+trap on_exit EXIT
 arm_place_enrichment_failure_cleanup /release
 case "$scenario" in
 	smoke)
@@ -1792,6 +1935,10 @@ case "$scenario" in
 	success)
 		disarm_place_enrichment_failure_cleanup
 		;;
+	retry | permanent)
+		place_enrichment_failure_cleanup
+		exit 7
+		;;
 esac
 `}`,
 		);
@@ -1807,7 +1954,9 @@ esac
 				},
 			);
 			expect(result.status, `${scenario}: ${result.stderr}`).not.toBe(0);
-			expect(readFileSync(log, "utf8")).toContain("cleanup\n");
+			expect(readFileSync(log, "utf8")).toMatch(
+				/^(runtime-cleanup\nrole-disabled:[0-9]+\n)+$/,
+			);
 		}
 		const successLog = join(directory, "success.log");
 		writeFileSync(successLog, "");
@@ -1821,6 +1970,24 @@ esac
 		);
 		expect(success.status, success.stderr).toBe(0);
 		expect(readFileSync(successLog, "utf8")).toBe("");
+		for (const scenario of ["retry", "permanent"]) {
+			const log = join(directory, `${scenario}.log`);
+			writeFileSync(log, "");
+			const result = spawnSync(
+				"node",
+				["-e", nativeSpawn, "/bin/bash", script, scenario, log],
+				{
+					encoding: "utf8",
+					env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+				},
+			);
+			expect(result.status).toBe(7);
+			expect(readFileSync(log, "utf8")).toBe(
+				scenario === "retry"
+					? "runtime-cleanup\nrole-disabled:1\nPlace-enrichment worker failure cleanup failed\nruntime-cleanup\nrole-disabled:2\nfinal-armed:false\n"
+					: "runtime-cleanup\nrole-disabled:1\nPlace-enrichment worker failure cleanup failed\nruntime-cleanup\nrole-disabled:2\nPlace-enrichment worker failure cleanup failed\nfinal-armed:true\n",
+			);
+		}
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}

@@ -329,19 +329,22 @@ the worker from the release's exact Event Service digest, without a host port,
 clears any stale singleton heartbeat, and requires a current
 `staging-place-enrichment-<release-sha>` database heartbeat before starting
 the API runtimes. The release record reports `enabled-worker-healthy` only
-after that gate. Disabled releases remove the worker and heartbeat and report
+after that gate. Disabled releases remove the worker and heartbeat, set its
+database role to `NOLOGIN` with no stored password, and report
 `disabled-no-provider-worker`.
 
 After the initial gate, failure cleanup remains armed through smoke checks,
 image verification, final current-heartbeat verification, record creation, and
 active-state publication. Any failure before successful activation stops and
-removes the worker and clears its heartbeat.
+removes the worker, clears its heartbeat, and sets its database role to
+`NOLOGIN` with no stored password.
 
 A rollback target that predates this worker is explicitly fail-closed even
 when the external flag remains `true`: the executor removes the worker, clears
-the heartbeat, the old Event API retains its hard-disabled gate, and the record
-reports `disabled-target-release-unsupported`. E-mail and push delivery stay
-inside the provider sink until their approved providers are configured.
+the heartbeat, disables the worker database role and clears its password, the
+old Event API retains its hard-disabled gate, and the record reports
+`disabled-target-release-unsupported`. E-mail and push delivery stay inside the
+provider sink until their approved providers are configured.
 
 Provider settings may remain in the external environment when the flag returns
 to `false`. In that state the executor overrides the enrichment database

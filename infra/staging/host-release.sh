@@ -2050,6 +2050,14 @@ clear_place_enrichment_heartbeat() {
 		"DELETE FROM place_enrichment_worker_health WHERE singleton;"
 }
 
+disable_place_enrichment_role() {
+	local release_dir=$1
+	compose_command "${release_dir}" exec -T postgres \
+		psql --username crew_local_admin --dbname crew_event \
+		--set ON_ERROR_STOP=1 --command \
+		"ALTER ROLE crew_event_enrichment_worker NOLOGIN PASSWORD NULL;"
+}
+
 cleanup_place_enrichment_worker() {
 	local release_dir=$1 status=0
 	if ! remove_place_enrichment_worker "${release_dir}"; then
@@ -2061,12 +2069,20 @@ cleanup_place_enrichment_worker() {
 	return "${status}"
 }
 
-arm_place_enrichment_failure_cleanup() {
-	local release_dir=$1
-	if [[ "${place_enrichment_enabled}" == true ]]; then
-		place_enrichment_cleanup_release_dir=${release_dir}
-		place_enrichment_cleanup_armed=true
+fail_close_place_enrichment_worker() {
+	local release_dir=$1 status=0
+	if ! cleanup_place_enrichment_worker "${release_dir}"; then
+		status=1
 	fi
+	if ! disable_place_enrichment_role "${release_dir}"; then
+		status=1
+	fi
+	return "${status}"
+}
+
+arm_place_enrichment_failure_cleanup() {
+	place_enrichment_cleanup_release_dir=$1
+	place_enrichment_cleanup_armed=true
 }
 
 disarm_place_enrichment_failure_cleanup() {
@@ -2078,11 +2094,12 @@ place_enrichment_failure_cleanup() {
 	if [[ "${place_enrichment_cleanup_armed}" == true &&
 		"${place_enrichment_cleanup_running}" == false ]]; then
 		place_enrichment_cleanup_running=true
-		if ! cleanup_place_enrichment_worker \
+		if fail_close_place_enrichment_worker \
 			"${place_enrichment_cleanup_release_dir}"; then
+			disarm_place_enrichment_failure_cleanup
+		else
 			echo "Place-enrichment worker failure cleanup failed" >&2
 		fi
-		disarm_place_enrichment_failure_cleanup
 		place_enrichment_cleanup_running=false
 	fi
 }
@@ -2141,16 +2158,17 @@ verify_place_enrichment_release_state() {
 
 reconcile_place_enrichment_worker() {
 	local release_dir=$1
-	cleanup_place_enrichment_worker "${release_dir}"
 	set_place_enrichment_feature_state "${release_dir}"
+	arm_place_enrichment_failure_cleanup "${release_dir}"
 	if [[ "${place_enrichment_enabled}" == false ]]; then
+		fail_close_place_enrichment_worker "${release_dir}"
 		return
 	fi
-	arm_place_enrichment_failure_cleanup "${release_dir}"
+	cleanup_place_enrichment_worker "${release_dir}"
 	if ! compose_command "${release_dir}" --profile enrichment up -d \
 		--no-build --no-deps --force-recreate place-enrichment-worker; then
 		echo "Place-enrichment worker failed to start" >&2
-		if cleanup_place_enrichment_worker "${release_dir}"; then
+		if fail_close_place_enrichment_worker "${release_dir}"; then
 			disarm_place_enrichment_failure_cleanup
 		else
 			echo "Place-enrichment worker failure cleanup failed" >&2
@@ -2164,7 +2182,7 @@ reconcile_place_enrichment_worker() {
 		sleep 2
 	done
 	echo "Place-enrichment worker did not become current for this release" >&2
-	if cleanup_place_enrichment_worker "${release_dir}"; then
+	if fail_close_place_enrichment_worker "${release_dir}"; then
 		disarm_place_enrichment_failure_cleanup
 	else
 		echo "Place-enrichment worker failure cleanup failed" >&2
@@ -2761,6 +2779,8 @@ if [[ "${abort_forward}" == true ]]; then
 			wait_for_service "${release_dir}" "${service}"
 		done
 		ensure_typesense_search_key
+		set_place_enrichment_feature_state "${release_dir}"
+		arm_place_enrichment_failure_cleanup "${release_dir}"
 		for job in jwt-bootstrap user-migrate event-migrate db-grants \
 			minio-bootstrap; do
 			run_job "${release_dir}" "${job}"
@@ -2849,6 +2869,8 @@ if [[ "${action}" == deploy ]]; then
 	done
 	ensure_typesense_search_key
 
+	set_place_enrichment_feature_state "${release_dir}"
+	arm_place_enrichment_failure_cleanup "${release_dir}"
 	for job in jwt-bootstrap user-migrate event-migrate db-grants minio-bootstrap; do
 		run_job "${release_dir}" "${job}"
 	done
